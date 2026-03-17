@@ -29,6 +29,8 @@ const dashboardCache = {
   sCounts: {},
   agStats: [],
   isDirty: true,
+  lastIsAdmin: null,
+  lastShowingAll: null,
   
   invalidate() {
     this.isDirty = true;
@@ -72,7 +74,7 @@ let _searchTimer;
 let _filterTimer;
 function debouncedRenderVentas() {
   clearTimeout(_searchTimer);
-  _searchTimer = setTimeout(renderVentas, 250);
+  _searchTimer = setTimeout(renderVentas, 300);
 }
 function debouncedFilterRender() {
   clearTimeout(_filterTimer);
@@ -186,7 +188,7 @@ function setupEventDelegation() {
         const row = e.target.closest('tr[data-venta-id]');
         if (row) openVentaModal(parseInt(row.dataset.ventaId));
       }
-    });
+    }, { passive: true });
   }
 }
 
@@ -474,8 +476,16 @@ function montoChip(monto) {
 
 // 🎯 OPTIMIZACIÓN 1: Dashboard con Caché
 function renderDashboard() {
-  const isAdmin    = currentUser.rol === 'admin';
+  const isAdmin = currentUser.rol === 'admin';
   const showingAll = selectedAgentId === 'all';
+  if (dashboardCache.isDirty || dashboardCache.lastIsAdmin !== isAdmin || dashboardCache.lastShowingAll !== showingAll) {
+    dashboardCache.agStats = allAgents.filter(a => a.rol === 'agente').map(ag => {
+      const av = ventas.filter(v => v.agente_id === ag.id);
+      return { nombre: ag.nombre, total: av.length, vendidos: av.filter(v => v.estado === 'vendido').length, interesados: av.filter(v => v.estado === 'interesado').length };
+    });
+    dashboardCache.lastIsAdmin = isAdmin;
+    dashboardCache.lastShowingAll = showingAll;
+  }  
 
   const subtitle = isAdmin
     ? (showingAll ? 'Vista general — todos los agentes' : `Filtrando: ${allAgents.find(a => a.id === selectedAgentId)?.nombre || ''}`)
@@ -636,17 +646,23 @@ function getFiltered() {
   const prodId = document.getElementById('filter-producto').value;
   const ubicacion = document.getElementById('filter-ubicacion').value;
   const agente = currentUser.rol === 'admin' ? (document.getElementById('filter-agente')?.value || '') : '';
+  
   return ventas.filter(v => {
     if (!!v.archivado !== mostrarArchivados) return false;
-    const nombre = v.cliente?.nombre  || '';
-    const cel = v.cliente?.celular || '';
-    const prodNames = (v.venta_items || []).map(it => it.productos?.nombre || '').join(' ');
-    const haystack  = `${nombre} ${cel} ${prodNames} ${v.cliente?.ubicacion || ''} ${v.notas || ''}`.toLowerCase();
-    if (search && !haystack.includes(search)) return false;
-    if (status && v.estado !== status) return false;
+    if (status && v.estado !== status) return false; // Filtra primero lo que NO necesita búsqueda
     if (prodId && !(v.venta_items || []).some(it => it.producto_id == prodId)) return false;
     if (ubicacion && !(v.cliente?.ubicacion || '').toLowerCase().includes(ubicacion.toLowerCase())) return false;
     if (agente && v.agente_id !== agente) return false;
+    
+    // Solo busca en texto si hay búsqueda
+    if (search) {
+      const nombre = v.cliente?.nombre || '';
+      const cel = v.cliente?.celular || '';
+      const prodNames = (v.venta_items || []).map(it => it.productos?.nombre || '').join(' ');
+      const haystack = `${nombre} ${cel} ${prodNames} ${v.cliente?.ubicacion || ''} ${v.notas || ''}`.toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    
     return true;
   });
 }
