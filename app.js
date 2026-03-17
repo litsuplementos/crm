@@ -393,7 +393,7 @@ function buildAgentSelector() {
     </select>`;
   const sel = document.getElementById('filter-agente');
   if (sel) {
-    sel.style.display = '';
+    sel.style.display = currentUser.rol === 'admin' ? '' : 'none';
     while (sel.options.length > 1) sel.remove(1);
     allAgents.filter(a => a.rol === 'agente').forEach(a => {
       const o = document.createElement('option');
@@ -627,7 +627,7 @@ function populateCityFilter() {
   const cities = [...new Set(ventas.map(v => v.cliente?.ubicacion).filter(c => c && c !== 's/c' && c !== ''))].sort();
   const sel = document.getElementById('filter-ubicacion');
   while (sel.options.length > 1) sel.remove(1);
-  cities.forEach(c => { const o = document.createElement('option'); o.value = c.toLowerCase(); o.textContent = c; sel.appendChild(o); });
+  cities.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
 }
 
 function getFiltered() {
@@ -635,7 +635,7 @@ function getFiltered() {
   const status = document.getElementById('filter-status').value;
   const prodId = document.getElementById('filter-producto').value;
   const ubicacion = document.getElementById('filter-ubicacion').value;
-  const agente = document.getElementById('filter-agente')?.value || '';
+  const agente = currentUser.rol === 'admin' ? (document.getElementById('filter-agente')?.value || '') : '';
   return ventas.filter(v => {
     if (!!v.archivado !== mostrarArchivados) return false;
     const nombre = v.cliente?.nombre  || '';
@@ -645,7 +645,7 @@ function getFiltered() {
     if (search && !haystack.includes(search)) return false;
     if (status && v.estado !== status) return false;
     if (prodId && !(v.venta_items || []).some(it => it.producto_id == prodId)) return false;
-    if (ubicacion && !(v.cliente?.ubicacion || '').toLowerCase().includes(ubicacion)) return false;
+    if (ubicacion && !(v.cliente?.ubicacion || '').toLowerCase().includes(ubicacion.toLowerCase())) return false;
     if (agente && v.agente_id !== agente) return false;
     return true;
   });
