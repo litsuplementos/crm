@@ -539,9 +539,6 @@ function renderVentas() {
   populateCityFilter();
   const filtered = getFiltered();
   const total = filtered.length;
-  const totalUnidades = estado === 'vendido'
-    ? filtered.reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0)
-    : null;
   const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
   if (currentPage > totalPages) currentPage = 1;
   const page = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -1579,6 +1576,9 @@ function renderStatModal() {
 
   const filtered = ventas.filter(v => v.estado === estado);
   const total = filtered.length;
+  const totalUnidades = estado === 'vendido'
+    ? filtered.reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0)
+    : null;
   const pages = Math.ceil(total / STAT_PAGE_SIZE) || 1;
   if (statModalPage > pages) statModalPage = 1;
   const page = filtered.slice((statModalPage - 1) * STAT_PAGE_SIZE, statModalPage * STAT_PAGE_SIZE);
