@@ -472,12 +472,13 @@ function renderDashboard() {
     <div class="today-item">
       <div class="today-avatar">${(v.cliente?.nombre || '?')[0].toUpperCase()}</div>
       <div class="today-info">
-        <div class="today-name">${v.cliente?.nombre || 's/n'}
+        <div class="today-detail" style="margin-bottom:2px;">
+          <a href="tel:${v.cliente?.celular}" style="color:var(--accent2);text-decoration:none;font-weight:600;font-size:13px;">${v.cliente?.celular || ''}</a>
           ${isAdmin && showingAll ? `<span style="font-size:10px;color:var(--accent2);background:var(--accent-glow);padding:1px 6px;border-radius:4px;margin-left:4px;">${v.agente?.nombre || ''}</span>` : ''}
         </div>
+        <div class="today-name" style="font-size:12px;color:var(--text2);">${v.cliente?.nombre || 's/n'}</div>
         <div class="today-detail">${v.notas || ''}  ${statusBadge(v.estado)}</div>
       </div>
-      <div class="today-phone"><a href="tel:${v.cliente?.celular}" style="color:var(--accent2);text-decoration:none;">${v.cliente?.celular || ''}</a></div>
     </div>`).join('');
 
   // Rendimiento por agente (solo admin vista general)
