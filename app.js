@@ -627,10 +627,12 @@ function renderDashboard() {
 
 // VENTAS — lista + filtros
 function populateCityFilter() {
-  const cities = [...new Set(ventas.map(v => v.cliente?.ubicacion).filter(c => c && c !== 's/c' && c !== ''))].sort();
   const sel = document.getElementById('filter-ubicacion');
+  const current = sel.value; // guardar antes
   while (sel.options.length > 1) sel.remove(1);
+  const cities = [...new Set(ventas.map(v => v.cliente?.ubicacion).filter(c => c && c !== 's/c' && c !== ''))].sort();
   cities.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+  sel.value = current; // restaurar después
 }
 
 function getFiltered() {
