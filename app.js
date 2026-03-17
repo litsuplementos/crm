@@ -345,7 +345,7 @@ async function toggleProductoActivo(id, activo) {
 async function loadVentas() {
   try {
     // ── Columnas reales de cada tabla ──────────────────────────────────────
-    // ventas:   id, cliente_id, agente_id, fecha, producto, estado, intentos,
+    // ventas:   id, cliente_id, agente_id, fecha, estado, intentos,
     //           notas, comprobante_url, archivado, producto_id, cantidad, monto_total
     // clientes: id, celular, nombre, ubicacion, direccion_residencial,
     //           producto_interes, notas, faltas, sin_respuesta, flag
@@ -354,7 +354,7 @@ async function loadVentas() {
     // ──────────────────────────────────────────────────────────────────────
     let query = db.from('ventas')
       .select(`
-        id, cliente_id, agente_id, fecha, producto, estado, intentos,
+        id, cliente_id, agente_id, fecha, estado, intentos,
         notas, comprobante_url, archivado, producto_id, cantidad, monto_total,
         cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
                              producto_interes, notas, faltas, sin_respuesta, flag ),
@@ -447,7 +447,7 @@ function showViewDirect(name) {
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
 }
 
-// ═══ STATUS HELPERS ═══
+// STATUS HELPERS
 function statusBadge(estado) {
   const e = ESTADOS[estado] || ESTADOS.rellamada;
   return `<span class="badge ${e.badge}">${e.label}</span>`;
@@ -473,7 +473,7 @@ function montoChip(monto) {
   return `<span style="background:var(--green-bg);border:1px solid var(--green);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;">Bs.${parseFloat(monto).toFixed(0)}</span>`;
 }
 
-// ═══ DASHBOARD ═══
+// DASHBOARD
 function renderDashboard() {
   const isAdmin    = currentUser.rol === 'admin';
   const showingAll = selectedAgentId === 'all';
@@ -525,7 +525,6 @@ function renderDashboard() {
     <div class="bar-track"><div class="bar-fill" style="width:${(sCounts[k]/maxS*100).toFixed(0)}%;background:${e.color}"></div></div>
     <div class="bar-count">${sCounts[k]}</div></div>`).join('');
 
-  // ── Ubicación viene siempre del cliente ──
   const cities = {};
   ventas.forEach(v => {
     const c = v.cliente?.ubicacion;
@@ -577,9 +576,8 @@ function renderDashboard() {
   }
 }
 
-// ═══ VENTAS — lista + filtros ═══
+// VENTAS — lista + filtros
 function populateCityFilter() {
-  // ── Ubicación viene exclusivamente del cliente ──
   const cities = [...new Set(ventas.map(v => v.cliente?.ubicacion).filter(c => c && c !== 's/c' && c !== ''))].sort();
   const sel = document.getElementById('filter-ubicacion');
   while (sel.options.length > 1) sel.remove(1);
@@ -597,7 +595,6 @@ function getFiltered() {
     const nombre     = v.cliente?.nombre || '';
     const cel        = v.cliente?.celular || '';
     const prodNombre = v.producto_rel?.nombre || '';
-    // ── Búsqueda incluye ubicacion del cliente ──
     const haystack = `${nombre} ${cel} ${prodNombre} ${v.cliente?.ubicacion||''} ${v.notas||''}`.toLowerCase();
     if (search && !haystack.includes(search)) return false;
     if (status && v.estado !== status) return false;
@@ -622,7 +619,7 @@ function renderVentas() {
 
   document.getElementById('ventas-tbody').innerHTML = page.map(v => {
     const prodNombre = v.producto_rel?.nombre || '';
-    // ── Ubicación siempre del cliente ──
+    // Ubicación siempre del cliente
     const ubicacion  = v.cliente?.ubicacion || '';
     return `
     <tr onclick="openVentaModal(${v.id})" style="${v.archivado?'opacity:0.6;':''}">
@@ -671,7 +668,7 @@ function setArchivoFiltro(archivado) {
   renderVentas();
 }
 
-// ═══ MODAL VENTA ═══
+// MODAL VENTA
 let celularTimer = null;
 
 async function onCelularInput() {
@@ -806,7 +803,6 @@ async function openVentaModal(id) {
     document.getElementById('f-celular').value        = v.cliente?.celular || '';
     document.getElementById('f-nombre').value         = v.cliente?.nombre || '';
     document.getElementById('f-cliente-id').value     = v.cliente_id || '';
-    // ── Ubicación siempre del cliente ──
     document.getElementById('f-ubicacion').value      = v.cliente?.ubicacion || '';
     document.getElementById('f-notas').value          = v.notas || '';
     document.getElementById('f-direccion').value      = v.cliente?.direccion_residencial || '';
@@ -902,7 +898,6 @@ async function saveVenta() {
   const nombre     = document.getElementById('f-nombre').value.trim();
   const clienteId  = document.getElementById('f-cliente-id').value;
   const estado     = document.getElementById('f-estado').value;
-  // ── Ubicación se guarda en el cliente, no en la venta ──
   const ubicacion  = document.getElementById('f-ubicacion').value.trim();
   const notas      = document.getElementById('f-notas').value.trim();
   const intentos   = parseInt(document.getElementById('f-intentos').value) || 1;
@@ -963,7 +958,7 @@ async function saveVenta() {
 
     const debeArchivar = ESTADOS_CIERRE.includes(estadoFinal);
 
-    // ── Solo columnas reales de la tabla ventas ──
+    // Columnas de la tabla ventas
     const ventaData = {
       cliente_id:  cId,
       agente_id:   agenteId,
@@ -1010,7 +1005,7 @@ async function saveVenta() {
   }
 }
 
-// ═══ DELETE VENTA ═══
+// DELETE VENTA
 function deleteVenta(id) {
   const v       = ventas.find(x => x.id === id);
   const celular = v?.cliente?.celular || '';
@@ -1052,7 +1047,7 @@ function deleteVenta(id) {
 }
 function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); }
 
-// ═══ COMPROBANTE ═══
+// COMPROBANTE
 async function uploadComprobante(ventaId) {
   const input = document.getElementById('f-comprobante');
   const file  = input?.files?.[0];
@@ -1085,13 +1080,12 @@ function renderComprobantePreview(url) {
     : `<div style="margin-top:8px;position:relative;display:inline-block;"><img src="${url}" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);" onerror="this.style.display='none'"><button type="button" class="icon-btn danger" onclick="deleteComprobante('${url}',parseInt(document.getElementById('edit-venta-id').value))" style="position:absolute;top:4px;right:4px;font-size:11px;padding:3px 7px;background:var(--surface);">🗑️</button></div>`;
 }
 
-// ═══ SMART INPUTS ═══
 document.addEventListener('click', e => {
   if (!e.target.closest('.smart-input-row'))
     document.querySelectorAll('.dropdown-list').forEach(d=>d.style.display='none');
 });
 
-// ═══ USUARIOS (admin) ═══
+// USUARIOS (admin)
 async function renderUsers() {
   const { data, error } = await db.from('usuarios').select('*').order('nombre');
   if (error) { toast('❌ Error cargando usuarios','error'); return; }
