@@ -661,7 +661,8 @@ function renderVentas() {
   const isAdmin = currentUser?.rol === 'admin';
 
   document.getElementById('ventas-count').textContent = `${total} ${mostrarArchivados ? 'archivados' : 'activos'} encontrados`;
-  document.getElementById('table-count').textContent  = `${total} registros`;
+  const totalUnidades = filtered.reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0);
+  document.getElementById('table-count').textContent = `${total} registros · ${totalUnidades} unidades`;
 
   document.getElementById('ventas-tbody').innerHTML = page.map(v => {
     const prodNombres = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
