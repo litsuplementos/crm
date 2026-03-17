@@ -176,9 +176,9 @@ venta_items → venta_id, producto_id (FK→productos), cantidad, subtotal</div>
       <div class="config-card">
         <div class="config-card-title">📋 Reglas automáticas</div>
         <div style="font-size:13px;color:var(--text2);line-height:2.2;">
-          📵 <b style="color:var(--text);">5× Sin respuesta</b> → Estado cambia a <b>No interesado</b> automáticamente<br>
-          ❌ <b style="color:var(--text);">2× Cancelado</b> → Estado cambia a <b>SPAM</b> automáticamente<br>
           🔁 <b style="color:var(--text);">3× Rellamada</b> → Se archiva automáticamente como <b>No interesado</b><br>
+          📵 <b style="color:var(--text);">4× Sin respuesta</b> → Se archiva automáticamente como <b>No interesado</b><br>
+          ❌ <b style="color:var(--text);">2× Cancelado</b> → Estado cambia a <b>SPAM</b> automáticamente<br>
           ⚠️ El admin puede editar manualmente cualquier estado para revertirlo
         </div>
       </div>
@@ -295,11 +295,34 @@ venta_items → venta_id, producto_id (FK→productos), cantidad, subtotal</div>
         </div>
       </div>
 
-      <div class="field" id="intentos-field">
-        <label>Intentos <span style="color:var(--text3);font-weight:400;font-size:10px;">(rellamada: máx 3 · sin respuesta: máx 4)</span></label>
-        <input class="smart-input" type="number" id="f-intentos" value="1" min="1" max="20" style="width:120px;" oninput="onIntentosChange()">
-        <div id="intentos-warning" style="display:none;font-size:12px;margin-top:6px;padding:6px 10px;border-radius:6px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);"></div>
+      <!-- Intentos de Rellamada: llamadas activas realizadas por el agente (máx 3) -->
+      <div class="field" id="intentos-rellamada-field" style="display:none;">
+        <label>
+          Intentos de llamada
+          <span style="color:var(--text3);font-weight:400;font-size:10px;">(máx. 3 — llamadas realizadas por el agente)</span>
+        </label>
+        <input class="smart-input" type="number" id="f-intentos-rellamada" value="1" min="1" max="20"
+          style="width:120px;" oninput="onIntentosChange()">
+        <div id="intentos-rellamada-warning"
+          style="display:none;font-size:12px;margin-top:6px;padding:6px 10px;border-radius:6px;
+                 background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);"></div>
       </div>
+
+      <!-- Intentos Sin respuesta: mensajes escritos que el cliente ignoró (máx 4) -->
+      <div class="field" id="intentos-sinresp-field" style="display:none;">
+        <label>
+          Mensajes sin respuesta
+          <span style="color:var(--text3);font-weight:400;font-size:10px;">(máx. 4 — mensajes escritos ignorados por el cliente)</span>
+        </label>
+        <input class="smart-input" type="number" id="f-intentos-sinresp" value="1" min="1" max="20"
+          style="width:120px;" oninput="onIntentosChange()">
+        <div id="intentos-sinresp-warning"
+          style="display:none;font-size:12px;margin-top:6px;padding:6px 10px;border-radius:6px;
+                 background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);"></div>
+      </div>
+
+      <!-- Campo unificado oculto que el JS sigue usando internamente -->
+      <input type="hidden" id="f-intentos" value="1">
 
       <div class="field">
         <label>Notas <span style="color:var(--text3);font-weight:400;font-size:11px;">(texto libre)</span></label>

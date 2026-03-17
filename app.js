@@ -58,10 +58,11 @@ const ESTADOS = {
 
 const ESTADOS_CIERRE = ['vendido', 'no_interesado', 'spam', 'cancelado'];
 const MAX_RELLAMADAS = 3;
+const MAX_SIN_RESPUESTA = 4;
 
 let currentUser = null;
 let ventas = [];
-let ventasIndex = {}; // 🎯 OPTIMIZACIÓN 5: Índice de ventas para búsqueda O(1)
+let ventasIndex = {};
 let allAgents = [];
 let allProductos = [];
 let selectedAgentId  = 'all';
@@ -147,10 +148,10 @@ document.addEventListener('keydown', e => {
 function doLogout() {
   currentUser = null; 
   ventas = []; 
-  ventasIndex = {}; // Limpiar índice
+  ventasIndex = {};
   allAgents = []; 
   allProductos = [];
-  dashboardCache.invalidate(); // Invalidar caché
+  dashboardCache.invalidate();
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('login-user').value = '';
@@ -169,7 +170,7 @@ async function initApp() {
   } else {
     await Promise.all([loadProductos(), loadVentas()]);
   }
-  setupEventDelegation(); // 🎯 OPTIMIZACIÓN 6: Setup de event delegation
+  setupEventDelegation();
   renderDashboard();
   initGeoSelectors();
   renderVentas();
@@ -178,7 +179,7 @@ async function initApp() {
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
 }
 
-// 🎯 OPTIMIZACIÓN 6: Event Delegation (delegación de eventos)
+// 🎯 OPTIMIZACIÓN 6: Event Delegation
 function setupEventDelegation() {
   const tbody = document.getElementById('ventas-tbody');
   if (tbody) {
@@ -362,11 +363,8 @@ async function loadVentas() {
     if (error) throw error;
     ventas = data || [];
     
-    // Construir índice O(1) para búsquedas
     ventasIndex = {};
     ventas.forEach(v => ventasIndex[v.id] = v);
-    
-    // Invalidar caché de dashboard
     dashboardCache.invalidate();
     
   } catch(e) {
@@ -533,9 +531,7 @@ function renderDashboard() {
     </div>
   `;
 
-  // Usar caché para cálculos costosos
   if (!dashboardCache.isValid(ventas.length, selectedAgentId)) {
-    // Recalcular solo si cambió
     dashboardCache.prods = {};
     dashboardCache.cities = {};
     dashboardCache.sCounts = {};
@@ -561,7 +557,6 @@ function renderDashboard() {
     dashboardCache.isDirty = false;
   }
 
-  // Usar datos cacheados
   const prods = dashboardCache.prods;
   const maxP = Math.max(...Object.values(prods), 1);
   document.getElementById('prod-chart').innerHTML = Object.entries(prods)
@@ -587,7 +582,6 @@ function renderDashboard() {
     <div class="bar-count">${v}</div></div>`).join('')
     || '<p style="color:var(--text3);font-size:13px;">Sin datos</p>';
 
-  // Pendientes
   const pending = ventas.filter(v => ['seguimiento', 'rellamada', 'interesado', 'agendar'].includes(v.estado)).slice(0, 10);
   document.getElementById('today-list').innerHTML = pending.length === 0
     ? '<div class="empty-state"><div class="emoji">🎉</div><p>Sin pendientes</p></div>'
@@ -604,7 +598,6 @@ function renderDashboard() {
       </div>
     </div>`).join('');
 
-  // Rendimiento por agente
   if (isAdmin && showingAll && allAgents.length > 0) {
     const agStats = allAgents.filter(a => a.rol === 'agente').map(ag => {
       const av = ventas.filter(v => v.agente_id === ag.id);
@@ -632,7 +625,7 @@ function renderDashboard() {
   }
 }
 
-//  VENTAS — lista + filtros
+// VENTAS — lista + filtros
 function populateCityFilter() {
   const cities = [...new Set(ventas.map(v => v.cliente?.ubicacion).filter(c => c && c !== 's/c' && c !== ''))].sort();
   const sel = document.getElementById('filter-ubicacion');
@@ -649,12 +642,10 @@ function getFiltered() {
   
   return ventas.filter(v => {
     if (!!v.archivado !== mostrarArchivados) return false;
-    if (status && v.estado !== status) return false; // Filtra primero lo que NO necesita búsqueda
+    if (status && v.estado !== status) return false;
     if (prodId && !(v.venta_items || []).some(it => it.producto_id == prodId)) return false;
     if (ubicacion && !(v.cliente?.ubicacion || '').toLowerCase().includes(ubicacion.toLowerCase())) return false;
     if (agente && v.agente_id !== agente) return false;
-    
-    // Solo busca en texto si hay búsqueda
     if (search) {
       const nombre = v.cliente?.nombre || '';
       const cel = v.cliente?.celular || '';
@@ -662,7 +653,6 @@ function getFiltered() {
       const haystack = `${nombre} ${cel} ${prodNames} ${v.cliente?.ubicacion || ''} ${v.notas || ''}`.toLowerCase();
       if (!haystack.includes(search)) return false;
     }
-    
     return true;
   });
 }
@@ -696,7 +686,7 @@ function renderVentas() {
       <td>${prodCell}</td>
       <td>${v.monto_total ? montoChip(v.monto_total) : ''}</td>
       <td class="td-ubicacion">${ubicacion}</td>
-      <td>${statusBadge(v.estado)}${v.estado === 'rellamada' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}</td>
+      <td>${statusBadge(v.estado)}${v.estado === 'rellamada' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}${v.estado === 'sin_respuesta' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);font-size:12px;" title="${v.notas || ''}">${v.notas || ''}${v.comprobante_url ? ` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>` : ''}</td>
       ${isAdmin ? `<td style="font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>` : ''}
       <td class="td-actions" onclick="event.stopPropagation()">
@@ -753,7 +743,7 @@ function setArchivoFiltro(archivado) {
   renderVentas();
 }
 
-//  VENTA ITEMS — multi-producto (código igual al original - mantener sin cambios)
+// VENTA ITEMS — multi-producto
 function addVentaItem(data) {
   const wrap = document.getElementById('venta-items-wrap');
   const idx  = Date.now();
@@ -960,6 +950,97 @@ function clearVentaItems() {
   document.getElementById('monto-tag').textContent = '';
 }
 
+// ─── INTENTOS: helpers separados ────────────────────────────────────────────
+
+// Muestra solo el campo correspondiente al estado activo
+function toggleIntentosField(estado) {
+  const rellamadaWrap = document.getElementById('intentos-rellamada-field');
+  const sinrespWrap   = document.getElementById('intentos-sinresp-field');
+  if (rellamadaWrap) rellamadaWrap.style.display = (estado === 'rellamada')     ? '' : 'none';
+  if (sinrespWrap)   sinrespWrap.style.display   = (estado === 'sin_respuesta') ? '' : 'none';
+  // Sincronizar campo oculto
+  if (estado === 'rellamada') {
+    document.getElementById('f-intentos').value =
+      document.getElementById('f-intentos-rellamada').value || 1;
+  } else if (estado === 'sin_respuesta') {
+    document.getElementById('f-intentos').value =
+      document.getElementById('f-intentos-sinresp').value || 1;
+  } else {
+    document.getElementById('f-intentos').value = 1;
+  }
+}
+
+// Aviso de límite diferenciado
+function onIntentosChange() {
+  const estado = document.getElementById('f-estado').value;
+
+  if (estado === 'rellamada') {
+    const val  = parseInt(document.getElementById('f-intentos-rellamada').value) || 1;
+    const warn = document.getElementById('intentos-rellamada-warning');
+    document.getElementById('f-intentos').value = val;
+    if (!warn) return;
+    if (val >= MAX_RELLAMADAS) {
+      warn.textContent = '⚠️ Al guardar se marcará como No interesado y se archivará.';
+      warn.style.display = ''; warn.style.color = 'var(--red)';
+    } else if (val === MAX_RELLAMADAS - 1) {
+      warn.textContent = `⚠️ Próximo intento (${MAX_RELLAMADAS}) cerrará el ciclo.`;
+      warn.style.display = ''; warn.style.color = 'var(--yellow)';
+    } else {
+      warn.style.display = 'none';
+    }
+
+  } else if (estado === 'sin_respuesta') {
+    const val  = parseInt(document.getElementById('f-intentos-sinresp').value) || 1;
+    const warn = document.getElementById('intentos-sinresp-warning');
+    document.getElementById('f-intentos').value = val;
+    if (!warn) return;
+    if (val >= MAX_SIN_RESPUESTA) {
+      warn.textContent = '⚠️ Al guardar se marcará como No interesado y se archivará.';
+      warn.style.display = ''; warn.style.color = 'var(--red)';
+    } else if (val === MAX_SIN_RESPUESTA - 1) {
+      warn.textContent = `⚠️ Próximo mensaje sin respuesta (${MAX_SIN_RESPUESTA}) cerrará el ciclo.`;
+      warn.style.display = ''; warn.style.color = 'var(--yellow)';
+    } else {
+      warn.style.display = 'none';
+    }
+  }
+}
+
+// Carga los intentos en el campo correcto al abrir modal (editar)
+function _loadIntentosEditar(estado, intentos) {
+  const val = intentos || 1;
+  if (estado === 'rellamada') {
+    document.getElementById('f-intentos-rellamada').value = val;
+    document.getElementById('f-intentos-sinresp').value   = 1;
+  } else if (estado === 'sin_respuesta') {
+    document.getElementById('f-intentos-sinresp').value   = val;
+    document.getElementById('f-intentos-rellamada').value = 1;
+  } else {
+    document.getElementById('f-intentos-rellamada').value = 1;
+    document.getElementById('f-intentos-sinresp').value   = 1;
+  }
+  document.getElementById('f-intentos').value = val;
+  toggleIntentosField(estado);
+  onIntentosChange();
+}
+
+// Resetea ambos campos al crear nuevo registro
+function _resetIntentos() {
+  document.getElementById('f-intentos-rellamada').value = 1;
+  document.getElementById('f-intentos-sinresp').value   = 1;
+  document.getElementById('f-intentos').value           = 1;
+  toggleIntentosField('rellamada');
+}
+
+// Lee el valor correcto según el estado activo
+function _leerIntentos(estado) {
+  if (estado === 'rellamada')    return parseInt(document.getElementById('f-intentos-rellamada').value) || 1;
+  if (estado === 'sin_respuesta') return parseInt(document.getElementById('f-intentos-sinresp').value) || 1;
+  return 1;
+}
+
+// ─── FIN INTENTOS ────────────────────────────────────────────────────────────
+
 // MODAL VENTA
 let celularTimer = null;
 
@@ -1049,7 +1130,6 @@ async function openVentaModal(id) {
     }
   }
   if (id) {
-    // 🎯 OPTIMIZACIÓN 5: Usar índice para búsqueda O(1)
     const v = ventasIndex[id];
     if (!v) return;
     const isArchivado = !!v.archivado;
@@ -1058,7 +1138,8 @@ async function openVentaModal(id) {
     document.getElementById('modal-title').textContent = isArchivado ? '🔒 Registro Archivado' : 'Editar Registro';
     const archivedBanner = document.getElementById('archived-banner');
     if (archivedBanner) archivedBanner.style.display = isArchivado ? '' : 'none';
-    const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas', 'f-intentos', 'f-direccion', 'f-monto'];
+    const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas',
+                        'f-intentos-rellamada', 'f-intentos-sinresp', 'f-direccion', 'f-monto'];
     lockFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.disabled = shouldLock; });
     document.querySelectorAll('.quick-chip').forEach(ch => {
       ch.style.pointerEvents = shouldLock ? 'none' : '';
@@ -1099,10 +1180,10 @@ async function openVentaModal(id) {
       const el = document.getElementById(sid);
       if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
     });
-    document.getElementById('f-intentos').value = v.intentos || 1;
+    // ── Cargar intentos en el campo correcto ──
+    _loadIntentosEditar(v.estado, v.intentos);
     document.getElementById('f-estado').value = v.estado || 'rellamada';
     document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');
-    toggleIntentosField(v.estado);
     if (currentUser.rol === 'admin' && v.agente_id)
       document.getElementById('f-agente').value = v.agente_id;
     renderComprobantePreview(v.comprobante_url || null);
@@ -1111,7 +1192,8 @@ async function openVentaModal(id) {
     document.getElementById('edit-venta-id').value = '';
     const archivedBanner = document.getElementById('archived-banner');
     if (archivedBanner) archivedBanner.style.display = 'none';
-    const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas', 'f-intentos', 'f-direccion', 'f-monto'];
+    const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas',
+                        'f-intentos-rellamada', 'f-intentos-sinresp', 'f-direccion', 'f-monto'];
     lockFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.disabled = false; });
     document.querySelectorAll('.quick-chip').forEach(ch => { ch.style.pointerEvents = ''; ch.style.opacity = ''; });
     const addItemBtn = document.getElementById('btn-add-item');
@@ -1131,36 +1213,14 @@ async function openVentaModal(id) {
       const el = document.getElementById(sid);
       if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
     });
-    document.getElementById('f-intentos').value = 1;
+    // ── Resetear ambos contadores ──
+    _resetIntentos();
     document.getElementById('f-estado').value = 'rellamada';
     document.querySelector('.quick-chip[data-estado="rellamada"]')?.classList.add('active');
-    toggleIntentosField('rellamada');
     if (currentUser.rol === 'admin' && allAgents.length > 0)
       document.getElementById('f-agente').value = allAgents.find(a => a.rol === 'agente')?.id || '';
     clearVentaItems();
     addVentaItem();
-  }
-}
-
-function toggleIntentosField(estado) {
-  const wrap = document.getElementById('intentos-field');
-  if (wrap) wrap.style.display = ['rellamada', 'sin_respuesta'].includes(estado) ? '' : 'none';
-}
-
-function onIntentosChange() {
-  const val = parseInt(document.getElementById('f-intentos').value) || 1;
-  const warn = document.getElementById('intentos-warning');
-  if (!warn) return;
-  if (val >= MAX_RELLAMADAS) {
-    warn.textContent = '⚠️ Al guardar se marcará como No interesado y se archivará.';
-    warn.style.display = '';
-    warn.style.color = 'var(--red)';
-  } else if (val === MAX_RELLAMADAS - 1) {
-    warn.textContent = `⚠️ Próximo intento (${MAX_RELLAMADAS}) cerrará el ciclo.`;
-    warn.style.display = '';
-    warn.style.color = 'var(--yellow)';
-  } else {
-    warn.style.display = 'none';
   }
 }
 
@@ -1176,12 +1236,10 @@ function setEstado(value, el) {
 }
 
 function closeVentaModal() {
-  // 🎯 OPTIMIZACIÓN 4: Limpiar timers antes de cerrar
   clearTimeout(celularTimer);
   document.getElementById('venta-modal').classList.remove('open');
 }
 
-// 🎯 OPTIMIZACIÓN 3: Batch Queries en saveVenta
 async function saveVenta() {
   const ventaId = document.getElementById('edit-venta-id').value;
   const celular = document.getElementById('f-celular').value.trim();
@@ -1190,13 +1248,15 @@ async function saveVenta() {
   const estado = document.getElementById('f-estado').value;
   const ubicacion = document.getElementById('f-ubicacion').value.trim();
   const notas = document.getElementById('f-notas').value.trim();
-  const intentos = parseInt(document.getElementById('f-intentos').value) || 1;
   const fecha = document.getElementById('f-fecha').value;
   const monto = parseFloat(document.getElementById('f-monto').value) || null;
   const direccion = document.getElementById('f-direccion')?.value?.trim() || null;
   const agenteId = currentUser.rol === 'admin'
     ? document.getElementById('f-agente')?.value || currentUser.id
     : currentUser.id;
+
+  // ── Leer intentos del campo correcto según el estado ──
+  const intentos = _leerIntentos(estado);
 
   if (!celular) { toast('⚠️ El celular es obligatorio', 'error'); return; }
 
@@ -1230,30 +1290,31 @@ async function saveVenta() {
     }
 
     let estadoFinal = estado;
-    if (estado === 'rellamada') {
-      if (intentos >= MAX_RELLAMADAS) {
-        const ok = confirm(
-          `Este registro ya tiene ${intentos} intentos.\n` +
-          `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
-        );
-        if (!ok) return;
-        estadoFinal = 'no_interesado';
-        toast('🔕 Marcado como No interesado (3 rellamadas)', 'error');
-      } else if (intentos === MAX_RELLAMADAS - 1) {
-        toast(`⚠️ ${intentos}/${MAX_RELLAMADAS} intentos — próximo cierra el ciclo`, 'error');
-      }
+
+    // Rellamada: límite 3
+    if (estado === 'rellamada' && intentos >= MAX_RELLAMADAS) {
+      const ok = confirm(
+        `Este registro ya tiene ${intentos} intentos de llamada.\n` +
+        `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
+      );
+      if (!ok) return;
+      estadoFinal = 'no_interesado';
+      toast('🔕 Marcado como No interesado (3 rellamadas)', 'error');
+    } else if (estado === 'rellamada' && intentos === MAX_RELLAMADAS - 1) {
+      toast(`⚠️ ${intentos}/${MAX_RELLAMADAS} intentos de llamada — próximo cierra el ciclo`, 'error');
     }
 
-    if (estado === 'sin_respuesta' && intentos >= 4) {    
-      if (estado === 'sin_respuesta') {
-        const ok = confirm(
-          `Este cliente ya tiene ${intentos} sin respuesta.\n` +
-          `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
-        );
-        if (!ok) return;
-        estadoFinal = 'no_interesado';
-        toast('🔕 Marcado como No interesado (4 sin respuesta)', 'error');
-      }
+    // Sin respuesta: límite 4
+    if (estado === 'sin_respuesta' && intentos >= MAX_SIN_RESPUESTA) {
+      const ok = confirm(
+        `Este cliente ya tiene ${intentos} mensajes sin respuesta.\n` +
+        `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
+      );
+      if (!ok) return;
+      estadoFinal = 'no_interesado';
+      toast('🔕 Marcado como No interesado (4 sin respuesta)', 'error');
+    } else if (estado === 'sin_respuesta' && intentos === MAX_SIN_RESPUESTA - 1) {
+      toast(`⚠️ ${intentos}/${MAX_SIN_RESPUESTA} mensajes sin respuesta — próximo cierra el ciclo`, 'error');
     }
 
     const debeArchivar = ESTADOS_CIERRE.includes(estadoFinal);
@@ -1287,13 +1348,11 @@ async function saveVenta() {
     const { error: errItems } = await db.from('venta_items').insert(itemsToInsert);
     if (errItems) throw errItems;
 
-    // 🎯 OPTIMIZACIÓN 3: Batch queries en una sola
     if (currentUser.rol === 'admin' && estadoFinal !== 'spam') {
       const { data: stats } = await db.from('ventas')
         .select('estado', { count: 'exact' })
         .eq('cliente_id', cId)
         .in('estado', ['cancelado', 'spam', 'sin_respuesta']);
-      
       const spamCount = stats?.filter(s => s.estado === 'spam').length || 0;
       if (spamCount === 0) {
         await db.from('clientes').update({ flag: 'normal' }).eq('id', cId);
@@ -1316,15 +1375,14 @@ async function saveVenta() {
       const idx = ventas.findIndex(v => v.id === savedId);
       if (idx >= 0) {
         ventas[idx] = ventaActualizada;
-        ventasIndex[savedId] = ventaActualizada; // Actualizar índice
+        ventasIndex[savedId] = ventaActualizada;
       } else {
         ventas.unshift(ventaActualizada);
-        ventasIndex[savedId] = ventaActualizada; // Agregar a índice
+        ventasIndex[savedId] = ventaActualizada;
       }
     }
 
-    dashboardCache.invalidate(); // Invalidar caché
-
+    dashboardCache.invalidate();
     closeVentaModal();
     renderVentas();
     renderDashboard();
@@ -1387,7 +1445,6 @@ function deleteProducto(id) {
       document.getElementById('delete-producto-error').style.display = '';
       return;
     }
-    // Verificar si tiene venta_items
     const { count } = await db.from('venta_items')
       .select('*', { count: 'exact', head: true })
       .eq('producto_id', id);
@@ -1443,8 +1500,8 @@ function deleteVenta(id) {
         }).eq('id', clienteId);
       }
       ventas = ventas.filter(v => v.id !== id);
-      delete ventasIndex[id]; // Limpiar índice
-      dashboardCache.invalidate(); // Invalidar caché
+      delete ventasIndex[id];
+      dashboardCache.invalidate();
       toast('🗑️ Registro eliminado');
       renderVentas();
       renderDashboard();
@@ -1454,7 +1511,7 @@ function deleteVenta(id) {
 
 function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); }
 
-// COMPROBANTE (igual al original - mantener sin cambios)
+// COMPROBANTE
 async function uploadComprobante(ventaId) {
   const input = document.getElementById('f-comprobante');
   const file = input?.files?.[0];
@@ -1495,7 +1552,7 @@ document.addEventListener('click', e => {
     document.querySelectorAll('.dropdown-list').forEach(d => d.style.display = 'none');
 });
 
-// USUARIOS (igual al original - mantener sin cambios)
+// USUARIOS
 async function renderUsers() {
   const { data, error } = await db.from('usuarios').select('*').order('nombre');
   if (error) { toast('❌ Error cargando usuarios', 'error'); return; }
@@ -1572,12 +1629,12 @@ async function saveUser() {
   } catch(e) { toast('❌ ' + e.message, 'error'); }
 }
 
-//  EXPORT CSV
+// EXPORT CSV
 function exportCSV() {
   const isAdmin = currentUser?.rol === 'admin';
   const headers = [
     'ID', 'Fecha', 'Nombre', 'Celular', 'Productos', 'Monto (Bs.)',
-    'Ubicación', 'Estado', 'Notas',
+    'Ubicación', 'Estado', 'Intentos', 'Notas',
     ...(isAdmin ? ['Agente'] : [])
   ];
   const rows = ventas.map(v => [
@@ -1594,6 +1651,7 @@ function exportCSV() {
     v.monto_total || '',
     v.cliente?.ubicacion || '',
     v.estado || '',
+    v.intentos || 1,
     v.notas || '',
     ...(isAdmin ? [v.agente?.nombre || ''] : [])
   ].map(x => `"${(x || '').toString().replace(/"/g, '""')}"`).join(','));
@@ -1607,7 +1665,7 @@ function exportCSV() {
   toast('📥 CSV exportado', 'success');
 }
 
-//  BOLIVIA — Datos geográficos (igual al original)
+// BOLIVIA — Datos geográficos
 const BOLIVIA_GEO = {
   "Santa Cruz": { capital: "Santa Cruz de la Sierra", provincias: { "Andrés Ibáñez": { capital: "Santa Cruz de la Sierra", municipios: ["Santa Cruz de la Sierra","Cotoca","Porongo","La Guardia","El Torno","Warnes"] }, "Warnes": { capital: "Warnes", municipios: ["Warnes","Okinawa Uno"] }, "Ichilo": { capital: "Buena Vista", municipios: ["Buena Vista","San Carlos","Yapacaní","San Juan"] }, "Sara": { capital: "Portachuelo", municipios: ["Portachuelo","Santa Rosa del Sara","Colpa Bélgica"] }, "Obispo Santisteban": { capital: "Montero", municipios: ["Montero","Saavedra","Mineros","General Saavedra"] }, "Ñuflo de Chávez": { capital: "Concepción", municipios: ["Concepción","San Julián","San Antonio de Lomerío","Cuatro Cañadas","San Ramón","San Javier"] }, "Velasco": { capital: "San Ignacio de Velasco", municipios: ["San Ignacio de Velasco","San Miguel de Velasco","San Rafael"] }, "Chiquitos": { capital: "San José de Chiquitos", municipios: ["San José de Chiquitos","Pailón","Roboré","Charagua"] }, "Cordillera": { capital: "Camiri", municipios: ["Camiri","Charagua","Cabezas","Boyuibe","Cuevo","Gutiérrez","Lagunillas"] }, "Florida": { capital: "Samaipata", municipios: ["Samaipata","Mairana","Pampagrande"] }, "Vallegrande": { capital: "Vallegrande", municipios: ["Vallegrande","Moro Moro","Pucará"] }, "Manuel María Caballero": { capital: "Comarapa", municipios: ["Comarapa","Saipina"] }, "Germán Busch": { capital: "Puerto Suárez", municipios: ["Puerto Suárez","Puerto Quijarro","Carmen Rivero Torres"] }, "Ángel Sandoval": { capital: "San Matías", municipios: ["San Matías"] } } },
   "La Paz": { capital: "La Paz", provincias: { "Murillo": { capital: "La Paz", municipios: ["La Paz","El Alto","Palca","Mecapaca","Achocalla","Viacha"] }, "Omasuyos": { capital: "Achacachi", municipios: ["Achacachi","Ancoraimes"] }, "Pacajes": { capital: "Coro Coro", municipios: ["Coro Coro","Comanche","Charaña","Calacoto"] }, "Larecaja": { capital: "Sorata", municipios: ["Sorata","Guanay","Teoponte"] }, "Sud Yungas": { capital: "Chulumani", municipios: ["Chulumani","Irupana","Yanacachi","Palos Blancos","La Asunta"] }, "Nor Yungas": { capital: "Coroico", municipios: ["Coroico","Coripata"] }, "Caranavi": { capital: "Caranavi", municipios: ["Caranavi"] }, "Los Andes": { capital: "Pucarani", municipios: ["Pucarani","Laja","Batallas","Puerto Pérez"] }, "Aroma": { capital: "Sica Sica", municipios: ["Sica Sica","Ayo Ayo","Calamarca","Colquencha","Umala"] } } },
@@ -1628,8 +1686,7 @@ function initGeoSelectors() {
   selDep.innerHTML = '<option value="">— Departamento —</option>';
   Object.keys(BOLIVIA_GEO).sort().forEach(dep => {
     const o = document.createElement('option');
-    o.value = dep;
-    o.textContent = dep;
+    o.value = dep; o.textContent = dep;
     selDep.appendChild(o);
   });
   function updateUbicacionInput() {
@@ -1651,8 +1708,7 @@ function initGeoSelectors() {
     if (!dep) return;
     Object.keys(BOLIVIA_GEO[dep].provincias).sort().forEach(prov => {
       const o = document.createElement('option');
-      o.value = prov;
-      o.textContent = prov;
+      o.value = prov; o.textContent = prov;
       selProv.appendChild(o);
     });
   };
@@ -1671,9 +1727,7 @@ function initGeoSelectors() {
       selMun.appendChild(o);
     });
   };
-  selMun.onchange = () => {
-    updateUbicacionInput();
-  };
+  selMun.onchange = () => { updateUbicacionInput(); };
 }
 
 function onDireccionKeydown(e) {
@@ -1696,35 +1750,21 @@ function toast(msg, type = '') {
   toastTimer = setTimeout(() => el.classList.remove('show'), 4000);
 }
 
-/*
-// CERRAR MODALES AL CLICK EN OVERLAY
-document.getElementById('venta-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeVentaModal(); });
-document.getElementById('user-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeUserModal(); });
-document.getElementById('delete-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeleteModal(); });
-document.getElementById('producto-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeProductoModal(); });
-document.getElementById('delete-confirm-input').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click(); });
-document.getElementById('stat-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeStatModal(); });
-*/
-
-// CERRAR MODALES AL CLICK EN X
+// CERRAR MODALES CON ESCAPE
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const modals = [
-      { id: 'venta-modal', closeFunc: closeVentaModal },
-      { id: 'user-modal', closeFunc: closeUserModal },
-      { id: 'delete-user-modal', closeFunc: closeDeleteUserModal },      
-      { id: 'delete-modal', closeFunc: closeDeleteModal },
-      { id: 'producto-modal', closeFunc: closeProductoModal },
-      { id: 'delete-producto-modal', closeFunc: closeDeleteProductoModal },
-      { id: 'stat-modal', closeFunc: closeStatModal }
+      { id: 'venta-modal',          closeFunc: closeVentaModal },
+      { id: 'user-modal',           closeFunc: closeUserModal },
+      { id: 'delete-user-modal',    closeFunc: closeDeleteUserModal },      
+      { id: 'delete-modal',         closeFunc: closeDeleteModal },
+      { id: 'producto-modal',       closeFunc: closeProductoModal },
+      { id: 'delete-producto-modal',closeFunc: closeDeleteProductoModal },
+      { id: 'stat-modal',           closeFunc: closeStatModal }
     ];
-
     for (const { id, closeFunc } of modals) {
       const modal = document.getElementById(id);
-      if (modal?.classList.contains('open')) {
-        closeFunc();
-        break;
-      }
+      if (modal?.classList.contains('open')) { closeFunc(); break; }
     }
   }
 });
@@ -1733,7 +1773,7 @@ document.getElementById('delete-confirm-input').addEventListener('keydown', e =>
   if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click(); 
 });
 
-// STAT MODAL (igual al original)
+// STAT MODAL
 let statModalPage = 1;
 const STAT_PAGE_SIZE = 10;
 let statModalEstado = '';
