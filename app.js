@@ -343,7 +343,7 @@ async function loadVentas() {
         id, cliente_id, agente_id, fecha, estado, intentos,
         notas, comprobante_url, archivado, monto_total,
         cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
-                             producto_interes, notas, faltas, sin_respuesta, flag ),
+                             producto_interes, notas, faltas, flag ),
         agente:agente_id   ( id, nombre ),
         venta_items ( id, cantidad, subtotal, producto_id, productos ( id, nombre ))
       `)
@@ -456,7 +456,6 @@ function flagBadge(cliente) {
   if (!cliente) return '';
   if (cliente.flag === 'spam') return `<span class="badge badge-spam" title="SPAM: ${cliente.faltas} cancelaciones">🚫 SPAM</span>`;
   if (cliente.faltas >= 1) return `<span class="badge badge-cancelado" title="${cliente.faltas} cancelación(es)">⚠️ ${cliente.faltas} falta${cliente.faltas > 1 ? 's' : ''}</span>`;
-  if (cliente.sin_respuesta >= 4) return `<span class="badge badge-sinresp" title="${cliente.sin_respuesta} sin respuesta">📵 ${cliente.sin_respuesta}×</span>`;
   return '';
 }
 function prodChip(nombre) {
@@ -957,7 +956,7 @@ async function onCelularInput() {
   if (cel.length < 6) return;
   celularTimer = setTimeout(async () => {
     const { data } = await db.from('clientes')
-      .select('id, nombre, ubicacion, producto_interes, notas, faltas, sin_respuesta, flag')
+      .select('id, nombre, ubicacion, producto_interes, notas, faltas, flag')
       .eq('celular', cel).maybeSingle();
     if (data) {
       document.getElementById('f-cliente-id').value = data.id;
@@ -978,18 +977,6 @@ async function onCelularInput() {
       }
       const infoBox = document.getElementById('cliente-info-box');
       infoBox.style.display = '';
-      const isAdmin = currentUser?.rol === 'admin';
-      const sinRespCount = data.sin_respuesta || 0;
-      const chipSinResp = document.querySelector('.quick-chip[data-estado="sin_respuesta"]');
-      if (chipSinResp) {
-        if (sinRespCount >= 4 && !isAdmin) {
-          chipSinResp.classList.add('chip-disabled');
-          chipSinResp.title = `Ya tiene ${sinRespCount} sin respuesta`;
-        } else {
-          chipSinResp.classList.remove('chip-disabled');
-          chipSinResp.title = '';
-        }
-      }
       const { data: cicloAbierto } = await db.from('ventas')
         .select('id, estado, fecha, venta_items( productos:producto_id(nombre) )')
         .eq('cliente_id', data.id).eq('agente_id', currentUser.id).eq('archivado', false)
@@ -1012,7 +999,6 @@ async function onCelularInput() {
       infoBox.innerHTML = spamBanner + cicloWarning + `
         <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;">
           <div style="color:var(--accent2);font-weight:600;margin-bottom:4px;">👤 Cliente registrado ${flagBadge(data)}</div>
-          ${sinRespCount > 0 ? `<div style="color:${sinRespCount >= 3 ? 'var(--red)' : 'var(--text2)'};font-size:11px;">📵 ${sinRespCount}/4 sin respuesta${sinRespCount >= 3 ? ' — ⚠️ próximo cierra el ciclo' : ''}</div>` : ''}
           ${data.faltas > 0 && data.flag !== 'spam' ? `<div style="color:var(--orange);font-size:11px;">❌ ${data.faltas} cancelación(es)</div>` : ''}
           ${data.notas ? `<div style="color:var(--text2);margin-top:4px;">${data.notas}</div>` : ''}
         </div>`;
@@ -1142,7 +1128,7 @@ async function openVentaModal(id) {
 
 function toggleIntentosField(estado) {
   const wrap = document.getElementById('intentos-field');
-  if (wrap) wrap.style.display = estado === 'rellamada' ? '' : 'none';
+  if (wrap) wrap.style.display = ['rellamada', 'sin_respuesta'].includes(estado) ? '' : 'none';
 }
 
 function onIntentosChange() {
@@ -1242,12 +1228,10 @@ async function saveVenta() {
       }
     }
 
-    if (estado === 'sin_respuesta') {
-      const clienteActual = ventas.find(v => v.cliente_id === cId)?.cliente;
-      const sinRespActual = clienteActual?.sin_respuesta || 0;
-      if (sinRespActual >= 3) { // >= 3 porque al guardar este se sumará 1 más = 4
+    if (estado === 'sin_respuesta' && intentos >= 4) {    
+      if (estado === 'sin_respuesta') {
         const ok = confirm(
-          `Este cliente ya tiene ${sinRespActual + 1} sin respuesta.\n` +
+          `Este cliente ya tiene ${intentos} sin respuesta.\n` +
           `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
         );
         if (!ok) return;
@@ -1265,7 +1249,7 @@ async function saveVenta() {
       notas,
       monto_total: monto,
       estado: estadoFinal,
-      intentos: estado === 'rellamada' ? intentos : 1,
+      intentos: ['rellamada', 'sin_respuesta'].includes(estado) ? intentos : 1,
       archivado: debeArchivar,
     };
 
@@ -1307,7 +1291,7 @@ async function saveVenta() {
       .select(`id, cliente_id, agente_id, fecha, estado, intentos,
         notas, comprobante_url, archivado, monto_total,
         cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
-                             producto_interes, notas, faltas, sin_respuesta, flag ),
+                             producto_interes, notas, faltas, flag ),
         agente:agente_id ( id, nombre ),
         venta_items ( id, cantidad, subtotal, producto_id, productos ( id, nombre ))`)
       .eq('id', savedId).single();
@@ -1436,11 +1420,9 @@ function deleteVenta(id) {
       if (error) throw error;
       if (clienteId) {
         const { count: faltas } = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).in('estado', ['cancelado', 'spam']);
-        const { count: sinResp } = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).eq('estado', 'sin_respuesta');
         const { count: spamCount } = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).eq('estado', 'spam');
         await db.from('clientes').update({
-          faltas: faltas || 0,
-          sin_respuesta: sinResp || 0,
+          faltas: faltas || 0,       
           flag: (spamCount || 0) > 0 ? 'spam' : 'normal',
         }).eq('id', clienteId);
       }
