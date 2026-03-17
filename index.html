@@ -377,7 +377,14 @@ venta_items → venta_id, producto_id (FK→productos), cantidad, subtotal</div>
         <div class="field"><label>Usuario</label><input class="smart-input" id="u-user" placeholder="nombre_usuario"></div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Contraseña</label><input class="smart-input" type="password" id="u-pass" placeholder="••••••••"></div>
+        <div class="field">
+          <label>Contraseña</label>
+          <div style="position:relative;">
+            <input class="smart-input" type="password" id="u-pass" placeholder="••••••••" style="padding-right:40px;">
+            <button type="button" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'👁️':'🙈'"
+              style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;">👁️</button>
+          </div>
+        </div>
         <div class="field"><label>Rol</label>
           <select class="smart-input" id="u-rol">
             <option value="agente">Agente</option>
