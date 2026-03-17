@@ -188,7 +188,7 @@ function selectPromo(idx, precioTotal, etiqueta) {
   const current = document.getElementById('f-promo-index').value;
   const chips   = document.querySelectorAll('#promociones-chips .quick-chip');
 
-  if (current == idx) {
+  if (current !== '' && parseInt(current) === idx) {
     document.getElementById('f-promo-index').value = '';
     chips.forEach(c => { c.classList.remove('active'); c.style.background='var(--yellow-bg)'; c.style.color='var(--yellow)'; c.style.borderColor='var(--yellow)'; });
     onCantidadChange();
@@ -498,7 +498,7 @@ function renderDashboard() {
 
   const prods = {};
   ventas.forEach(v => {
-    const nombre = v.producto_rel?.nombre || 'Sin producto';
+    const nombre = v.producto_rel?.nombre || v.producto || 'Sin producto';
     prods[nombre] = (prods[nombre] || 0) + 1;
   });
   const maxP = Math.max(...Object.values(prods), 1);
@@ -584,7 +584,7 @@ function getFiltered() {
     if (!!v.archivado !== mostrarArchivados) return false;
     const nombre     = v.cliente?.nombre || '';
     const cel        = v.cliente?.celular || '';
-    const prodNombre = v.producto_rel?.nombre || '';
+    const prodNombre = v.producto_rel?.nombre || v.producto || '';
     const haystack   = `${nombre} ${cel} ${prodNombre} ${v.ciudad||''} ${v.notas||''}`.toLowerCase();
     if (search && !haystack.includes(search)) return false;
     if (status && v.estado !== status) return false;
@@ -608,7 +608,7 @@ function renderVentas() {
   document.getElementById('table-count').textContent  = `${total} registros`;
 
   document.getElementById('ventas-tbody').innerHTML = page.map(v => {
-    const prodNombre = v.producto_rel?.nombre || '';
+    const prodNombre = v.producto_rel?.nombre || v.producto || '';
     return `
     <tr onclick="openVentaModal(${v.id})" style="${v.archivado?'opacity:0.6;':''}">
       <td style="color:var(--text2);font-size:12px;">${v.fecha||''}${v.archivado?' 🔒':''}</td>
@@ -946,6 +946,7 @@ async function saveVenta() {
       agente_id:   agenteId,
       fecha, ciudad, notas,
       producto_id: productoId,
+      producto:    prodNombreParaPerfil,
       cantidad,
       monto_total: monto,
       estado:      estadoFinal,
@@ -1132,7 +1133,7 @@ function exportCSV() {
   const rows = ventas.map(v=>[
     v.id, v.fecha,
     v.cliente?.nombre||'', v.cliente?.celular||'',
-    v.producto_rel?.nombre ||'',
+    v.producto_rel?.nombre||v.producto||'',
     v.cantidad||1, v.monto_total||'',
     v.ciudad||v.cliente?.ciudad||'',
     v.estado||'', v.notas||'',
@@ -1169,11 +1170,25 @@ function initGeoSelectors() {
   Object.keys(BOLIVIA_GEO).sort().forEach(dep => {
     const o = document.createElement('option'); o.value = dep; o.textContent = dep; selDep.appendChild(o);
   });
+  // Helper para actualizar f-ciudad progresivamente
+  function updateCiudadInput() {
+    const dep  = selDep.value;
+    const prov = selProv.value;
+    const mun  = selMun.value;
+    const inp  = document.getElementById('f-ciudad');
+    if (!inp) return;
+    if (mun)       inp.value = `${dep} - ${prov} - ${mun}`;
+    else if (prov) inp.value = `${dep} - ${prov}`;
+    else if (dep)  inp.value = dep;
+    else           inp.value = '';
+  }
+
   selDep.onchange = () => {
     const dep = selDep.value;
     selProv.innerHTML = '<option value="">— Provincia —</option>';
     selMun.innerHTML  = '<option value="">— Municipio —</option>';
     selProv.disabled  = !dep; selMun.disabled = true;
+    updateCiudadInput();
     if (!dep) return;
     Object.keys(BOLIVIA_GEO[dep].provincias).sort().forEach(prov => {
       const o = document.createElement('option'); o.value = prov; o.textContent = prov; selProv.appendChild(o);
@@ -1183,6 +1198,7 @@ function initGeoSelectors() {
     const dep = selDep.value; const prov = selProv.value;
     selMun.innerHTML = '<option value="">— Municipio —</option>';
     selMun.disabled  = !prov;
+    updateCiudadInput();
     if (!dep || !prov) return;
     const provData = BOLIVIA_GEO[dep].provincias[prov];
     const capDep   = BOLIVIA_GEO[dep].capital;
@@ -1193,8 +1209,7 @@ function initGeoSelectors() {
     });
   };
   selMun.onchange = () => {
-    const mun = selMun.value;
-    if (mun) { const inp = document.getElementById('f-ciudad'); if (inp) { inp.value = mun; inp.dispatchEvent(new Event('input')); } }
+    updateCiudadInput();
   };
 }
 
