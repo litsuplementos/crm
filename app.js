@@ -7,9 +7,6 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ═══════════════════════════════════════════════
-//  CONSTANTES DE ESTADO
-// ═══════════════════════════════════════════════
 const ESTADOS = {
   rellamada:    { label: '🔁 Rellamada',      badge: 'badge-rellamada',  color: 'var(--accent2)' },
   seguimiento:  { label: '🔄 Seguimiento',    badge: 'badge-seguimiento',color: 'var(--blue)' },
@@ -26,21 +23,16 @@ const ESTADOS = {
 const ESTADOS_CIERRE  = ['vendido', 'no_interesado', 'spam', 'cancelado'];
 const MAX_RELLAMADAS  = 3;
 
-// ═══════════════════════════════════════════════
-//  STATE
-// ═══════════════════════════════════════════════
 let currentUser     = null;
 let ventas          = [];
 let allAgents       = [];
-let allProductos    = [];   // catálogo completo de productos
+let allProductos    = [];
 let selectedAgentId = 'all';
 let currentPage     = 1;
 const PAGE_SIZE     = 25;
 let mostrarArchivados = false;
 
-// ═══════════════════════════════════════════════
-//  THEME
-// ═══════════════════════════════════════════════
+// ═══ THEME ═══
 function initTheme() {
   applyTheme(localStorage.getItem('litcrm-theme') || 'white');
 }
@@ -60,9 +52,7 @@ function toggleTheme() {
   applyTheme(order[(order.indexOf(cur) + 1) % 3]);
 }
 
-// ═══════════════════════════════════════════════
-//  AUTH
-// ═══════════════════════════════════════════════
+// ═══ AUTH ═══
 async function doLogin() {
   const u = document.getElementById('login-user').value.trim();
   const p = document.getElementById('login-pass').value;
@@ -100,9 +90,7 @@ function doLogout() {
   showViewDirect('dashboard');
 }
 
-// ═══════════════════════════════════════════════
-//  INIT
-// ═══════════════════════════════════════════════
+// ═══ INIT ═══
 async function initApp() {
   document.getElementById('dash-date').textContent =
     new Date().toLocaleDateString('es-BO', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
@@ -116,9 +104,7 @@ async function initApp() {
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
 }
 
-// ═══════════════════════════════════════════════
-//  PRODUCTOS — cargar catálogo
-// ═══════════════════════════════════════════════
+// ═══ PRODUCTOS — catálogo ═══
 async function loadProductos() {
   const { data, error } = await db.from('productos')
     .select('*').eq('activo', true).order('nombre');
@@ -152,16 +138,14 @@ function populateProductoSelect() {
   });
 }
 
-// ═══════════════════════════════════════════════
-//  PRODUCTOS — lógica de precio en modal venta
-// ═══════════════════════════════════════════════
+// ═══ PRODUCTOS — lógica de precio en modal venta ═══
 function onProductoChange() {
   const pid = parseInt(document.getElementById('f-producto-id').value);
   const prod = allProductos.find(p => p.id === pid);
-  const promosWrap = document.getElementById('promociones-wrap');
+  const promosWrap  = document.getElementById('promociones-wrap');
   const promosChips = document.getElementById('promociones-chips');
-  const montoInput = document.getElementById('f-monto');
-  const montoTag = document.getElementById('monto-tag');
+  const montoInput  = document.getElementById('f-monto');
+  const montoTag    = document.getElementById('monto-tag');
   document.getElementById('f-promo-index').value = '';
 
   if (!prod) {
@@ -171,12 +155,10 @@ function onProductoChange() {
     return;
   }
 
-  // Calcular precio base x cantidad
   const cant = parseInt(document.getElementById('f-cantidad').value) || 1;
   montoInput.value = (prod.precio_base * cant).toFixed(2);
   montoTag.textContent = `precio base: Bs.${prod.precio_base} × ${cant}`;
 
-  // Mostrar promociones si hay
   const promos = prod.promociones || [];
   if (promos.length > 0) {
     promosWrap.style.display = '';
@@ -191,11 +173,10 @@ function onProductoChange() {
 }
 
 function onCantidadChange() {
-  const pid = parseInt(document.getElementById('f-producto-id').value);
+  const pid  = parseInt(document.getElementById('f-producto-id').value);
   const prod = allProductos.find(p => p.id === pid);
   if (!prod) return;
-  const cant = parseInt(document.getElementById('f-cantidad').value) || 1;
-  // Solo recalcular si no hay promo activa
+  const cant     = parseInt(document.getElementById('f-cantidad').value) || 1;
   const promoIdx = document.getElementById('f-promo-index').value;
   if (promoIdx === '') {
     document.getElementById('f-monto').value = (prod.precio_base * cant).toFixed(2);
@@ -204,15 +185,13 @@ function onCantidadChange() {
 }
 
 function selectPromo(idx, precioTotal, etiqueta) {
-  // Toggle: si ya está seleccionada, deseleccionar
   const current = document.getElementById('f-promo-index').value;
-  const chips = document.querySelectorAll('#promociones-chips .quick-chip');
+  const chips   = document.querySelectorAll('#promociones-chips .quick-chip');
 
   if (current == idx) {
-    // Deseleccionar
     document.getElementById('f-promo-index').value = '';
     chips.forEach(c => { c.classList.remove('active'); c.style.background='var(--yellow-bg)'; c.style.color='var(--yellow)'; c.style.borderColor='var(--yellow)'; });
-    onCantidadChange(); // volver a precio base
+    onCantidadChange();
     return;
   }
 
@@ -224,17 +203,14 @@ function selectPromo(idx, precioTotal, etiqueta) {
   document.getElementById('f-monto').value = precioTotal.toFixed(2);
   document.getElementById('monto-tag').textContent = `promoción: ${etiqueta}`;
 
-  // Actualizar cantidad al de la promo
-  const pid = parseInt(document.getElementById('f-producto-id').value);
+  const pid  = parseInt(document.getElementById('f-producto-id').value);
   const prod = allProductos.find(p => p.id === pid);
   if (prod && prod.promociones[idx]) {
     document.getElementById('f-cantidad').value = prod.promociones[idx].cantidad;
   }
 }
 
-// ═══════════════════════════════════════════════
-//  PRODUCTOS — vista admin (CRUD)
-// ═══════════════════════════════════════════════
+// ═══ PRODUCTOS — vista admin CRUD ═══
 async function renderProductos() {
   await loadProductosAll();
   const grid = document.getElementById('productos-grid');
@@ -276,17 +252,17 @@ function openProductoModal(id) {
     const prod = allProductos.find(p => p.id === id);
     if (!prod) return;
     document.getElementById('producto-modal-title').textContent = 'Editar Producto';
-    document.getElementById('edit-producto-id').value = id;
-    document.getElementById('p-nombre').value = prod.nombre;
-    document.getElementById('p-precio-base').value = prod.precio_base;
-    document.getElementById('p-activo').value = prod.activo ? 'true' : 'false';
+    document.getElementById('edit-producto-id').value  = id;
+    document.getElementById('p-nombre').value          = prod.nombre;
+    document.getElementById('p-precio-base').value     = prod.precio_base;
+    document.getElementById('p-activo').value          = prod.activo ? 'true' : 'false';
     (prod.promociones || []).forEach(pr => addPromoRow(pr));
   } else {
     document.getElementById('producto-modal-title').textContent = 'Nuevo Producto';
     document.getElementById('edit-producto-id').value = '';
-    document.getElementById('p-nombre').value = '';
-    document.getElementById('p-precio-base').value = '';
-    document.getElementById('p-activo').value = 'true';
+    document.getElementById('p-nombre').value         = '';
+    document.getElementById('p-precio-base').value    = '';
+    document.getElementById('p-activo').value         = 'true';
   }
 }
 
@@ -296,48 +272,39 @@ function closeProductoModal() {
 
 function addPromoRow(data) {
   const wrap = document.getElementById('promos-editor');
-  const div = document.createElement('div');
+  const div  = document.createElement('div');
   div.style.cssText = 'display:grid;grid-template-columns:80px 1fr auto;gap:8px;align-items:center;';
   div.innerHTML = `
     <div>
       <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0.5px;margin-bottom:4px;text-transform:uppercase;">Cantidad</div>
       <input class="smart-input promo-cant" type="number" min="1" placeholder="2"
-        value="${data?.cantidad||''}" style="text-align:center;" oninput="updatePromoEtiqueta(this)">
+        value="${data?.cantidad||''}" style="text-align:center;">
     </div>
     <div>
       <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0.5px;margin-bottom:4px;text-transform:uppercase;">Precio total (Bs.)</div>
       <input class="smart-input promo-precio" type="number" min="0" step="0.01" placeholder="270.00"
-        value="${data?.precio_total||''}" oninput="updatePromoEtiqueta(this)">
+        value="${data?.precio_total||''}">
     </div>
     <button type="button" onclick="this.parentElement.remove()"
       style="background:var(--red-bg);border:1px solid var(--red);border-radius:6px;padding:6px 9px;color:var(--red);cursor:pointer;margin-top:16px;">✕</button>`;
   wrap.appendChild(div);
 }
 
-function updatePromoEtiqueta(el) {
-  // La etiqueta se genera automáticamente al guardar: "x{cant} — Bs.{precio}"
-}
-
 async function saveProducto() {
-  const id = document.getElementById('edit-producto-id').value;
-  const nombre = document.getElementById('p-nombre').value.trim();
+  const id         = document.getElementById('edit-producto-id').value;
+  const nombre     = document.getElementById('p-nombre').value.trim();
   const precioBase = parseFloat(document.getElementById('p-precio-base').value) || 0;
-  const activo = document.getElementById('p-activo').value === 'true';
+  const activo     = document.getElementById('p-activo').value === 'true';
 
   if (!nombre) { toast('⚠️ El nombre es obligatorio', 'error'); return; }
 
-  // Construir array de promociones desde el editor
   const rows = document.querySelectorAll('#promos-editor > div');
   const promociones = [];
   for (const row of rows) {
-    const cant = parseInt(row.querySelector('.promo-cant').value);
+    const cant   = parseInt(row.querySelector('.promo-cant').value);
     const precio = parseFloat(row.querySelector('.promo-precio').value);
     if (cant > 0 && precio > 0) {
-      promociones.push({
-        cantidad: cant,
-        precio_total: precio,
-        etiqueta: `x${cant} — Bs.${precio.toFixed(0)}`
-      });
+      promociones.push({ cantidad: cant, precio_total: precio, etiqueta: `x${cant} — Bs.${precio.toFixed(0)}` });
     }
   }
 
@@ -369,14 +336,12 @@ async function toggleProductoActivo(id, activo) {
   if (!confirm(`¿${accion} este producto?`)) return;
   const { error } = await db.from('productos').update({ activo: !activo }).eq('id', id);
   if (error) { toast('❌ ' + error.message, 'error'); return; }
-  toast(`✅ Producto ${accion === 'desactivar' ? 'desactivado' : 'activado'}`);
+  toast(`✅ Producto ${activo ? 'desactivado' : 'activado'}`);
   await loadProductosAll();
   renderProductos();
 }
 
-// ═══════════════════════════════════════════════
-//  CARGAR VENTAS
-// ═══════════════════════════════════════════════
+// ═══ CARGAR VENTAS ═══
 async function loadVentas() {
   try {
     let query = db.from('ventas')
@@ -454,9 +419,7 @@ async function syncData() {
   } finally { btn.classList.remove('syncing'); }
 }
 
-// ═══════════════════════════════════════════════
-//  NAV
-// ═══════════════════════════════════════════════
+// ═══ NAV ═══
 function showView(name) {
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
@@ -474,9 +437,7 @@ function showViewDirect(name) {
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
 }
 
-// ═══════════════════════════════════════════════
-//  STATUS HELPERS
-// ═══════════════════════════════════════════════
+// ═══ STATUS HELPERS ═══
 function statusBadge(estado) {
   const e = ESTADOS[estado] || ESTADOS.rellamada;
   return `<span class="badge ${e.badge}">${e.label}</span>`;
@@ -502,11 +463,9 @@ function montoChip(monto) {
   return `<span style="background:var(--green-bg);border:1px solid var(--green);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;">Bs.${parseFloat(monto).toFixed(0)}</span>`;
 }
 
-// ═══════════════════════════════════════════════
-//  DASHBOARD
-// ═══════════════════════════════════════════════
+// ═══ DASHBOARD ═══
 function renderDashboard() {
-  const isAdmin   = currentUser.rol === 'admin';
+  const isAdmin    = currentUser.rol === 'admin';
   const showingAll = selectedAgentId === 'all';
 
   let subtitle = isAdmin
@@ -537,7 +496,6 @@ function renderDashboard() {
       <div class="stat-value" style="color:var(--red);">${sinResp}</div><div class="stat-label">SIN RESPUESTA</div></div>
   `;
 
-  // Por producto (usando producto_rel.nombre o producto legacy)
   const prods = {};
   ventas.forEach(v => {
     const nombre = v.producto_rel?.nombre || v.producto || 'Sin producto';
@@ -549,7 +507,6 @@ function renderDashboard() {
     <div class="bar-track"><div class="bar-fill" style="width:${(v/maxP*100).toFixed(0)}%;background:var(--accent)"></div></div>
     <div class="bar-count">${v}</div></div>`).join('') || '<p style="color:var(--text3);font-size:13px;">Sin datos</p>';
 
-  // Pipeline
   const sCounts = {};
   Object.keys(ESTADOS).forEach(k => sCounts[k] = ventas.filter(v=>v.estado===k).length);
   const maxS = Math.max(...Object.values(sCounts), 1);
@@ -558,7 +515,6 @@ function renderDashboard() {
     <div class="bar-track"><div class="bar-fill" style="width:${(sCounts[k]/maxS*100).toFixed(0)}%;background:${e.color}"></div></div>
     <div class="bar-count">${sCounts[k]}</div></div>`).join('');
 
-  // Ciudades
   const cities = {};
   ventas.forEach(v => {
     const c = v.ciudad || v.cliente?.ciudad;
@@ -571,7 +527,6 @@ function renderDashboard() {
     <div class="bar-track"><div class="bar-fill" style="width:${(v/maxC*100).toFixed(0)}%;background:var(--blue)"></div></div>
     <div class="bar-count">${v}</div></div>`).join('') || '<p style="color:var(--text3);font-size:13px;">Sin datos</p>';
 
-  // Pendientes
   const pending = ventas.filter(v=>['seguimiento','rellamada','interesado','agendar'].includes(v.estado)).slice(0,10);
   document.getElementById('today-list').innerHTML = pending.length === 0
     ? '<div class="empty-state"><div class="emoji">🎉</div><p>Sin pendientes</p></div>'
@@ -587,7 +542,6 @@ function renderDashboard() {
       <div class="today-phone"><a href="tel:${v.cliente?.celular}" style="color:var(--accent2);text-decoration:none;">${v.cliente?.celular||''}</a></div>
     </div>`).join('');
 
-  // Rendimiento por agente (admin)
   if (isAdmin && showingAll && allAgents.length > 0) {
     const agStats = allAgents.filter(a=>a.rol==='agente').map(ag=>{
       const av = ventas.filter(v=>v.agente_id===ag.id);
@@ -612,9 +566,7 @@ function renderDashboard() {
   }
 }
 
-// ═══════════════════════════════════════════════
-//  VENTAS — lista + filtros
-// ═══════════════════════════════════════════════
+// ═══ VENTAS — lista + filtros ═══
 function populateCityFilter() {
   const cities = [...new Set(ventas.map(v=>v.ciudad||v.cliente?.ciudad).filter(c=>c&&c!=='s/c'&&c!==''))].sort();
   const sel = document.getElementById('filter-ciudad');
@@ -623,17 +575,17 @@ function populateCityFilter() {
 }
 
 function getFiltered() {
-  const search  = document.getElementById('search-input').value.toLowerCase();
-  const status  = document.getElementById('filter-status').value;
-  const prodId  = document.getElementById('filter-producto').value;
-  const ciudad  = document.getElementById('filter-ciudad').value;
-  const agente  = document.getElementById('filter-agente')?.value || '';
+  const search = document.getElementById('search-input').value.toLowerCase();
+  const status = document.getElementById('filter-status').value;
+  const prodId = document.getElementById('filter-producto').value;
+  const ciudad = document.getElementById('filter-ciudad').value;
+  const agente = document.getElementById('filter-agente')?.value || '';
   return ventas.filter(v => {
     if (!!v.archivado !== mostrarArchivados) return false;
-    const nombre = v.cliente?.nombre || '';
-    const cel    = v.cliente?.celular || '';
+    const nombre     = v.cliente?.nombre || '';
+    const cel        = v.cliente?.celular || '';
     const prodNombre = v.producto_rel?.nombre || v.producto || '';
-    const haystack = `${nombre} ${cel} ${prodNombre} ${v.ciudad||''} ${v.notas||''}`.toLowerCase();
+    const haystack   = `${nombre} ${cel} ${prodNombre} ${v.ciudad||''} ${v.notas||''}`.toLowerCase();
     if (search && !haystack.includes(search)) return false;
     if (status && v.estado !== status) return false;
     if (prodId && v.producto_id != prodId) return false;
@@ -704,9 +656,7 @@ function setArchivoFiltro(archivado) {
   renderVentas();
 }
 
-// ═══════════════════════════════════════════════
-//  MODAL VENTA — Nuevo o Editar
-// ═══════════════════════════════════════════════
+// ═══ MODAL VENTA ═══
 let celularTimer = null;
 
 async function onCelularInput() {
@@ -723,11 +673,10 @@ async function onCelularInput() {
       .eq('celular', cel).maybeSingle();
 
     if (data) {
-      document.getElementById('f-cliente-id').value  = data.id;
-      document.getElementById('f-nombre').value      = data.nombre || '';
-      document.getElementById('f-ciudad').value      = data.ciudad || '';
+      document.getElementById('f-cliente-id').value = data.id;
+      document.getElementById('f-nombre').value     = data.nombre || '';
+      document.getElementById('f-ciudad').value     = data.ciudad || '';
 
-      // Auto-seleccionar producto de interés si coincide
       if (data.producto_interes) {
         const matchProd = allProductos.find(p =>
           p.nombre.toLowerCase().includes(data.producto_interes.toLowerCase()) ||
@@ -739,9 +688,9 @@ async function onCelularInput() {
         }
       }
 
-      const infoBox    = document.getElementById('cliente-info-box');
+      const infoBox      = document.getElementById('cliente-info-box');
       infoBox.style.display = '';
-      const isAdmin    = currentUser?.rol === 'admin';
+      const isAdmin      = currentUser?.rol === 'admin';
       const sinRespCount = data.sin_respuesta || 0;
 
       const chipSinResp = document.querySelector('.quick-chip[data-estado="sin_respuesta"]');
@@ -783,27 +732,31 @@ async function onCelularInput() {
     } else {
       document.getElementById('f-cliente-id').value = '';
       sugg.textContent = '✨ Nuevo cliente — se creará el perfil al guardar';
-      sugg.style.background = 'var(--green-bg)';
+      sugg.style.background  = 'var(--green-bg)';
       sugg.style.borderColor = 'rgba(34,211,164,0.3)';
-      sugg.style.color = 'var(--green)';
-      sugg.style.display = 'block';
+      sugg.style.color       = 'var(--green)';
+      sugg.style.display     = 'block';
     }
   }, 350);
 }
 
-function openVentaModal(id) {
+// ── CORRECCIÓN: async + producto asignado DESPUÉS de populateProductoSelect ──
+async function openVentaModal(id) {
   document.getElementById('venta-modal').classList.add('open');
   document.querySelectorAll('.quick-chip').forEach(ch => {
     ch.classList.remove('active','chip-disabled'); ch.title = '';
   });
-  document.getElementById('celular-suggestion').style.display = 'none';
-  document.getElementById('cliente-info-box').style.display = 'none';
-  document.getElementById('f-comprobante').value = '';
-  document.getElementById('promociones-wrap').style.display = 'none';
-  document.getElementById('promociones-chips').innerHTML = '';
-  document.getElementById('f-promo-index').value = '';
-  document.getElementById('monto-tag').textContent = '';
+  document.getElementById('celular-suggestion').style.display  = 'none';
+  document.getElementById('cliente-info-box').style.display    = 'none';
+  document.getElementById('f-comprobante').value               = '';
+  document.getElementById('promociones-wrap').style.display    = 'none';
+  document.getElementById('promociones-chips').innerHTML       = '';
+  document.getElementById('f-promo-index').value               = '';
+  document.getElementById('monto-tag').textContent             = '';
   renderComprobantePreview(null);
+
+  // Garantizar que el catálogo esté cargado antes de poblar el select
+  if (allProductos.length === 0) await loadProductos();
   populateProductoSelect();
 
   const af = document.getElementById('agente-field');
@@ -824,7 +777,7 @@ function openVentaModal(id) {
     const archivedBanner = document.getElementById('archived-banner');
     if (archivedBanner) archivedBanner.style.display = isArchivado ? '' : 'none';
 
-    const isAdmin   = currentUser?.rol === 'admin';
+    const isAdmin    = currentUser?.rol === 'admin';
     const shouldLock = isArchivado && !isAdmin;
     ['f-fecha','f-celular','f-nombre','f-ciudad','f-notas','f-intentos','f-direccion','f-producto-id','f-cantidad','f-monto'].forEach(fid => {
       const el = document.getElementById(fid); if (el) el.disabled = shouldLock;
@@ -835,18 +788,18 @@ function openVentaModal(id) {
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) saveBtn.style.display = shouldLock ? 'none' : '';
 
-    document.getElementById('edit-venta-id').value   = id;
-    document.getElementById('f-fecha').value         = v.fecha || '';
-    document.getElementById('f-celular').value       = v.cliente?.celular || '';
-    document.getElementById('f-nombre').value        = v.cliente?.nombre || '';
-    document.getElementById('f-cliente-id').value    = v.cliente_id || '';
-    document.getElementById('f-ciudad').value        = v.ciudad || v.cliente?.ciudad || '';
-    document.getElementById('f-notas').value         = v.notas || '';
-    document.getElementById('f-direccion').value     = v.cliente?.direccion_residencial || '';
-    document.getElementById('f-cantidad').value      = v.cantidad || 1;
-    document.getElementById('f-monto').value         = v.monto_total || '';
+    document.getElementById('edit-venta-id').value    = id;
+    document.getElementById('f-fecha').value          = v.fecha || '';
+    document.getElementById('f-celular').value        = v.cliente?.celular || '';
+    document.getElementById('f-nombre').value         = v.cliente?.nombre || '';
+    document.getElementById('f-cliente-id').value     = v.cliente_id || '';
+    document.getElementById('f-ciudad').value         = v.ciudad || v.cliente?.ciudad || '';
+    document.getElementById('f-notas').value          = v.notas || '';
+    document.getElementById('f-direccion').value      = v.cliente?.direccion_residencial || '';
+    document.getElementById('f-cantidad').value       = v.cantidad || 1;
+    document.getElementById('f-monto').value          = v.monto_total || '';
 
-    // Producto
+    // ── Producto: asignar DESPUÉS de que el select ya tiene opciones ──
     if (v.producto_id) {
       document.getElementById('f-producto-id').value = v.producto_id;
       onProductoChange();
@@ -864,6 +817,7 @@ function openVentaModal(id) {
     if (currentUser.rol === 'admin' && v.agente_id)
       document.getElementById('f-agente').value = v.agente_id;
     renderComprobantePreview(v.comprobante_url || null);
+
   } else {
     document.getElementById('modal-title').textContent = 'Nuevo Registro';
     document.getElementById('edit-venta-id').value = '';
@@ -875,16 +829,16 @@ function openVentaModal(id) {
     document.querySelectorAll('.quick-chip').forEach(ch => { ch.style.pointerEvents=''; ch.style.opacity=''; });
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) saveBtn.style.display = '';
-    document.getElementById('f-fecha').value    = new Date().toISOString().split('T')[0];
-    document.getElementById('f-celular').value  = '';
-    document.getElementById('f-nombre').value   = '';
-    document.getElementById('f-cliente-id').value = '';
-    document.getElementById('f-ciudad').value   = '';
-    document.getElementById('f-notas').value    = '';
-    document.getElementById('f-direccion').value = '';
-    document.getElementById('f-cantidad').value = 1;
-    document.getElementById('f-monto').value    = '';
-    document.getElementById('f-producto-id').value = '';
+    document.getElementById('f-fecha').value         = new Date().toISOString().split('T')[0];
+    document.getElementById('f-celular').value       = '';
+    document.getElementById('f-nombre').value        = '';
+    document.getElementById('f-cliente-id').value    = '';
+    document.getElementById('f-ciudad').value        = '';
+    document.getElementById('f-notas').value         = '';
+    document.getElementById('f-direccion').value     = '';
+    document.getElementById('f-cantidad').value      = 1;
+    document.getElementById('f-monto').value         = '';
+    document.getElementById('f-producto-id').value   = '';
     const mpNew = document.getElementById('maps-preview'); if (mpNew) mpNew.innerHTML = '';
     ['sel-departamento','sel-provincia','sel-municipio'].forEach(sid => {
       const el = document.getElementById(sid); if (el) { el.value=''; if(sid!=='sel-departamento') el.disabled=true; }
@@ -930,19 +884,19 @@ function setEstado(value, el) {
 function closeVentaModal() { document.getElementById('venta-modal').classList.remove('open'); }
 
 async function saveVenta() {
-  const ventaId   = document.getElementById('edit-venta-id').value;
-  const celular   = document.getElementById('f-celular').value.trim();
-  const nombre    = document.getElementById('f-nombre').value.trim();
-  const clienteId = document.getElementById('f-cliente-id').value;
-  const estado    = document.getElementById('f-estado').value;
-  const ciudad    = document.getElementById('f-ciudad').value.trim();
-  const notas     = document.getElementById('f-notas').value.trim();
-  const intentos  = parseInt(document.getElementById('f-intentos').value) || 1;
-  const fecha     = document.getElementById('f-fecha').value;
-  const cantidad  = parseInt(document.getElementById('f-cantidad').value) || 1;
-  const monto     = parseFloat(document.getElementById('f-monto').value) || null;
+  const ventaId    = document.getElementById('edit-venta-id').value;
+  const celular    = document.getElementById('f-celular').value.trim();
+  const nombre     = document.getElementById('f-nombre').value.trim();
+  const clienteId  = document.getElementById('f-cliente-id').value;
+  const estado     = document.getElementById('f-estado').value;
+  const ciudad     = document.getElementById('f-ciudad').value.trim();
+  const notas      = document.getElementById('f-notas').value.trim();
+  const intentos   = parseInt(document.getElementById('f-intentos').value) || 1;
+  const fecha      = document.getElementById('f-fecha').value;
+  const cantidad   = parseInt(document.getElementById('f-cantidad').value) || 1;
+  const monto      = parseFloat(document.getElementById('f-monto').value) || null;
   const productoId = parseInt(document.getElementById('f-producto-id').value) || null;
-  const agenteId  = currentUser.rol === 'admin'
+  const agenteId   = currentUser.rol === 'admin'
     ? document.getElementById('f-agente')?.value || currentUser.id
     : currentUser.id;
 
@@ -992,7 +946,7 @@ async function saveVenta() {
       agente_id:   agenteId,
       fecha, ciudad, notas,
       producto_id: productoId,
-      producto:    prodNombreParaPerfil,  // campo legacy, mantener compatibilidad
+      producto:    prodNombreParaPerfil,
       cantidad,
       monto_total: monto,
       estado:      estadoFinal,
@@ -1033,11 +987,9 @@ async function saveVenta() {
   }
 }
 
-// ═══════════════════════════════════════════════
-//  DELETE VENTA
-// ═══════════════════════════════════════════════
+// ═══ DELETE VENTA ═══
 function deleteVenta(id) {
-  const v = ventas.find(x => x.id === id);
+  const v       = ventas.find(x => x.id === id);
   const celular = v?.cliente?.celular || '';
   const nombre  = v?.cliente?.nombre  || 's/n';
   document.getElementById('delete-modal-nombre').textContent  = nombre;
@@ -1056,7 +1008,7 @@ function deleteVenta(id) {
     }
     document.getElementById('delete-modal').classList.remove('open');
     try {
-      const vent = ventas.find(x => x.id === id);
+      const vent      = ventas.find(x => x.id === id);
       const clienteId = vent?.cliente_id;
       const { error } = await db.from('ventas').delete().eq('id', id);
       if (error) throw error;
@@ -1073,9 +1025,7 @@ function deleteVenta(id) {
 }
 function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); }
 
-// ═══════════════════════════════════════════════
-//  COMPROBANTE
-// ═══════════════════════════════════════════════
+// ═══ COMPROBANTE ═══
 async function uploadComprobante(ventaId) {
   const input = document.getElementById('f-comprobante');
   const file  = input?.files?.[0];
@@ -1108,17 +1058,13 @@ function renderComprobantePreview(url) {
     : `<div style="margin-top:8px;position:relative;display:inline-block;"><img src="${url}" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);" onerror="this.style.display='none'"><button type="button" class="icon-btn danger" onclick="deleteComprobante('${url}',parseInt(document.getElementById('edit-venta-id').value))" style="position:absolute;top:4px;right:4px;font-size:11px;padding:3px 7px;background:var(--surface);">🗑️</button></div>`;
 }
 
-// ═══════════════════════════════════════════════
-//  SMART INPUTS
-// ═══════════════════════════════════════════════
+// ═══ SMART INPUTS ═══
 document.addEventListener('click', e => {
   if (!e.target.closest('.smart-input-row'))
     document.querySelectorAll('.dropdown-list').forEach(d=>d.style.display='none');
 });
 
-// ═══════════════════════════════════════════════
-//  USUARIOS (admin)
-// ═══════════════════════════════════════════════
+// ═══ USUARIOS (admin) ═══
 async function renderUsers() {
   const { data, error } = await db.from('usuarios').select('*').order('nombre');
   if (error) { toast('❌ Error cargando usuarios','error'); return; }
@@ -1163,7 +1109,7 @@ function openUserModal(id) {
 }
 function closeUserModal() { document.getElementById('user-modal').classList.remove('open'); }
 async function saveUser() {
-  const id = document.getElementById('edit-user-id').value;
+  const id   = document.getElementById('edit-user-id').value;
   const data = {
     nombre:   document.getElementById('u-nombre').value.trim(),
     usuario:  document.getElementById('u-user').value.trim(),
@@ -1180,9 +1126,7 @@ async function saveUser() {
   } catch(e) { toast('❌ '+e.message,'error'); }
 }
 
-// ═══════════════════════════════════════════════
-//  EXPORT CSV
-// ═══════════════════════════════════════════════
+// ═══ EXPORT CSV ═══
 function exportCSV() {
   const isAdmin = currentUser?.rol === 'admin';
   const headers = ['ID','Fecha','Nombre','Celular','Producto','Cantidad','Monto (Bs.)','Ciudad','Estado','Notas',...(isAdmin?['Agente']:[])];
@@ -1190,8 +1134,7 @@ function exportCSV() {
     v.id, v.fecha,
     v.cliente?.nombre||'', v.cliente?.celular||'',
     v.producto_rel?.nombre||v.producto||'',
-    v.cantidad||1,
-    v.monto_total||'',
+    v.cantidad||1, v.monto_total||'',
     v.ciudad||v.cliente?.ciudad||'',
     v.estado||'', v.notas||'',
     ...(isAdmin?[v.agente?.nombre||'']:[])
@@ -1205,9 +1148,7 @@ function exportCSV() {
   toast('📥 CSV exportado','success');
 }
 
-// ═══════════════════════════════════════════════
-//  BOLIVIA — Datos geográficos
-// ═══════════════════════════════════════════════
+// ═══ BOLIVIA — Datos geográficos ═══
 const BOLIVIA_GEO = {
   "Santa Cruz": { capital: "Santa Cruz de la Sierra", provincias: { "Andrés Ibáñez": { capital: "Santa Cruz de la Sierra", municipios: ["Santa Cruz de la Sierra","Cotoca","Porongo","La Guardia","El Torno","Warnes"] }, "Warnes": { capital: "Warnes", municipios: ["Warnes","Okinawa Uno"] }, "Ichilo": { capital: "Buena Vista", municipios: ["Buena Vista","San Carlos","Yapacaní","San Juan"] }, "Sara": { capital: "Portachuelo", municipios: ["Portachuelo","Santa Rosa del Sara","Colpa Bélgica"] }, "Obispo Santisteban": { capital: "Montero", municipios: ["Montero","Saavedra","Mineros","General Saavedra"] }, "Ñuflo de Chávez": { capital: "Concepción", municipios: ["Concepción","San Julián","San Antonio de Lomerío","Cuatro Cañadas","San Ramón","San Javier"] }, "Velasco": { capital: "San Ignacio de Velasco", municipios: ["San Ignacio de Velasco","San Miguel de Velasco","San Rafael"] }, "Chiquitos": { capital: "San José de Chiquitos", municipios: ["San José de Chiquitos","Pailón","Roboré","Charagua"] }, "Cordillera": { capital: "Camiri", municipios: ["Camiri","Charagua","Cabezas","Boyuibe","Cuevo","Gutiérrez","Lagunillas"] }, "Florida": { capital: "Samaipata", municipios: ["Samaipata","Mairana","Pampagrande"] }, "Vallegrande": { capital: "Vallegrande", municipios: ["Vallegrande","Moro Moro","Pucará"] }, "Manuel María Caballero": { capital: "Comarapa", municipios: ["Comarapa","Saipina"] }, "Germán Busch": { capital: "Puerto Suárez", municipios: ["Puerto Suárez","Puerto Quijarro","Carmen Rivero Torres"] }, "Ángel Sandoval": { capital: "San Matías", municipios: ["San Matías"] } } },
   "La Paz": { capital: "La Paz", provincias: { "Murillo": { capital: "La Paz", municipios: ["La Paz","El Alto","Palca","Mecapaca","Achocalla","Viacha"] }, "Omasuyos": { capital: "Achacachi", municipios: ["Achacachi","Ancoraimes"] }, "Pacajes": { capital: "Coro Coro", municipios: ["Coro Coro","Comanche","Charaña","Calacoto"] }, "Larecaja": { capital: "Sorata", municipios: ["Sorata","Guanay","Teoponte"] }, "Sud Yungas": { capital: "Chulumani", municipios: ["Chulumani","Irupana","Yanacachi","Palos Blancos","La Asunta"] }, "Nor Yungas": { capital: "Coroico", municipios: ["Coroico","Coripata"] }, "Caranavi": { capital: "Caranavi", municipios: ["Caranavi"] }, "Los Andes": { capital: "Pucarani", municipios: ["Pucarani","Laja","Batallas","Puerto Pérez"] }, "Aroma": { capital: "Sica Sica", municipios: ["Sica Sica","Ayo Ayo","Calamarca","Colquencha","Umala"] } } },
@@ -1221,7 +1162,7 @@ const BOLIVIA_GEO = {
 };
 
 function initGeoSelectors() {
-  const selDep = document.getElementById('sel-departamento');
+  const selDep  = document.getElementById('sel-departamento');
   const selProv = document.getElementById('sel-provincia');
   const selMun  = document.getElementById('sel-municipio');
   if (!selDep) return;
@@ -1245,7 +1186,7 @@ function initGeoSelectors() {
     selMun.disabled  = !prov;
     if (!dep || !prov) return;
     const provData = BOLIVIA_GEO[dep].provincias[prov];
-    const capDep = BOLIVIA_GEO[dep].capital;
+    const capDep   = BOLIVIA_GEO[dep].capital;
     provData.municipios.forEach(mun => {
       const o = document.createElement('option'); o.value = mun;
       o.textContent = mun === capDep ? mun+' ★ (cap. departamental)' : mun === provData.capital ? mun+' · (cap. provincial)' : mun;
@@ -1268,9 +1209,7 @@ function onDireccionKeydown(e) {
   wrap.innerHTML = `<iframe src="https://maps.google.com/maps?q=${q}&output=embed&hl=es" width="100%" height="220" style="border:0;border-radius:8px;margin-top:8px;" allowfullscreen="" loading="lazy"></iframe>`;
 }
 
-// ═══════════════════════════════════════════════
-//  TOAST
-// ═══════════════════════════════════════════════
+// ═══ TOAST ═══
 let toastTimer;
 function toast(msg, type='') {
   const el = document.getElementById('toast');
