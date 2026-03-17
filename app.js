@@ -21,6 +21,7 @@ const ESTADOS = {
   spam:         { label: '🚫 SPAM',           badge: 'badge-spam',       color: 'var(--text3)' },
 };
 
+// Van a archivados
 const ESTADOS_CIERRE = ['vendido', 'no_interesado', 'spam', 'cancelado'];
 const MAX_RELLAMADAS = 3;
 
@@ -108,6 +109,7 @@ async function initApp() {
   initGeoSelectors();
   renderVentas();
   populateProductoFilter();
+  setArchivoFiltro(false);
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
 }
 
@@ -271,8 +273,7 @@ async function loadVentas() {
         cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
                              producto_interes, notas, faltas, sin_respuesta, flag ),
         agente:agente_id   ( id, nombre ),
-        venta_items ( id, cantidad, subtotal, producto_id,
-                      producto_rel:producto_id ( id, nombre ) )
+        venta_items ( id, cantidad, subtotal, producto_id, productos ( id, nombre )
       `)
       .order('archivado', { ascending: true })
       .order('id', { ascending: false });
@@ -429,7 +430,7 @@ function renderDashboard() {
   const prods = {};
   ventas.forEach(v => {
     (v.venta_items || []).forEach(it => {
-      const nombre = it.producto_rel?.nombre || 'Sin producto';
+      const nombre = it.productos?.nombre || 'Sin producto'
       prods[nombre] = (prods[nombre] || 0) + 1;
     });
   });
@@ -530,7 +531,7 @@ function getFiltered() {
     const nombre   = v.cliente?.nombre  || '';
     const cel      = v.cliente?.celular || '';
     // Construir string de búsqueda incluyendo nombres de productos de los ítems
-    const prodNames = (v.venta_items || []).map(it => it.producto_rel?.nombre || '').join(' ');
+    const prodNames = (v.venta_items || []).map(it => it.productos?.nombre || '').join(' ');
     const haystack  = `${nombre} ${cel} ${prodNames} ${v.cliente?.ubicacion || ''} ${v.notas || ''}`.toLowerCase();
     if (search    && !haystack.includes(search))                                        return false;
     if (status    && v.estado !== status)                                               return false;
@@ -555,7 +556,7 @@ function renderVentas() {
 
   document.getElementById('ventas-tbody').innerHTML = page.map(v => {
     // Chips de todos los productos del registro
-    const prodNombres = (v.venta_items || []).map(it => it.producto_rel?.nombre).filter(Boolean);
+    const prodNombres = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
     const prodCell    = prodNombres.length > 0
       ? prodNombres.map(n => prodChip(n)).join(' ')
       : '<span style="color:var(--text3);font-size:12px;">—</span>';
@@ -603,6 +604,28 @@ function setArchivoFiltro(archivado) {
   currentPage = 1;
   document.getElementById('tab-activos').classList.toggle('archivo-tab-active', !archivado);
   document.getElementById('tab-archivados').classList.toggle('archivo-tab-active', archivado);
+
+  // Actualizar opciones del filtro de estado
+  const sel = document.getElementById('filter-status');
+  sel.value = ''; // resetear selección
+  const activos = [
+    ['rellamada',     '🔁 Rellamada'],
+    ['seguimiento',   '🔄 Seguimiento'],
+    ['interesado',    '🌟 Interesado'],
+    ['agendar',       '📅 Agendar'],
+    ['sin_respuesta', '📵 Sin respuesta'],
+    ['enviado',       '📦 Enviado'],
+  ];
+  const archivados = [
+    ['vendido',       '✅ Vendido'],
+    ['no_interesado', '👎 No interesado'],
+    ['cancelado',     '❌ Cancelado'],
+    ['spam',          '🚫 SPAM'],
+  ];
+  const opciones = archivado ? archivados : activos;
+  sel.innerHTML = '<option value="">Todos los estados</option>' +
+    opciones.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+
   renderVentas();
 }
 
@@ -907,12 +930,12 @@ async function onCelularInput() {
       }
 
       const { data: cicloAbierto } = await db.from('ventas')
-        .select('id, estado, fecha, venta_items( producto_rel:producto_id(nombre) )')
+        .select('id, estado, fecha, venta_items( productos:producto_id(nombre) )')
         .eq('cliente_id', data.id).eq('agente_id', currentUser.id).eq('archivado', false)
         .order('id', { ascending: false }).limit(1).maybeSingle();
 
       const cicloProds = cicloAbierto
-        ? (cicloAbierto.venta_items || []).map(it => it.producto_rel?.nombre).filter(Boolean).join(', ')
+        ? (cicloAbierto.venta_items || []).map(it => it.productos?.nombre).filter(Boolean).join(', ')
         : '';
 
       const cicloWarning = cicloAbierto ? `
@@ -1430,7 +1453,7 @@ function exportCSV() {
     v.cliente?.nombre  || '',
     v.cliente?.celular || '',
     (v.venta_items || []).map(it => {
-      const pn   = it.producto_rel?.nombre || '';
+      const pn   = it.productos?.nombre || '';
       const cant = it.cantidad || 1;
       const sub  = it.subtotal ? ` (Bs.${parseFloat(it.subtotal).toFixed(0)})` : '';
       return `${pn} x${cant}${sub}`;
