@@ -235,29 +235,25 @@ body {
 
 /* ═══════════════════════════════════════════════
    MAIN + SCROLL HORIZONTAL EN MOBILE
-   Todas las vistas tienen un contenedor deslizable
    ═══════════════════════════════════════════════ */
 .main {
   flex: 1;
   width: 100%;
-  overflow: hidden; /* el scroll está dentro del .view */
+  overflow: hidden;
 }
 
 .view { display: none; }
 .view.active {
   display: block;
-  /* scroll horizontal en mobile */
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Wrapper interno — define el ancho mínimo para que no se aplaste */
 .view-scroll-wrap {
   padding: 22px;
   box-sizing: border-box;
 }
 
-/* Desktop: ancho máximo normal */
 @media (min-width: 769px) {
   .view-scroll-wrap {
     max-width: 1400px;
@@ -266,7 +262,6 @@ body {
   }
 }
 
-/* Mobile: ancho mínimo generoso para scroll horizontal */
 @media (max-width: 768px) {
   .view-scroll-wrap               { min-width: 760px; padding: 16px 18px 24px; }
   #view-config .view-scroll-wrap,
@@ -278,7 +273,7 @@ body {
 .section-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 22px; }
 .section-sub { color: var(--text2); font-size: 14px; margin-top: 2px; }
 
-/* ── STATS GRID — 6 columnas fijas para scroll horizontal ── */
+/* ── STATS GRID ── */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -295,7 +290,7 @@ body {
 .stat-value { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 30px; line-height: 1; margin-bottom: 4px; }
 .stat-label { color: var(--text3); font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
 
-/* ── DASH GRID — 4 columnas para scroll horizontal ── */
+/* ── DASH GRID ── */
 .dash-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -388,7 +383,7 @@ td.td-actions { white-space: nowrap; }
 .icon-btn:hover { color: var(--text); border-color: var(--accent); background: var(--accent-glow); }
 .icon-btn.danger:hover { color: var(--red); border-color: var(--red); background: var(--red-bg); }
 
-/* ── MOBILE CARDS — ocultas por defecto (usamos scroll horizontal) ── */
+/* ── MOBILE CARDS ── */
 .mobile-cards { display: none !important; }
 .desktop-table { display: block !important; }
 
@@ -545,7 +540,7 @@ td.td-actions { white-space: nowrap; }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 12px; padding: 4px; }
 .page-btn {
   background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-  padding: 5px 10px; color: var(--text2); font-size: 13px; cursor: pointer; transition: all 0.15s;
+  padding: 5px 10px; color: var(--text2); font-size: 13px; cursor: pointer; transition: all 0.15px;
 }
 .page-btn:hover { border-color: var(--accent); color: var(--accent); }
 .page-btn.active { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
@@ -574,6 +569,17 @@ td.td-actions { white-space: nowrap; }
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
   border: 1px solid var(--border) !important;
 }
+
+/* ── VENTA ITEMS ── */
+.venta-item-row {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  position: relative;
+  transition: border-color 0.2s;
+}
+.venta-item-row:focus-within { border-color: var(--accent); }
 
 /* ── RESPONSIVE TOPBAR ── */
 @media (max-width: 768px) {

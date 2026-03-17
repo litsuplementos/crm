@@ -136,8 +136,8 @@
         <table>
           <thead>
             <tr>
-              <th>Fecha</th><th>Cliente</th><th>Celular</th><th>Producto</th>
-              <th>Cant.</th><th>Monto</th><th>Lugar</th><th>Estado</th><th>Notas</th>
+              <th>Fecha</th><th>Cliente</th><th>Celular</th><th>Productos</th>
+              <th>Monto</th><th>Lugar</th><th>Estado</th><th>Notas</th>
               <th id="th-agente" style="display:none;">Agente</th><th></th>
             </tr>
           </thead>
@@ -162,12 +162,12 @@
       <div class="section-title" style="margin-bottom:20px;">⚙️ Configuración</div>
       <div class="config-card">
         <div class="config-card-title">🗄️ Estructura de la base de datos v3</div>
-        <div class="code-block">productos → nombre, precio_base, promociones (jsonb), activo
-clientes  → celular (único), nombre, ubicacion, producto_interes, notas
-            faltas, sin_respuesta (contadores automáticos), flag
-ventas    → cliente_id, agente_id, producto_id (FK→productos)
-            cantidad, monto_total, estado, intentos, notas</div>
-        <div class="info-box">💡 Los precios los gestiona el admin en la sección Productos. El agente selecciona el producto y la promoción, el monto se calcula automáticamente.</div>
+        <div class="code-block">productos   → nombre, precio_base, promociones (jsonb), activo
+clientes    → celular (único), nombre, ubicacion, producto_interes, notas
+              faltas, sin_respuesta (contadores automáticos), flag
+ventas      → cliente_id, agente_id, monto_total, estado, intentos, notas
+venta_items → venta_id, producto_id (FK→productos), cantidad, subtotal</div>
+        <div class="info-box">💡 Cada venta puede tener múltiples productos (venta_items). El monto_total es la suma de los subtotales de cada ítem.</div>
       </div>
       <div class="config-card">
         <div class="config-card-title">📋 Reglas automáticas</div>
@@ -196,7 +196,7 @@ ventas    → cliente_id, agente_id, producto_id (FK→productos)
   </div>
 </div>
 
-<!-- ═══ MODAL VENTA/REGISTRO ═══ -->
+<!-- MODAL VENTA/REGISTRO -->
 <div class="modal-overlay" id="venta-modal">
   <div class="modal">
     <div class="modal-header">
@@ -230,31 +230,21 @@ ventas    → cliente_id, agente_id, producto_id (FK→productos)
         <input class="smart-input" id="f-nombre" placeholder="Nombre completo o s/n">
       </div>
 
-      <!-- PRODUCTO + CANTIDAD + PROMOCIÓN -->
-      <div class="field-row">
-        <div class="field">
-          <label>Producto</label>
-          <select class="smart-input" id="f-producto-id" onchange="onProductoChange()">
-            <option value="">— Seleccionar producto —</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Cantidad</label>
-          <input class="smart-input" type="number" id="f-cantidad" value="1" min="1" max="99"
-            style="width:100%;" oninput="onCantidadChange()">
-        </div>
-      </div>
-
-      <!-- PROMOCIONES disponibles (se llena dinámicamente) -->
-      <div class="field" id="promociones-wrap" style="display:none;">
-        <label>Promoción <span style="color:var(--text3);font-weight:400;font-size:10px;">(precio especial por cantidad o lanzamiento)</span></label>
-        <div id="promociones-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;"></div>
-        <input type="hidden" id="f-promo-index" value="">
-      </div>
-
-      <!-- MONTO -->
+      <!-- ITEMS DE VENTA (multi-producto) -->
       <div class="field">
-        <label>Monto Total <span style="color:var(--text3);font-weight:400;font-size:10px;">(Bs. — editable)</span></label>
+        <label>Productos <span style="color:var(--text3);font-weight:400;font-size:10px;">(añade uno o más)</span></label>
+        <div id="venta-items-wrap" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
+        <button type="button" id="btn-add-item" onclick="addVentaItem()"
+          style="background:var(--surface2);border:1px dashed var(--border);border-radius:8px;padding:8px 16px;color:var(--text2);font-size:13px;cursor:pointer;width:100%;transition:all 0.2s;"
+          onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+          onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">
+          + Añadir producto
+        </button>
+      </div>
+
+      <!-- MONTO TOTAL -->
+      <div class="field">
+        <label>Monto Total <span style="color:var(--text3);font-weight:400;font-size:10px;">(Bs. — suma de subtotales, editable)</span></label>
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:16px;font-weight:700;color:var(--text2);">Bs.</span>
           <input class="smart-input" type="number" id="f-monto" placeholder="0.00" min="0" step="0.01"
@@ -327,7 +317,7 @@ ventas    → cliente_id, agente_id, producto_id (FK→productos)
   </div>
 </div>
 
-<!-- ═══ MODAL PRODUCTO ═══ -->
+<!-- MODAL PRODUCTO -->
 <div class="modal-overlay" id="producto-modal">
   <div class="modal" style="max-width:560px;">
     <div class="modal-header">
@@ -373,7 +363,7 @@ ventas    → cliente_id, agente_id, producto_id (FK→productos)
   </div>
 </div>
 
-<!-- ═══ MODAL USUARIO ═══ -->
+<!-- MODAL USUARIO -->
 <div class="modal-overlay" id="user-modal">
   <div class="modal">
     <div class="modal-header">
@@ -405,7 +395,7 @@ ventas    → cliente_id, agente_id, producto_id (FK→productos)
 
 <div class="toast" id="toast"><span class="toast-icon">ℹ️</span><span id="toast-msg">Listo</span></div>
 
-<!-- ═══ MODAL ELIMINAR ═══ -->
+<!-- MODAL ELIMINAR -->
 <div class="modal-overlay" id="delete-modal">
   <div class="modal" style="max-width:420px;">
     <div class="modal-header">

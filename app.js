@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════
 //  LIT CRM v3 — Clientes + Ventas + Productos
+//  Multi-producto por venta via venta_items
 // ═══════════════════════════════════════════════
 
 const SUPABASE_URL      = 'https://txjgdglfzskirujqctra.supabase.co';
@@ -17,22 +18,24 @@ const ESTADOS = {
   enviado:      { label: '📦 Enviado',        badge: 'badge-enviado',    color: 'var(--blue)' },
   vendido:      { label: '✅ Vendido',        badge: 'badge-vendido',    color: 'var(--green)' },
   cancelado:    { label: '❌ Cancelado',      badge: 'badge-cancelado',  color: '#f87171' },
-  spam:         { label: '🚫 SPAM',          badge: 'badge-spam',       color: 'var(--text3)' },
+  spam:         { label: '🚫 SPAM',           badge: 'badge-spam',       color: 'var(--text3)' },
 };
 
-const ESTADOS_CIERRE  = ['vendido', 'no_interesado', 'spam', 'cancelado'];
-const MAX_RELLAMADAS  = 3;
+const ESTADOS_CIERRE = ['vendido', 'no_interesado', 'spam', 'cancelado'];
+const MAX_RELLAMADAS = 3;
 
-let currentUser     = null;
-let ventas          = [];
-let allAgents       = [];
-let allProductos    = [];
-let selectedAgentId = 'all';
-let currentPage     = 1;
-const PAGE_SIZE     = 25;
+let currentUser      = null;
+let ventas           = [];
+let allAgents        = [];
+let allProductos     = [];
+let selectedAgentId  = 'all';
+let currentPage      = 1;
+const PAGE_SIZE      = 25;
 let mostrarArchivados = false;
 
-// ═══ THEME ═══
+// ═══════════════════════════════════════════════
+//  THEME
+// ═══════════════════════════════════════════════
 function initTheme() {
   applyTheme(localStorage.getItem('litcrm-theme') || 'white');
 }
@@ -41,21 +44,23 @@ function applyTheme(theme) {
   localStorage.setItem('litcrm-theme', theme);
   const btn = document.getElementById('theme-toggle');
   if (btn) {
-    if (theme === 'night') btn.textContent = '☀️ Día';
-    else if (theme === 'day') btn.textContent = '🌙 Noche';
-    else btn.textContent = '🌿 Menta';
+    if (theme === 'night')      btn.textContent = '☀️ Día';
+    else if (theme === 'day')   btn.textContent = '🌙 Noche';
+    else                        btn.textContent = '🌿 Menta';
   }
 }
 function toggleTheme() {
-  const order = ['white','day','night'];
-  const cur = document.documentElement.getAttribute('data-theme') || 'white';
+  const order = ['white', 'day', 'night'];
+  const cur   = document.documentElement.getAttribute('data-theme') || 'white';
   applyTheme(order[(order.indexOf(cur) + 1) % 3]);
 }
 
-// ═══ AUTH ═══
+// ═══════════════════════════════════════════════
+//  AUTH
+// ═══════════════════════════════════════════════
 async function doLogin() {
-  const u = document.getElementById('login-user').value.trim();
-  const p = document.getElementById('login-pass').value;
+  const u    = document.getElementById('login-user').value.trim();
+  const p    = document.getElementById('login-pass').value;
   const errEl = document.getElementById('login-error');
   errEl.style.display = 'none';
   try {
@@ -65,7 +70,7 @@ async function doLogin() {
     currentUser = data;
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
-    document.getElementById('user-name-top').textContent  = data.nombre;
+    document.getElementById('user-name-top').textContent   = data.nombre;
     document.getElementById('user-avatar-top').textContent = data.nombre[0].toUpperCase();
     const isAdmin = data.rol === 'admin';
     document.getElementById('tab-productos').style.display = isAdmin ? '' : 'none';
@@ -73,7 +78,7 @@ async function doLogin() {
     document.getElementById('tab-usuarios').style.display  = isAdmin ? '' : 'none';
     await initApp();
   } catch(e) {
-    errEl.textContent = 'Error: ' + e.message;
+    errEl.textContent   = 'Error: ' + e.message;
     errEl.style.display = 'block';
   }
 }
@@ -83,17 +88,19 @@ document.addEventListener('keydown', e => {
 
 function doLogout() {
   currentUser = null; ventas = []; allAgents = []; allProductos = [];
-  document.getElementById('app').style.display = 'none';
+  document.getElementById('app').style.display        = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
   showViewDirect('dashboard');
 }
 
-// ═══ INIT ═══
+// ═══════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════
 async function initApp() {
   document.getElementById('dash-date').textContent =
-    new Date().toLocaleDateString('es-BO', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    new Date().toLocaleDateString('es-BO', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
   await loadProductos();
   if (currentUser.rol === 'admin') { await loadAgents(); buildAgentSelector(); }
   await loadVentas();
@@ -104,13 +111,14 @@ async function initApp() {
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
 }
 
-// ═══ PRODUCTOS — catálogo ═══
+// ═══════════════════════════════════════════════
+//  PRODUCTOS — catálogo
+// ═══════════════════════════════════════════════
 async function loadProductos() {
   const { data, error } = await db.from('productos')
     .select('*').eq('activo', true).order('nombre');
   if (!error) allProductos = data || [];
 }
-
 async function loadProductosAll() {
   const { data, error } = await db.from('productos').select('*').order('nombre');
   if (!error) allProductos = data || [];
@@ -127,90 +135,9 @@ function populateProductoFilter() {
   });
 }
 
-function populateProductoSelect() {
-  const sel = document.getElementById('f-producto-id');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— Seleccionar producto —</option>';
-  allProductos.forEach(p => {
-    const o = document.createElement('option');
-    o.value = p.id; o.textContent = p.nombre;
-    sel.appendChild(o);
-  });
-}
-
-// ═══ PRODUCTOS — lógica de precio en modal venta ═══
-function onProductoChange() {
-  const pid = parseInt(document.getElementById('f-producto-id').value);
-  const prod = allProductos.find(p => p.id === pid);
-  const promosWrap  = document.getElementById('promociones-wrap');
-  const promosChips = document.getElementById('promociones-chips');
-  const montoInput  = document.getElementById('f-monto');
-  const montoTag    = document.getElementById('monto-tag');
-  document.getElementById('f-promo-index').value = '';
-
-  if (!prod) {
-    promosWrap.style.display = 'none';
-    montoInput.value = '';
-    montoTag.textContent = '';
-    return;
-  }
-
-  const cant = parseInt(document.getElementById('f-cantidad').value) || 1;
-  montoInput.value = (prod.precio_base * cant).toFixed(2);
-  montoTag.textContent = `precio base: Bs.${prod.precio_base} × ${cant}`;
-
-  const promos = prod.promociones || [];
-  if (promos.length > 0) {
-    promosWrap.style.display = '';
-    promosChips.innerHTML = promos.map((pr, i) => `
-      <span class="quick-chip" data-promo="${i}" onclick="selectPromo(${i}, ${pr.precio_total}, '${pr.etiqueta}')"
-        style="background:var(--yellow-bg);border-color:var(--yellow);color:var(--yellow);">
-        🏷️ ${pr.etiqueta}
-      </span>`).join('');
-  } else {
-    promosWrap.style.display = 'none';
-  }
-}
-
-function onCantidadChange() {
-  const pid  = parseInt(document.getElementById('f-producto-id').value);
-  const prod = allProductos.find(p => p.id === pid);
-  if (!prod) return;
-  const cant     = parseInt(document.getElementById('f-cantidad').value) || 1;
-  const promoIdx = document.getElementById('f-promo-index').value;
-  if (promoIdx === '') {
-    document.getElementById('f-monto').value = (prod.precio_base * cant).toFixed(2);
-    document.getElementById('monto-tag').textContent = `precio base: Bs.${prod.precio_base} × ${cant}`;
-  }
-}
-
-function selectPromo(idx, precioTotal, etiqueta) {
-  const current = document.getElementById('f-promo-index').value;
-  const chips   = document.querySelectorAll('#promociones-chips .quick-chip');
-
-  if (current !== '' && parseInt(current) === idx) {
-    document.getElementById('f-promo-index').value = '';
-    chips.forEach(c => { c.classList.remove('active'); c.style.background='var(--yellow-bg)'; c.style.color='var(--yellow)'; c.style.borderColor='var(--yellow)'; });
-    onCantidadChange();
-    return;
-  }
-
-  document.getElementById('f-promo-index').value = idx;
-  chips.forEach(c => { c.classList.remove('active'); c.style.background='var(--yellow-bg)'; c.style.color='var(--yellow)'; c.style.borderColor='var(--yellow)'; });
-  const el = document.querySelector(`#promociones-chips .quick-chip[data-promo="${idx}"]`);
-  if (el) { el.classList.add('active'); el.style.background='var(--yellow)'; el.style.color='#1a1a00'; el.style.borderColor='var(--yellow)'; }
-
-  document.getElementById('f-monto').value = precioTotal.toFixed(2);
-  document.getElementById('monto-tag').textContent = `promoción: ${etiqueta}`;
-
-  const pid  = parseInt(document.getElementById('f-producto-id').value);
-  const prod = allProductos.find(p => p.id === pid);
-  if (prod && prod.promociones[idx]) {
-    document.getElementById('f-cantidad').value = prod.promociones[idx].cantidad;
-  }
-}
-
-// ═══ PRODUCTOS — vista admin CRUD ═══
+// ═══════════════════════════════════════════════
+//  PRODUCTOS — vista admin CRUD
+// ═══════════════════════════════════════════════
 async function renderProductos() {
   await loadProductosAll();
   const grid = document.getElementById('productos-grid');
@@ -218,18 +145,18 @@ async function renderProductos() {
   grid.innerHTML = allProductos.map(p => {
     const promos = p.promociones || [];
     return `
-    <div class="user-card" style="${!p.activo?'opacity:0.55;':''}">
+    <div class="user-card" style="${!p.activo ? 'opacity:0.55;' : ''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
         <div>
           <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:16px;">${p.nombre}</div>
           <div style="font-size:13px;color:var(--text2);margin-top:2px;">
             Precio base: <b style="color:var(--green);">Bs. ${parseFloat(p.precio_base).toFixed(2)}</b>
-            ${!p.activo?'<span style="color:var(--red);margin-left:8px;font-size:11px;">● Inactivo</span>':''}
+            ${!p.activo ? '<span style="color:var(--red);margin-left:8px;font-size:11px;">● Inactivo</span>' : ''}
           </div>
         </div>
         <div style="display:flex;gap:6px;">
           <button class="icon-btn" onclick="openProductoModal(${p.id})">✏️</button>
-          <button class="icon-btn danger" onclick="toggleProductoActivo(${p.id}, ${p.activo})">${p.activo?'🚫':'✅'}</button>
+          <button class="icon-btn danger" onclick="toggleProductoActivo(${p.id}, ${p.activo})">${p.activo ? '🚫' : '✅'}</button>
         </div>
       </div>
       ${promos.length > 0 ? `
@@ -247,15 +174,14 @@ async function renderProductos() {
 function openProductoModal(id) {
   document.getElementById('producto-modal').classList.add('open');
   document.getElementById('promos-editor').innerHTML = '';
-
   if (id) {
     const prod = allProductos.find(p => p.id === id);
     if (!prod) return;
     document.getElementById('producto-modal-title').textContent = 'Editar Producto';
-    document.getElementById('edit-producto-id').value  = id;
-    document.getElementById('p-nombre').value          = prod.nombre;
-    document.getElementById('p-precio-base').value     = prod.precio_base;
-    document.getElementById('p-activo').value          = prod.activo ? 'true' : 'false';
+    document.getElementById('edit-producto-id').value = id;
+    document.getElementById('p-nombre').value         = prod.nombre;
+    document.getElementById('p-precio-base').value    = prod.precio_base;
+    document.getElementById('p-activo').value         = prod.activo ? 'true' : 'false';
     (prod.promociones || []).forEach(pr => addPromoRow(pr));
   } else {
     document.getElementById('producto-modal-title').textContent = 'Nuevo Producto';
@@ -265,7 +191,6 @@ function openProductoModal(id) {
     document.getElementById('p-activo').value         = 'true';
   }
 }
-
 function closeProductoModal() {
   document.getElementById('producto-modal').classList.remove('open');
 }
@@ -278,12 +203,12 @@ function addPromoRow(data) {
     <div>
       <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0.5px;margin-bottom:4px;text-transform:uppercase;">Cantidad</div>
       <input class="smart-input promo-cant" type="number" min="1" placeholder="2"
-        value="${data?.cantidad||''}" style="text-align:center;">
+        value="${data?.cantidad || ''}" style="text-align:center;">
     </div>
     <div>
       <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0.5px;margin-bottom:4px;text-transform:uppercase;">Precio total (Bs.)</div>
       <input class="smart-input promo-precio" type="number" min="0" step="0.01" placeholder="270.00"
-        value="${data?.precio_total||''}">
+        value="${data?.precio_total || ''}">
     </div>
     <button type="button" onclick="this.parentElement.remove()"
       style="background:var(--red-bg);border:1px solid var(--red);border-radius:6px;padding:6px 9px;color:var(--red);cursor:pointer;margin-top:16px;">✕</button>`;
@@ -295,9 +220,7 @@ async function saveProducto() {
   const nombre     = document.getElementById('p-nombre').value.trim();
   const precioBase = parseFloat(document.getElementById('p-precio-base').value) || 0;
   const activo     = document.getElementById('p-activo').value === 'true';
-
   if (!nombre) { toast('⚠️ El nombre es obligatorio', 'error'); return; }
-
   const rows = document.querySelectorAll('#promos-editor > div');
   const promociones = [];
   for (const row of rows) {
@@ -307,9 +230,7 @@ async function saveProducto() {
       promociones.push({ cantidad: cant, precio_total: precio, etiqueta: `x${cant} — Bs.${precio.toFixed(0)}` });
     }
   }
-
   const payload = { nombre, precio_base: precioBase, promociones, activo };
-
   try {
     if (id) {
       const { error } = await db.from('productos').update(payload).eq('id', parseInt(id));
@@ -325,10 +246,7 @@ async function saveProducto() {
     await loadProductosAll();
     renderProductos();
     populateProductoFilter();
-    populateProductoSelect();
-  } catch(e) {
-    toast('❌ ' + e.message, 'error');
-  }
+  } catch(e) { toast('❌ ' + e.message, 'error'); }
 }
 
 async function toggleProductoActivo(id, activo) {
@@ -341,25 +259,20 @@ async function toggleProductoActivo(id, activo) {
   renderProductos();
 }
 
-// ═══ CARGAR VENTAS ═══
+// ═══════════════════════════════════════════════
+//  CARGAR VENTAS (incluye venta_items)
+// ═══════════════════════════════════════════════
 async function loadVentas() {
   try {
-    // ── Columnas reales de cada tabla ──────────────────────────────────────
-    // ventas:   id, cliente_id, agente_id, fecha, estado, intentos,
-    //           notas, comprobante_url, archivado, producto_id, cantidad, monto_total
-    // clientes: id, celular, nombre, ubicacion, direccion_residencial,
-    //           producto_interes, notas, faltas, sin_respuesta, flag
-    // usuarios: id, nombre
-    // productos: id, nombre, precio_base
-    // ──────────────────────────────────────────────────────────────────────
     let query = db.from('ventas')
       .select(`
         id, cliente_id, agente_id, fecha, estado, intentos,
-        notas, comprobante_url, archivado, producto_id, cantidad, monto_total,
+        notas, comprobante_url, archivado, monto_total,
         cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
                              producto_interes, notas, faltas, sin_respuesta, flag ),
         agente:agente_id   ( id, nombre ),
-        producto_rel:producto_id ( id, nombre, precio_base )
+        venta_items ( id, cantidad, subtotal, producto_id,
+                      producto_rel:producto_id ( id, nombre ) )
       `)
       .order('archivado', { ascending: true })
       .order('id', { ascending: false });
@@ -392,7 +305,7 @@ function buildAgentSelector() {
     <select class="filter-select" id="agent-selector" onchange="onAgentFilterChange()"
       style="background:var(--surface2);border-color:var(--accent);color:var(--accent2);">
       <option value="all">👥 Todos los agentes</option>
-      ${allAgents.filter(a=>a.rol==='agente').map(a=>
+      ${allAgents.filter(a => a.rol === 'agente').map(a =>
         `<option value="${a.id}">👤 ${a.nombre}</option>`
       ).join('')}
     </select>`;
@@ -400,7 +313,7 @@ function buildAgentSelector() {
   if (sel) {
     sel.style.display = '';
     while (sel.options.length > 1) sel.remove(1);
-    allAgents.filter(a=>a.rol==='agente').forEach(a => {
+    allAgents.filter(a => a.rol === 'agente').forEach(a => {
       const o = document.createElement('option');
       o.value = a.id; o.textContent = '👤 ' + a.nombre;
       sel.appendChild(o);
@@ -429,11 +342,13 @@ async function syncData() {
   } finally { btn.classList.remove('syncing'); }
 }
 
-// ═══ NAV ═══
+// ═══════════════════════════════════════════════
+//  NAV
+// ═══════════════════════════════════════════════
 function showView(name) {
-  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('view-'+name).classList.add('active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
   event.target.classList.add('active');
   if (name === 'ventas')    renderVentas();
   if (name === 'dashboard') renderDashboard();
@@ -441,30 +356,32 @@ function showView(name) {
   if (name === 'productos') renderProductos();
 }
 function showViewDirect(name) {
-  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('view-'+name)?.classList.add('active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-' + name)?.classList.add('active');
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
 }
 
-// STATUS HELPERS
+// ═══════════════════════════════════════════════
+//  STATUS / BADGE HELPERS
+// ═══════════════════════════════════════════════
 function statusBadge(estado) {
   const e = ESTADOS[estado] || ESTADOS.rellamada;
   return `<span class="badge ${e.badge}">${e.label}</span>`;
 }
 function flagBadge(cliente) {
   if (!cliente) return '';
-  if (cliente.flag === 'spam') return `<span class="badge badge-spam" title="SPAM: ${cliente.faltas} cancelaciones">🚫 SPAM</span>`;
-  if (cliente.faltas >= 1)    return `<span class="badge badge-cancelado" title="${cliente.faltas} cancelación(es)">⚠️ ${cliente.faltas} falta${cliente.faltas>1?'s':''}</span>`;
-  if (cliente.sin_respuesta >= 4) return `<span class="badge badge-sinresp" title="${cliente.sin_respuesta} sin respuesta">📵 ${cliente.sin_respuesta}×</span>`;
+  if (cliente.flag === 'spam')        return `<span class="badge badge-spam" title="SPAM: ${cliente.faltas} cancelaciones">🚫 SPAM</span>`;
+  if (cliente.faltas >= 1)            return `<span class="badge badge-cancelado" title="${cliente.faltas} cancelación(es)">⚠️ ${cliente.faltas} falta${cliente.faltas > 1 ? 's' : ''}</span>`;
+  if (cliente.sin_respuesta >= 4)     return `<span class="badge badge-sinresp" title="${cliente.sin_respuesta} sin respuesta">📵 ${cliente.sin_respuesta}×</span>`;
   return '';
 }
 function prodChip(nombre) {
   if (!nombre) return '';
   const nl = nombre.toLowerCase();
-  if (nl.includes('calibr'))  return `<span class="prod-chip prod-calibrum">${nombre}</span>`;
-  if (nl.includes('colag'))   return `<span class="prod-chip prod-colageno">${nombre}</span>`;
-  if (nl.includes('osteo'))   return `<span class="prod-chip prod-osteofor">${nombre}</span>`;
+  if (nl.includes('calibr'))                          return `<span class="prod-chip prod-calibrum">${nombre}</span>`;
+  if (nl.includes('colag'))                           return `<span class="prod-chip prod-colageno">${nombre}</span>`;
+  if (nl.includes('osteo'))                           return `<span class="prod-chip prod-osteofor">${nombre}</span>`;
   if (nl.includes('alivia') || nl.includes('aliviah')) return `<span class="prod-chip prod-alivia">${nombre}</span>`;
   return `<span class="prod-chip">${nombre}</span>`;
 }
@@ -473,23 +390,25 @@ function montoChip(monto) {
   return `<span style="background:var(--green-bg);border:1px solid var(--green);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;">Bs.${parseFloat(monto).toFixed(0)}</span>`;
 }
 
-// DASHBOARD
+// ═══════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════
 function renderDashboard() {
   const isAdmin    = currentUser.rol === 'admin';
   const showingAll = selectedAgentId === 'all';
 
-  let subtitle = isAdmin
-    ? (showingAll ? 'Vista general — todos los agentes' : `Filtrando: ${allAgents.find(a=>a.id===selectedAgentId)?.nombre||''}`)
+  const subtitle = isAdmin
+    ? (showingAll ? 'Vista general — todos los agentes' : `Filtrando: ${allAgents.find(a => a.id === selectedAgentId)?.nombre || ''}`)
     : `Tu actividad — ${currentUser.nombre}`;
   document.getElementById('dash-subtitle').textContent = subtitle;
   document.getElementById('dashboard-agent-row').style.display = isAdmin ? 'flex' : 'none';
 
   const total       = ventas.length;
-  const vendidos    = ventas.filter(v=>v.estado==='vendido').length;
-  const enviados    = ventas.filter(v=>v.estado==='enviado').length;
-  const interesados = ventas.filter(v=>v.estado==='interesado').length;
-  const seguimiento = ventas.filter(v=>['seguimiento','rellamada','agendar'].includes(v.estado)).length;
-  const sinResp     = ventas.filter(v=>v.estado==='sin_respuesta').length;
+  const vendidos    = ventas.filter(v => v.estado === 'vendido').length;
+  const enviados    = ventas.filter(v => v.estado === 'enviado').length;
+  const interesados = ventas.filter(v => v.estado === 'interesado').length;
+  const seguimiento = ventas.filter(v => ['seguimiento', 'rellamada', 'agendar'].includes(v.estado)).length;
+  const sinResp     = ventas.filter(v => v.estado === 'sin_respuesta').length;
 
   document.getElementById('stats-grid').innerHTML = `
     <div class="stat-card"><div class="stat-icon" style="background:var(--accent-glow);">📋</div>
@@ -506,61 +425,74 @@ function renderDashboard() {
       <div class="stat-value" style="color:var(--red);">${sinResp}</div><div class="stat-label">SIN RESPUESTA</div></div>
   `;
 
+  // Gráfico productos — basado en venta_items
   const prods = {};
   ventas.forEach(v => {
-    const nombre = v.producto_rel?.nombre || 'Sin producto';
-    prods[nombre] = (prods[nombre] || 0) + 1;
+    (v.venta_items || []).forEach(it => {
+      const nombre = it.producto_rel?.nombre || 'Sin producto';
+      prods[nombre] = (prods[nombre] || 0) + 1;
+    });
   });
   const maxP = Math.max(...Object.values(prods), 1);
-  document.getElementById('prod-chart').innerHTML = Object.entries(prods).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>`
+  document.getElementById('prod-chart').innerHTML = Object.entries(prods)
+    .sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => `
     <div class="bar-row"><div class="bar-label">${k}</div>
     <div class="bar-track"><div class="bar-fill" style="width:${(v/maxP*100).toFixed(0)}%;background:var(--accent)"></div></div>
-    <div class="bar-count">${v}</div></div>`).join('') || '<p style="color:var(--text3);font-size:13px;">Sin datos</p>';
+    <div class="bar-count">${v}</div></div>`).join('')
+    || '<p style="color:var(--text3);font-size:13px;">Sin datos</p>';
 
+  // Pipeline
   const sCounts = {};
-  Object.keys(ESTADOS).forEach(k => sCounts[k] = ventas.filter(v=>v.estado===k).length);
+  Object.keys(ESTADOS).forEach(k => sCounts[k] = ventas.filter(v => v.estado === k).length);
   const maxS = Math.max(...Object.values(sCounts), 1);
-  document.getElementById('status-chart').innerHTML = Object.entries(ESTADOS).map(([k,e])=>`
+  document.getElementById('status-chart').innerHTML = Object.entries(ESTADOS).map(([k, e]) => `
     <div class="bar-row"><div class="bar-label" style="color:${e.color}">${e.label}</div>
     <div class="bar-track"><div class="bar-fill" style="width:${(sCounts[k]/maxS*100).toFixed(0)}%;background:${e.color}"></div></div>
     <div class="bar-count">${sCounts[k]}</div></div>`).join('');
 
+  // Top ubicaciones
   const cities = {};
   ventas.forEach(v => {
     const c = v.cliente?.ubicacion;
-    if (c && c !== 's/c' && c !== '') cities[c] = (cities[c]||0) + 1;
+    if (c && c !== 's/c' && c !== '') cities[c] = (cities[c] || 0) + 1;
   });
-  const sortedC = Object.entries(cities).sort((a,b)=>b[1]-a[1]).slice(0,6);
-  const maxC = sortedC[0]?.[1] || 1;
-  document.getElementById('city-chart').innerHTML = sortedC.map(([k,v])=>`
+  const sortedC = Object.entries(cities).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const maxC    = sortedC[0]?.[1] || 1;
+  document.getElementById('city-chart').innerHTML = sortedC.map(([k, v]) => `
     <div class="bar-row"><div class="bar-label">${k}</div>
     <div class="bar-track"><div class="bar-fill" style="width:${(v/maxC*100).toFixed(0)}%;background:var(--blue)"></div></div>
-    <div class="bar-count">${v}</div></div>`).join('') || '<p style="color:var(--text3);font-size:13px;">Sin datos</p>';
+    <div class="bar-count">${v}</div></div>`).join('')
+    || '<p style="color:var(--text3);font-size:13px;">Sin datos</p>';
 
-  const pending = ventas.filter(v=>['seguimiento','rellamada','interesado','agendar'].includes(v.estado)).slice(0,10);
+  // Pendientes
+  const pending = ventas.filter(v => ['seguimiento', 'rellamada', 'interesado', 'agendar'].includes(v.estado)).slice(0, 10);
   document.getElementById('today-list').innerHTML = pending.length === 0
     ? '<div class="empty-state"><div class="emoji">🎉</div><p>Sin pendientes</p></div>'
-    : pending.map(v=>`
+    : pending.map(v => `
     <div class="today-item">
-      <div class="today-avatar">${(v.cliente?.nombre||'?')[0].toUpperCase()}</div>
+      <div class="today-avatar">${(v.cliente?.nombre || '?')[0].toUpperCase()}</div>
       <div class="today-info">
-        <div class="today-name">${v.cliente?.nombre||'s/n'}
-          ${isAdmin&&showingAll?`<span style="font-size:10px;color:var(--accent2);background:var(--accent-glow);padding:1px 6px;border-radius:4px;margin-left:4px;">${v.agente?.nombre||''}</span>`:''}
+        <div class="today-name">${v.cliente?.nombre || 's/n'}
+          ${isAdmin && showingAll ? `<span style="font-size:10px;color:var(--accent2);background:var(--accent-glow);padding:1px 6px;border-radius:4px;margin-left:4px;">${v.agente?.nombre || ''}</span>` : ''}
         </div>
-        <div class="today-detail">${v.notas||''}  ${statusBadge(v.estado)}</div>
+        <div class="today-detail">${v.notas || ''}  ${statusBadge(v.estado)}</div>
       </div>
-      <div class="today-phone"><a href="tel:${v.cliente?.celular}" style="color:var(--accent2);text-decoration:none;">${v.cliente?.celular||''}</a></div>
+      <div class="today-phone"><a href="tel:${v.cliente?.celular}" style="color:var(--accent2);text-decoration:none;">${v.cliente?.celular || ''}</a></div>
     </div>`).join('');
 
+  // Rendimiento por agente (solo admin vista general)
   if (isAdmin && showingAll && allAgents.length > 0) {
-    const agStats = allAgents.filter(a=>a.rol==='agente').map(ag=>{
-      const av = ventas.filter(v=>v.agente_id===ag.id);
-      return { nombre:ag.nombre, total:av.length,
-        vendidos:av.filter(v=>v.estado==='vendido').length,
-        interesados:av.filter(v=>v.estado==='interesado').length };
+    const agStats = allAgents.filter(a => a.rol === 'agente').map(ag => {
+      const av = ventas.filter(v => v.agente_id === ag.id);
+      return {
+        nombre:      ag.nombre,
+        total:       av.length,
+        vendidos:    av.filter(v => v.estado === 'vendido').length,
+        interesados: av.filter(v => v.estado === 'interesado').length,
+      };
     });
-    const maxT = Math.max(...agStats.map(a=>a.total), 1);
-    document.getElementById('agents-chart').innerHTML = agStats.map(a=>`
+    const maxT = Math.max(...agStats.map(a => a.total), 1);
+    document.getElementById('agents-chart').innerHTML = agStats.map(a => `
       <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
           <span style="font-size:13px;font-weight:600;">${a.nombre}</span>
@@ -576,12 +508,14 @@ function renderDashboard() {
   }
 }
 
-// VENTAS — lista + filtros
+// ═══════════════════════════════════════════════
+//  VENTAS — lista + filtros
+// ═══════════════════════════════════════════════
 function populateCityFilter() {
   const cities = [...new Set(ventas.map(v => v.cliente?.ubicacion).filter(c => c && c !== 's/c' && c !== ''))].sort();
-  const sel = document.getElementById('filter-ubicacion');
+  const sel    = document.getElementById('filter-ubicacion');
   while (sel.options.length > 1) sel.remove(1);
-  cities.forEach(c => { const o=document.createElement('option'); o.value=c.toLowerCase(); o.textContent=c; sel.appendChild(o); });
+  cities.forEach(c => { const o = document.createElement('option'); o.value = c.toLowerCase(); o.textContent = c; sel.appendChild(o); });
 }
 
 function getFiltered() {
@@ -592,15 +526,16 @@ function getFiltered() {
   const agente    = document.getElementById('filter-agente')?.value || '';
   return ventas.filter(v => {
     if (!!v.archivado !== mostrarArchivados) return false;
-    const nombre     = v.cliente?.nombre || '';
-    const cel        = v.cliente?.celular || '';
-    const prodNombre = v.producto_rel?.nombre || '';
-    const haystack = `${nombre} ${cel} ${prodNombre} ${v.cliente?.ubicacion||''} ${v.notas||''}`.toLowerCase();
-    if (search && !haystack.includes(search)) return false;
-    if (status && v.estado !== status) return false;
-    if (prodId && v.producto_id != prodId) return false;
-    if (ubicacion && !(v.cliente?.ubicacion||'').toLowerCase().includes(ubicacion)) return false;
-    if (agente && v.agente_id !== agente) return false;
+    const nombre   = v.cliente?.nombre  || '';
+    const cel      = v.cliente?.celular || '';
+    // Construir string de búsqueda incluyendo nombres de productos de los ítems
+    const prodNames = (v.venta_items || []).map(it => it.producto_rel?.nombre || '').join(' ');
+    const haystack  = `${nombre} ${cel} ${prodNames} ${v.cliente?.ubicacion || ''} ${v.notas || ''}`.toLowerCase();
+    if (search    && !haystack.includes(search))                                        return false;
+    if (status    && v.estado !== status)                                               return false;
+    if (prodId    && !(v.venta_items || []).some(it => it.producto_id == prodId))       return false;
+    if (ubicacion && !(v.cliente?.ubicacion || '').toLowerCase().includes(ubicacion))   return false;
+    if (agente    && v.agente_id !== agente)                                            return false;
     return true;
   });
 }
@@ -611,36 +546,38 @@ function renderVentas() {
   const total      = filtered.length;
   const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
   if (currentPage > totalPages) currentPage = 1;
-  const page    = filtered.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE);
+  const page    = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const isAdmin = currentUser?.rol === 'admin';
 
   document.getElementById('ventas-count').textContent = `${total} ${mostrarArchivados ? 'archivados' : 'activos'} encontrados`;
   document.getElementById('table-count').textContent  = `${total} registros`;
 
   document.getElementById('ventas-tbody').innerHTML = page.map(v => {
-    const prodNombre = v.producto_rel?.nombre || '';
-    // Ubicación siempre del cliente
-    const ubicacion  = v.cliente?.ubicacion || '';
+    // Chips de todos los productos del registro
+    const prodNombres = (v.venta_items || []).map(it => it.producto_rel?.nombre).filter(Boolean);
+    const prodCell    = prodNombres.length > 0
+      ? prodNombres.map(n => prodChip(n)).join(' ')
+      : '<span style="color:var(--text3);font-size:12px;">—</span>';
+    const ubicacion   = v.cliente?.ubicacion || '';
     return `
-    <tr onclick="openVentaModal(${v.id})" style="${v.archivado?'opacity:0.6;':''}">
-      <td style="color:var(--text2);font-size:12px;">${v.fecha||''}${v.archivado?' 🔒':''}</td>
-      <td class="td-name">${v.cliente?.nombre||'<span style="color:var(--text3)">s/n</span>'} ${flagBadge(v.cliente)}</td>
+    <tr onclick="openVentaModal(${v.id})" style="${v.archivado ? 'opacity:0.6;' : ''}">
+      <td style="color:var(--text2);font-size:12px;">${v.fecha || ''}${v.archivado ? ' 🔒' : ''}</td>
+      <td class="td-name">${v.cliente?.nombre || '<span style="color:var(--text3)">s/n</span>'} ${flagBadge(v.cliente)}</td>
       <td class="td-phone">
-        <a href="tel:${v.cliente?.celular}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;">${v.cliente?.celular||''}</a>
+        <a href="tel:${v.cliente?.celular}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;">${v.cliente?.celular || ''}</a>
       </td>
-      <td>${prodChip(prodNombre)}</td>
-      <td style="text-align:center;font-weight:600;color:var(--text2);">${v.cantidad||1}</td>
+      <td>${prodCell}</td>
       <td>${v.monto_total ? montoChip(v.monto_total) : ''}</td>
       <td class="td-ubicacion">${ubicacion}</td>
-      <td>${statusBadge(v.estado)}${v.estado==='rellamada'&&v.intentos>1?`<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>`:''}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);font-size:12px;" title="${v.notas||''}">${v.notas||''}${v.comprobante_url?` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>`:''}</td>
-      ${isAdmin?`<td style="font-size:11px;color:var(--accent2);">${v.agente?.nombre||'—'}</td>`:''}
+      <td>${statusBadge(v.estado)}${v.estado === 'rellamada' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);font-size:12px;" title="${v.notas || ''}">${v.notas || ''}${v.comprobante_url ? ` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>` : ''}</td>
+      ${isAdmin ? `<td style="font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>` : ''}
       <td class="td-actions" onclick="event.stopPropagation()">
         <button class="icon-btn" onclick="openVentaModal(${v.id})">✏️</button>
         <button class="icon-btn danger" onclick="deleteVenta(${v.id})">🗑️</button>
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text2);">Sin resultados</td></tr>';
+  }).join('') || '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text2);">Sin resultados</td></tr>';
 
   document.getElementById('th-agente').style.display = isAdmin ? '' : 'none';
   renderPagination(totalPages);
@@ -648,17 +585,17 @@ function renderVentas() {
 
 function renderPagination(totalPages) {
   if (totalPages <= 1) { document.getElementById('pagination').innerHTML = ''; return; }
-  let html = `<button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button>`;
+  let html = `<button class="page-btn" onclick="goPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>‹</button>`;
   for (let i = 1; i <= totalPages; i++) {
-    if (i===1 || i===totalPages || Math.abs(i-currentPage)<=1)
-      html += `<button class="page-btn ${i===currentPage?'active':''}" onclick="goPage(${i})">${i}</button>`;
-    else if (Math.abs(i-currentPage)===2)
+    if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 1)
+      html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+    else if (Math.abs(i - currentPage) === 2)
       html += `<span style="color:var(--text3);padding:0 4px;">…</span>`;
   }
-  html += `<button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>›</button>`;
+  html += `<button class="page-btn" onclick="goPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>›</button>`;
   document.getElementById('pagination').innerHTML = html;
 }
-function goPage(p) { currentPage = p; renderVentas(); window.scrollTo(0,200); }
+function goPage(p) { currentPage = p; renderVentas(); window.scrollTo(0, 200); }
 
 function setArchivoFiltro(archivado) {
   mostrarArchivados = archivado;
@@ -668,7 +605,255 @@ function setArchivoFiltro(archivado) {
   renderVentas();
 }
 
-// MODAL VENTA
+// ═══════════════════════════════════════════════
+//  VENTA ITEMS — multi-producto
+// ═══════════════════════════════════════════════
+
+/**
+ * Añade una fila de ítem al formulario de venta.
+ * @param {object} [data] - { producto_id, cantidad, subtotal } para pre-rellenar (modo edición)
+ */
+function addVentaItem(data) {
+  const wrap = document.getElementById('venta-items-wrap');
+  const idx  = Date.now(); // id único para cada fila
+
+  const row = document.createElement('div');
+  row.dataset.idx = idx;
+  row.style.cssText = 'background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;position:relative;';
+
+  row.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 90px auto;gap:8px;align-items:end;margin-bottom:8px;">
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px;">Producto</div>
+        <select class="smart-input item-producto" onchange="onItemProductoChange(this)" style="width:100%;">
+          <option value="">— Seleccionar —</option>
+          ${allProductos.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px;">Cantidad</div>
+        <input class="smart-input item-cantidad" type="number" min="1" max="99"
+          value="${data?.cantidad || 1}" style="text-align:center;" oninput="onItemCantidadChange(this)">
+      </div>
+      <button type="button" onclick="removeVentaItem(this)"
+        style="background:var(--red-bg);border:1px solid var(--red);border-radius:6px;padding:8px 10px;color:var(--red);cursor:pointer;margin-top:18px;">✕</button>
+    </div>
+    <div class="item-promos-wrap" style="display:none;margin-bottom:8px;">
+      <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Promoción</div>
+      <div class="item-promos-chips" style="display:flex;flex-wrap:wrap;gap:5px;"></div>
+      <input type="hidden" class="item-promo-index" value="">
+    </div>
+    <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">
+      <span style="font-size:12px;color:var(--text3);" class="item-subtotal-label"></span>
+      <span style="font-size:14px;font-weight:700;color:var(--green);" class="item-subtotal-display" data-value="0">Bs. 0</span>
+    </div>
+  `;
+
+  wrap.appendChild(row);
+
+  // Pre-rellenar si viene con datos (edición)
+  if (data?.producto_id) {
+    const sel = row.querySelector('.item-producto');
+    sel.value = data.producto_id;
+    onItemProductoChange(sel, data);
+  }
+
+  recalcMonto();
+}
+
+function removeVentaItem(btn) {
+  btn.closest('[data-idx]').remove();
+  recalcMonto();
+}
+
+/**
+ * Al cambiar el producto de una fila: muestra sus promociones y calcula subtotal.
+ * @param {HTMLSelectElement} sel
+ * @param {object} [preData] - { subtotal, promo_index } para modo edición
+ */
+function onItemProductoChange(sel, preData) {
+  const row        = sel.closest('[data-idx]');
+  const pid        = parseInt(sel.value);
+  const prod       = allProductos.find(p => p.id === pid);
+  const promosWrap  = row.querySelector('.item-promos-wrap');
+  const promosChips = row.querySelector('.item-promos-chips');
+  const promoIdx    = row.querySelector('.item-promo-index');
+  const cantInput   = row.querySelector('.item-cantidad');
+
+  promoIdx.value = '';
+
+  if (!prod) {
+    promosWrap.style.display = 'none';
+    const display = row.querySelector('.item-subtotal-display');
+    display.textContent  = 'Bs. 0';
+    display.dataset.value = '0';
+    row.querySelector('.item-subtotal-label').textContent = '';
+    recalcMonto();
+    return;
+  }
+
+  const promos = prod.promociones || [];
+  if (promos.length > 0) {
+    promosWrap.style.display = '';
+    promosChips.innerHTML = promos.map((pr, i) => `
+      <span class="quick-chip item-promo-chip"
+        data-promo="${i}" data-precio="${pr.precio_total}" data-cantidad="${pr.cantidad}"
+        onclick="selectItemPromo(this)"
+        style="background:var(--yellow-bg);border-color:var(--yellow);color:var(--yellow);">
+        🏷️ ${pr.etiqueta}
+      </span>`).join('');
+  } else {
+    promosWrap.style.display = 'none';
+  }
+
+  // En modo edición: restaurar la promo seleccionada si venía guardada
+  if (preData?.promo_index !== undefined && preData.promo_index !== null && promos[preData.promo_index]) {
+    const chip = promosChips.querySelector(`[data-promo="${preData.promo_index}"]`);
+    if (chip) {
+      chip.classList.add('active');
+      chip.style.background = 'var(--yellow)';
+      chip.style.color      = '#1a1a00';
+    }
+    promoIdx.value  = preData.promo_index;
+    cantInput.value = promos[preData.promo_index].cantidad;
+  }
+
+  // Si viene subtotal directo desde DB (edición sin promo conocida), usarlo
+  if (preData?.subtotal && promoIdx.value === '') {
+    const display       = row.querySelector('.item-subtotal-display');
+    display.textContent  = `Bs. ${parseFloat(preData.subtotal).toFixed(2)}`;
+    display.dataset.value = preData.subtotal;
+    row.querySelector('.item-subtotal-label').textContent = '';
+    recalcMonto();
+    return;
+  }
+
+  updateItemSubtotal(row);
+}
+
+/** Toggle de la promo dentro de una fila de ítem */
+function selectItemPromo(chip) {
+  const row       = chip.closest('[data-idx]');
+  const promoIdx  = row.querySelector('.item-promo-index');
+  const idx       = parseInt(chip.dataset.promo);
+  const allChips  = row.querySelectorAll('.item-promo-chip');
+  const cantInput = row.querySelector('.item-cantidad');
+
+  // Toggle: si ya estaba activa, la deselecciona
+  if (promoIdx.value !== '' && parseInt(promoIdx.value) === idx) {
+    promoIdx.value = '';
+    allChips.forEach(c => {
+      c.classList.remove('active');
+      c.style.background  = 'var(--yellow-bg)';
+      c.style.color       = 'var(--yellow)';
+      c.style.borderColor = 'var(--yellow)';
+    });
+    updateItemSubtotal(row);
+    return;
+  }
+
+  promoIdx.value = idx;
+  allChips.forEach(c => {
+    c.classList.remove('active');
+    c.style.background  = 'var(--yellow-bg)';
+    c.style.color       = 'var(--yellow)';
+    c.style.borderColor = 'var(--yellow)';
+  });
+  chip.classList.add('active');
+  chip.style.background  = 'var(--yellow)';
+  chip.style.color       = '#1a1a00';
+  chip.style.borderColor = 'var(--yellow)';
+
+  cantInput.value = chip.dataset.cantidad;
+  updateItemSubtotal(row);
+}
+
+/** Al cambiar la cantidad manualmente, deselecciona promo y recalcula */
+function onItemCantidadChange(input) {
+  const row      = input.closest('[data-idx]');
+  const promoIdx = row.querySelector('.item-promo-index');
+  if (promoIdx.value !== '') {
+    promoIdx.value = '';
+    row.querySelectorAll('.item-promo-chip').forEach(c => {
+      c.classList.remove('active');
+      c.style.background  = 'var(--yellow-bg)';
+      c.style.color       = 'var(--yellow)';
+      c.style.borderColor = 'var(--yellow)';
+    });
+  }
+  updateItemSubtotal(row);
+}
+
+/** Recalcula el subtotal de una sola fila y actualiza el display */
+function updateItemSubtotal(row) {
+  const pid       = parseInt(row.querySelector('.item-producto').value);
+  const prod      = allProductos.find(p => p.id === pid);
+  const cant      = parseInt(row.querySelector('.item-cantidad').value) || 1;
+  const promoIdxV = row.querySelector('.item-promo-index').value;
+  const display   = row.querySelector('.item-subtotal-display');
+  const label     = row.querySelector('.item-subtotal-label');
+
+  if (!prod) {
+    display.textContent   = 'Bs. 0';
+    display.dataset.value = '0';
+    label.textContent     = '';
+    recalcMonto();
+    return;
+  }
+
+  let subtotal;
+  if (promoIdxV !== '' && prod.promociones?.[parseInt(promoIdxV)]) {
+    const promo       = prod.promociones[parseInt(promoIdxV)];
+    subtotal          = promo.precio_total;
+    label.textContent = `promo: ${promo.etiqueta}`;
+  } else {
+    subtotal          = prod.precio_base * cant;
+    label.textContent = `Bs.${prod.precio_base} × ${cant}`;
+  }
+
+  display.textContent   = `Bs. ${subtotal.toFixed(2)}`;
+  display.dataset.value = subtotal;
+  recalcMonto();
+}
+
+/** Suma todos los subtotales y actualiza el campo monto_total */
+function recalcMonto() {
+  let total = 0;
+  document.querySelectorAll('#venta-items-wrap [data-idx]').forEach(row => {
+    total += parseFloat(row.querySelector('.item-subtotal-display')?.dataset.value || 0);
+  });
+  const count = document.querySelectorAll('#venta-items-wrap [data-idx]').length;
+  if (total > 0) {
+    document.getElementById('f-monto').value = total.toFixed(2);
+    document.getElementById('monto-tag').textContent = `${count} producto${count !== 1 ? 's' : ''}`;
+  } else {
+    document.getElementById('f-monto').value    = '';
+    document.getElementById('monto-tag').textContent = '';
+  }
+}
+
+/** Devuelve array { producto_id, cantidad, subtotal } para insertar en venta_items */
+function getVentaItemsData() {
+  const items = [];
+  document.querySelectorAll('#venta-items-wrap [data-idx]').forEach(row => {
+    const pid  = parseInt(row.querySelector('.item-producto').value);
+    const cant = parseInt(row.querySelector('.item-cantidad').value) || 1;
+    const sub  = parseFloat(row.querySelector('.item-subtotal-display')?.dataset.value || 0);
+    if (pid && sub > 0) items.push({ producto_id: pid, cantidad: cant, subtotal: sub });
+  });
+  return items;
+}
+
+/** Limpia todas las filas de ítems y resetea monto */
+function clearVentaItems() {
+  document.getElementById('venta-items-wrap').innerHTML = '';
+  document.getElementById('f-monto').value             = '';
+  document.getElementById('monto-tag').textContent     = '';
+}
+
+// ═══════════════════════════════════════════════
+//  MODAL VENTA
+// ═══════════════════════════════════════════════
 let celularTimer = null;
 
 async function onCelularInput() {
@@ -689,14 +874,18 @@ async function onCelularInput() {
       document.getElementById('f-nombre').value     = data.nombre || '';
       document.getElementById('f-ubicacion').value  = data.ubicacion || '';
 
+      // Pre-seleccionar producto de interés del cliente en la primera fila de ítems
       if (data.producto_interes) {
         const matchProd = allProductos.find(p =>
           p.nombre.toLowerCase().includes(data.producto_interes.toLowerCase()) ||
           data.producto_interes.toLowerCase().includes(p.nombre.toLowerCase())
         );
         if (matchProd) {
-          document.getElementById('f-producto-id').value = matchProd.id;
-          onProductoChange();
+          const firstSel = document.querySelector('#venta-items-wrap .item-producto');
+          if (firstSel && !firstSel.value) {
+            firstSel.value = matchProd.id;
+            onItemProductoChange(firstSel);
+          }
         }
       }
 
@@ -711,19 +900,24 @@ async function onCelularInput() {
           chipSinResp.classList.add('chip-disabled');
           chipSinResp.title = `Ya tiene ${sinRespCount} sin respuesta`;
         } else {
-          chipSinResp.classList.remove('chip-disabled'); chipSinResp.title = '';
+          chipSinResp.classList.remove('chip-disabled');
+          chipSinResp.title = '';
         }
       }
 
       const { data: cicloAbierto } = await db.from('ventas')
-        .select('id, estado, fecha, producto_id, producto_rel:producto_id(nombre)')
+        .select('id, estado, fecha, venta_items( producto_rel:producto_id(nombre) )')
         .eq('cliente_id', data.id).eq('agente_id', currentUser.id).eq('archivado', false)
         .order('id', { ascending: false }).limit(1).maybeSingle();
+
+      const cicloProds = cicloAbierto
+        ? (cicloAbierto.venta_items || []).map(it => it.producto_rel?.nombre).filter(Boolean).join(', ')
+        : '';
 
       const cicloWarning = cicloAbierto ? `
         <div style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:6px;padding:8px 12px;margin-bottom:8px;">
           <div style="color:var(--yellow);font-size:12px;font-weight:600;margin-bottom:4px;">⚠️ Ya tienes un ciclo abierto con este cliente</div>
-          <div style="color:var(--text2);font-size:11px;">${cicloAbierto.producto_rel?.nombre||''} · ${ESTADOS[cicloAbierto.estado]?.label||cicloAbierto.estado} · ${cicloAbierto.fecha||''}</div>
+          <div style="color:var(--text2);font-size:11px;">${cicloProds || '—'} · ${ESTADOS[cicloAbierto.estado]?.label || cicloAbierto.estado} · ${cicloAbierto.fecha || ''}</div>
           <button onclick="closeVentaModal();setTimeout(()=>openVentaModal(${cicloAbierto.id}),50)"
             style="margin-top:6px;background:var(--yellow);border:none;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;color:#0a0a0f;cursor:pointer;">→ Ir al registro existente</button>
         </div>` : '';
@@ -737,17 +931,17 @@ async function onCelularInput() {
       infoBox.innerHTML = spamBanner + cicloWarning + `
         <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;">
           <div style="color:var(--accent2);font-weight:600;margin-bottom:4px;">👤 Cliente registrado ${flagBadge(data)}</div>
-          ${sinRespCount>0?`<div style="color:${sinRespCount>=4?'var(--red)':'var(--text2)'};font-size:11px;">📵 ${sinRespCount}/4 sin respuesta</div>`:''}
-          ${data.faltas>0&&data.flag!=='spam'?`<div style="color:var(--orange);font-size:11px;">❌ ${data.faltas} cancelación(es)</div>`:''}
-          ${data.notas?`<div style="color:var(--text2);margin-top:4px;">${data.notas}</div>`:''}
+          ${sinRespCount > 0 ? `<div style="color:${sinRespCount >= 4 ? 'var(--red)' : 'var(--text2)'};font-size:11px;">📵 ${sinRespCount}/4 sin respuesta</div>` : ''}
+          ${data.faltas > 0 && data.flag !== 'spam' ? `<div style="color:var(--orange);font-size:11px;">❌ ${data.faltas} cancelación(es)</div>` : ''}
+          ${data.notas ? `<div style="color:var(--text2);margin-top:4px;">${data.notas}</div>` : ''}
         </div>`;
     } else {
       document.getElementById('f-cliente-id').value = '';
-      sugg.textContent = '✨ Nuevo cliente — se creará el perfil al guardar';
-      sugg.style.background  = 'var(--green-bg)';
-      sugg.style.borderColor = 'rgba(34,211,164,0.3)';
-      sugg.style.color       = 'var(--green)';
-      sugg.style.display     = 'block';
+      sugg.textContent        = '✨ Nuevo cliente — se creará el perfil al guardar';
+      sugg.style.background   = 'var(--green-bg)';
+      sugg.style.borderColor  = 'rgba(34,211,164,0.3)';
+      sugg.style.color        = 'var(--green)';
+      sugg.style.display      = 'block';
     }
   }, 350);
 }
@@ -755,89 +949,118 @@ async function onCelularInput() {
 async function openVentaModal(id) {
   document.getElementById('venta-modal').classList.add('open');
   document.querySelectorAll('.quick-chip').forEach(ch => {
-    ch.classList.remove('active','chip-disabled'); ch.title = '';
+    ch.classList.remove('active', 'chip-disabled');
+    ch.title = '';
   });
-  document.getElementById('celular-suggestion').style.display  = 'none';
-  document.getElementById('cliente-info-box').style.display    = 'none';
-  document.getElementById('f-comprobante').value               = '';
-  document.getElementById('promociones-wrap').style.display    = 'none';
-  document.getElementById('promociones-chips').innerHTML       = '';
-  document.getElementById('f-promo-index').value               = '';
-  document.getElementById('monto-tag').textContent             = '';
+  document.getElementById('celular-suggestion').style.display = 'none';
+  document.getElementById('cliente-info-box').style.display   = 'none';
+  document.getElementById('f-comprobante').value              = '';
   renderComprobantePreview(null);
 
   if (allProductos.length === 0) await loadProductos();
-  populateProductoSelect();
 
+  // Campo agente (solo admin)
   const af = document.getElementById('agente-field');
   if (af) {
     af.style.display = currentUser.rol === 'admin' ? '' : 'none';
     if (currentUser.rol === 'admin') {
       document.getElementById('f-agente').innerHTML =
-        allAgents.filter(a=>a.rol==='agente').map(a=>`<option value="${a.id}">${a.nombre}</option>`).join('');
+        allAgents.filter(a => a.rol === 'agente').map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
     }
   }
 
   if (id) {
+    // ── MODO EDICIÓN ──────────────────────────────
     const v = ventas.find(x => x.id === id);
     if (!v) return;
 
-    const isArchivado = v.archivado;
+    const isArchivado = !!v.archivado;
+    const isAdmin     = currentUser?.rol === 'admin';
+    const shouldLock  = isArchivado && !isAdmin;
+
     document.getElementById('modal-title').textContent = isArchivado ? '🔒 Registro Archivado' : 'Editar Registro';
     const archivedBanner = document.getElementById('archived-banner');
     if (archivedBanner) archivedBanner.style.display = isArchivado ? '' : 'none';
 
-    const isAdmin    = currentUser?.rol === 'admin';
-    const shouldLock = isArchivado && !isAdmin;
-    ['f-fecha','f-celular','f-nombre','f-ubicacion','f-notas','f-intentos','f-direccion','f-producto-id','f-cantidad','f-monto'].forEach(fid => {
-      const el = document.getElementById(fid); if (el) el.disabled = shouldLock;
-    });
+    // Bloquear campos si está archivado y no es admin
+    const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas', 'f-intentos', 'f-direccion', 'f-monto'];
+    lockFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.disabled = shouldLock; });
     document.querySelectorAll('.quick-chip').forEach(ch => {
-      ch.style.pointerEvents = shouldLock ? 'none' : ''; ch.style.opacity = shouldLock ? '0.4' : '';
+      ch.style.pointerEvents = shouldLock ? 'none' : '';
+      ch.style.opacity       = shouldLock ? '0.4'  : '';
     });
+    const addItemBtn = document.getElementById('btn-add-item');
+    if (addItemBtn) addItemBtn.style.display = shouldLock ? 'none' : '';
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) saveBtn.style.display = shouldLock ? 'none' : '';
 
-    document.getElementById('edit-venta-id').value    = id;
-    document.getElementById('f-fecha').value          = v.fecha || '';
-    document.getElementById('f-celular').value        = v.cliente?.celular || '';
-    document.getElementById('f-nombre').value         = v.cliente?.nombre || '';
-    document.getElementById('f-cliente-id').value     = v.cliente_id || '';
-    document.getElementById('f-ubicacion').value      = v.cliente?.ubicacion || '';
-    document.getElementById('f-notas').value          = v.notas || '';
-    document.getElementById('f-direccion').value      = v.cliente?.direccion_residencial || '';
-    document.getElementById('f-cantidad').value       = v.cantidad || 1;
-    document.getElementById('f-monto').value          = v.monto_total || '';
+    // Rellenar campos
+    document.getElementById('edit-venta-id').value   = id;
+    document.getElementById('f-fecha').value         = v.fecha || '';
+    document.getElementById('f-celular').value       = v.cliente?.celular || '';
+    document.getElementById('f-nombre').value        = v.cliente?.nombre  || '';
+    document.getElementById('f-cliente-id').value    = v.cliente_id || '';
+    document.getElementById('f-ubicacion').value     = v.cliente?.ubicacion || '';
+    document.getElementById('f-notas').value         = v.notas || '';
+    document.getElementById('f-direccion').value     = v.cliente?.direccion_residencial || '';
+    document.getElementById('f-monto').value         = v.monto_total || '';
+    document.getElementById('monto-tag').textContent = '';
 
-    if (v.producto_id) {
-      document.getElementById('f-producto-id').value = v.producto_id;
-      onProductoChange();
+    // Ítems de venta
+    clearVentaItems();
+    const itemsExistentes = v.venta_items || [];
+    if (itemsExistentes.length > 0) {
+      itemsExistentes.forEach(it => addVentaItem({
+        producto_id: it.producto_id,
+        cantidad:    it.cantidad,
+        subtotal:    it.subtotal,
+      }));
+    } else {
+      addVentaItem(); // fila vacía si no hay ítems registrados
     }
 
-    const mp = document.getElementById('maps-preview'); if (mp) mp.innerHTML = '';
-    if (v.cliente?.direccion_residencial) onDireccionKeydown({key:'Enter',preventDefault:()=>{}});
-    ['sel-departamento','sel-provincia','sel-municipio'].forEach(sid => {
-      const el = document.getElementById(sid); if (el) { el.value=''; if(sid!=='sel-departamento') el.disabled=true; }
+    // Deshabilitar ítems si está bloqueado
+    if (shouldLock) {
+      document.querySelectorAll('#venta-items-wrap select, #venta-items-wrap input, #venta-items-wrap button').forEach(el => el.disabled = true);
+    }
+
+    // Mapa dirección
+    const mp = document.getElementById('maps-preview');
+    if (mp) mp.innerHTML = '';
+    if (v.cliente?.direccion_residencial) onDireccionKeydown({ key: 'Enter', preventDefault: () => {} });
+
+    // Geo selectors reset
+    ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
+      const el = document.getElementById(sid);
+      if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
     });
+
+    // Estado
     document.getElementById('f-intentos').value = v.intentos || 1;
-    document.getElementById('f-estado').value   = v.estado || 'rellamada';
+    document.getElementById('f-estado').value   = v.estado   || 'rellamada';
     document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');
     toggleIntentosField(v.estado);
+
     if (currentUser.rol === 'admin' && v.agente_id)
       document.getElementById('f-agente').value = v.agente_id;
+
     renderComprobantePreview(v.comprobante_url || null);
 
   } else {
+    // ── MODO NUEVO ────────────────────────────────
     document.getElementById('modal-title').textContent = 'Nuevo Registro';
-    document.getElementById('edit-venta-id').value = '';
+    document.getElementById('edit-venta-id').value     = '';
     const archivedBanner = document.getElementById('archived-banner');
-    if (archivedBanner) archivedBanner.style.display = 'none';
-    ['f-fecha','f-celular','f-nombre','f-ubicacion','f-notas','f-intentos','f-direccion','f-producto-id','f-cantidad','f-monto'].forEach(fid => {
-      const el = document.getElementById(fid); if (el) el.disabled = false;
-    });
-    document.querySelectorAll('.quick-chip').forEach(ch => { ch.style.pointerEvents=''; ch.style.opacity=''; });
+    if (archivedBanner) archivedBanner.style.display   = 'none';
+
+    const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas', 'f-intentos', 'f-direccion', 'f-monto'];
+    lockFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.disabled = false; });
+    document.querySelectorAll('.quick-chip').forEach(ch => { ch.style.pointerEvents = ''; ch.style.opacity = ''; });
+    const addItemBtn = document.getElementById('btn-add-item');
+    if (addItemBtn) addItemBtn.style.display = '';
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) saveBtn.style.display = '';
+
     document.getElementById('f-fecha').value         = new Date().toISOString().split('T')[0];
     document.getElementById('f-celular').value       = '';
     document.getElementById('f-nombre').value        = '';
@@ -845,18 +1068,25 @@ async function openVentaModal(id) {
     document.getElementById('f-ubicacion').value     = '';
     document.getElementById('f-notas').value         = '';
     document.getElementById('f-direccion').value     = '';
-    document.getElementById('f-cantidad').value      = 1;
-    document.getElementById('f-monto').value         = '';
-    document.getElementById('f-producto-id').value   = '';
-    const mpNew = document.getElementById('maps-preview'); if (mpNew) mpNew.innerHTML = '';
-    ['sel-departamento','sel-provincia','sel-municipio'].forEach(sid => {
-      const el = document.getElementById(sid); if (el) { el.value=''; if(sid!=='sel-departamento') el.disabled=true; }
+
+    const mpNew = document.getElementById('maps-preview');
+    if (mpNew) mpNew.innerHTML = '';
+    ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
+      const el = document.getElementById(sid);
+      if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
     });
+
     document.getElementById('f-intentos').value = 1;
     document.getElementById('f-estado').value   = 'rellamada';
+    document.querySelector('.quick-chip[data-estado="rellamada"]')?.classList.add('active');
     toggleIntentosField('rellamada');
+
     if (currentUser.rol === 'admin' && allAgents.length > 0)
-      document.getElementById('f-agente').value = allAgents.find(a=>a.rol==='agente')?.id || '';
+      document.getElementById('f-agente').value = allAgents.find(a => a.rol === 'agente')?.id || '';
+
+    // Ítems: empezar con una fila vacía
+    clearVentaItems();
+    addVentaItem();
   }
 }
 
@@ -870,11 +1100,13 @@ function onIntentosChange() {
   const warn = document.getElementById('intentos-warning');
   if (!warn) return;
   if (val >= MAX_RELLAMADAS) {
-    warn.textContent = '⚠️ Al guardar se marcará como No interesado y se archivará.';
-    warn.style.display = ''; warn.style.color = 'var(--red)';
+    warn.textContent   = '⚠️ Al guardar se marcará como No interesado y se archivará.';
+    warn.style.display = '';
+    warn.style.color   = 'var(--red)';
   } else if (val === MAX_RELLAMADAS - 1) {
-    warn.textContent = `⚠️ Próximo intento (${MAX_RELLAMADAS}) cerrará el ciclo.`;
-    warn.style.display = ''; warn.style.color = 'var(--yellow)';
+    warn.textContent   = `⚠️ Próximo intento (${MAX_RELLAMADAS}) cerrará el ciclo.`;
+    warn.style.display = '';
+    warn.style.color   = 'var(--yellow)';
   } else {
     warn.style.display = 'none';
   }
@@ -882,7 +1114,8 @@ function onIntentosChange() {
 
 function setEstado(value, el) {
   if (el.classList.contains('chip-disabled') && currentUser?.rol !== 'admin') {
-    toast('⚠️ ' + (el.title || 'Estado no disponible'), 'error'); return;
+    toast('⚠️ ' + (el.title || 'Estado no disponible'), 'error');
+    return;
   }
   document.querySelectorAll('.quick-chip').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
@@ -890,49 +1123,53 @@ function setEstado(value, el) {
   toggleIntentosField(value);
 }
 
-function closeVentaModal() { document.getElementById('venta-modal').classList.remove('open'); }
+function closeVentaModal() {
+  document.getElementById('venta-modal').classList.remove('open');
+}
 
+// ═══════════════════════════════════════════════
+//  GUARDAR VENTA (con venta_items)
+// ═══════════════════════════════════════════════
 async function saveVenta() {
-  const ventaId    = document.getElementById('edit-venta-id').value;
-  const celular    = document.getElementById('f-celular').value.trim();
-  const nombre     = document.getElementById('f-nombre').value.trim();
-  const clienteId  = document.getElementById('f-cliente-id').value;
-  const estado     = document.getElementById('f-estado').value;
-  const ubicacion  = document.getElementById('f-ubicacion').value.trim();
-  const notas      = document.getElementById('f-notas').value.trim();
-  const intentos   = parseInt(document.getElementById('f-intentos').value) || 1;
-  const fecha      = document.getElementById('f-fecha').value;
-  const cantidad   = parseInt(document.getElementById('f-cantidad').value) || 1;
-  const monto      = parseFloat(document.getElementById('f-monto').value) || null;
-  const productoId = parseInt(document.getElementById('f-producto-id').value) || null;
-  const direccion  = document.getElementById('f-direccion')?.value?.trim() || null;
-  const agenteId   = currentUser.rol === 'admin'
+  const ventaId   = document.getElementById('edit-venta-id').value;
+  const celular   = document.getElementById('f-celular').value.trim();
+  const nombre    = document.getElementById('f-nombre').value.trim();
+  const clienteId = document.getElementById('f-cliente-id').value;
+  const estado    = document.getElementById('f-estado').value;
+  const ubicacion = document.getElementById('f-ubicacion').value.trim();
+  const notas     = document.getElementById('f-notas').value.trim();
+  const intentos  = parseInt(document.getElementById('f-intentos').value) || 1;
+  const fecha     = document.getElementById('f-fecha').value;
+  const monto     = parseFloat(document.getElementById('f-monto').value) || null;
+  const direccion = document.getElementById('f-direccion')?.value?.trim() || null;
+  const agenteId  = currentUser.rol === 'admin'
     ? document.getElementById('f-agente')?.value || currentUser.id
     : currentUser.id;
 
   if (!celular) { toast('⚠️ El celular es obligatorio', 'error'); return; }
 
+  // Validar que haya al menos un ítem con producto y subtotal
+  const items = getVentaItemsData();
+  if (items.length === 0) { toast('⚠️ Añade al menos un producto con precio', 'error'); return; }
+
   try {
     let cId = clienteId ? parseInt(clienteId) : null;
-    const prodNombreParaPerfil = productoId
-      ? allProductos.find(p=>p.id===productoId)?.nombre || null
-      : null;
+    const prodNombreParaPerfil = items
+      .map(it => allProductos.find(p => p.id === it.producto_id)?.nombre)
+      .filter(Boolean).join(', ');
 
     if (!cId) {
-      // ── Crear cliente nuevo con todos sus atributos ──
       const { data: newC, error: errC } = await db.from('clientes')
         .insert({
           celular,
           nombre:                nombre || 's/n',
           ubicacion,
-          producto_interes:      prodNombreParaPerfil,
+          producto_interes:      prodNombreParaPerfil || null,
           direccion_residencial: direccion,
-        })
-        .select().single();
+        }).select().single();
       if (errC) throw errC;
       cId = newC.id;
     } else {
-      // ── Actualizar cliente existente (solo atributos del cliente) ──
       await db.from('clientes').update({
         nombre:                nombre || 's/n',
         ubicacion,
@@ -941,6 +1178,7 @@ async function saveVenta() {
       }).eq('id', cId);
     }
 
+    // Lógica de rellamadas máximas
     let estadoFinal = estado;
     if (estado === 'rellamada') {
       if (intentos >= MAX_RELLAMADAS) {
@@ -958,14 +1196,12 @@ async function saveVenta() {
 
     const debeArchivar = ESTADOS_CIERRE.includes(estadoFinal);
 
-    // Columnas de la tabla ventas
+    // Construir payload de ventas (sin producto_id ni cantidad — ahora en venta_items)
     const ventaData = {
-      cliente_id:  cId,
-      agente_id:   agenteId,
+      cliente_id: cId,
+      agente_id:  agenteId,
       fecha,
       notas,
-      producto_id: productoId,
-      cantidad,
       monto_total: monto,
       estado:      estadoFinal,
       intentos:    estado === 'rellamada' ? intentos : 1,
@@ -977,6 +1213,8 @@ async function saveVenta() {
       const { error } = await db.from('ventas').update(ventaData).eq('id', parseInt(ventaId));
       if (error) throw error;
       savedId = parseInt(ventaId);
+      // Reemplazar todos los ítems anteriores
+      await db.from('venta_items').delete().eq('venta_id', savedId);
       toast('✅ Registro actualizado', 'success');
     } else {
       const { data: saved, error } = await db.from('ventas').insert(ventaData).select().single();
@@ -985,14 +1223,21 @@ async function saveVenta() {
       toast('✅ Registro agregado', 'success');
     }
 
+    // Insertar ítems nuevos
+    const itemsToInsert = items.map(it => ({ ...it, venta_id: savedId }));
+    const { error: errItems } = await db.from('venta_items').insert(itemsToInsert);
+    if (errItems) throw errItems;
+
+    // Limpiar flag spam si admin revierte
     if (currentUser.rol === 'admin' && estadoFinal !== 'spam') {
       const { count: spamCount } = await db.from('ventas')
-        .select('*', {count:'exact',head:true})
-        .eq('cliente_id', cId).eq('estado','spam').neq('id', savedId);
+        .select('*', { count: 'exact', head: true })
+        .eq('cliente_id', cId).eq('estado', 'spam').neq('id', savedId);
       if ((spamCount || 0) === 0)
         await db.from('clientes').update({ flag: 'normal' }).eq('id', cId);
     }
 
+    // Subir comprobante si hay
     const url = await uploadComprobante(savedId);
     if (url) await db.from('ventas').update({ comprobante_url: url }).eq('id', savedId);
 
@@ -1005,18 +1250,21 @@ async function saveVenta() {
   }
 }
 
-// DELETE VENTA
+// ═══════════════════════════════════════════════
+//  ELIMINAR VENTA
+// ═══════════════════════════════════════════════
 function deleteVenta(id) {
   const v       = ventas.find(x => x.id === id);
   const celular = v?.cliente?.celular || '';
   const nombre  = v?.cliente?.nombre  || 's/n';
   document.getElementById('delete-modal-nombre').textContent  = nombre;
   document.getElementById('delete-modal-celular').textContent = celular;
-  document.getElementById('delete-confirm-input').value = '';
+  document.getElementById('delete-confirm-input').value       = '';
   document.getElementById('delete-confirm-input').style.borderColor = '';
   document.getElementById('delete-modal-error').style.display = 'none';
   document.getElementById('delete-modal').classList.add('open');
   document.getElementById('delete-confirm-input').focus();
+
   document.getElementById('delete-confirm-btn').onclick = async () => {
     const typed = document.getElementById('delete-confirm-input').value.trim();
     if (typed !== celular) {
@@ -1028,48 +1276,53 @@ function deleteVenta(id) {
     try {
       const vent      = ventas.find(x => x.id === id);
       const clienteId = vent?.cliente_id;
+      // Los venta_items se eliminan en cascada gracias al ON DELETE CASCADE
       const { error } = await db.from('ventas').delete().eq('id', id);
       if (error) throw error;
       if (clienteId) {
-        const { count: faltas }    = await db.from('ventas').select('*',{count:'exact',head:true}).eq('cliente_id',clienteId).in('estado',['cancelado','spam']);
-        const { count: sinResp }   = await db.from('ventas').select('*',{count:'exact',head:true}).eq('cliente_id',clienteId).eq('estado','sin_respuesta');
-        const { count: spamCount } = await db.from('ventas').select('*',{count:'exact',head:true}).eq('cliente_id',clienteId).eq('estado','spam');
+        const { count: faltas }    = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).in('estado', ['cancelado', 'spam']);
+        const { count: sinResp }   = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).eq('estado', 'sin_respuesta');
+        const { count: spamCount } = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).eq('estado', 'spam');
         await db.from('clientes').update({
-          faltas:        faltas  || 0,
-          sin_respuesta: sinResp || 0,
-          flag:          (spamCount||0) > 0 ? 'spam' : 'normal',
+          faltas:        faltas    || 0,
+          sin_respuesta: sinResp   || 0,
+          flag:          (spamCount || 0) > 0 ? 'spam' : 'normal',
         }).eq('id', clienteId);
       }
       toast('🗑️ Registro eliminado');
       await loadVentas(); renderVentas(); renderDashboard();
-    } catch(e) { toast('❌ '+e.message,'error'); }
+    } catch(e) { toast('❌ ' + e.message, 'error'); }
   };
 }
 function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); }
 
-// COMPROBANTE
+// ═══════════════════════════════════════════════
+//  COMPROBANTE
+// ═══════════════════════════════════════════════
 async function uploadComprobante(ventaId) {
   const input = document.getElementById('f-comprobante');
   const file  = input?.files?.[0];
   if (!file) return null;
-  const allowed = ['image/jpeg','image/png','image/webp','application/pdf'];
-  if (!allowed.includes(file.type)) { toast('⚠️ Solo JPG, PNG, WEBP o PDF','error'); return null; }
-  if (file.size > 5*1024*1024) { toast('⚠️ Máximo 5MB','error'); return null; }
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  if (!allowed.includes(file.type)) { toast('⚠️ Solo JPG, PNG, WEBP o PDF', 'error'); return null; }
+  if (file.size > 5 * 1024 * 1024) { toast('⚠️ Máximo 5MB', 'error'); return null; }
   const ext  = file.name.split('.').pop();
   const path = `${currentUser.id}/${ventaId}_${Date.now()}.${ext}`;
-  const { error } = await db.storage.from('comprobantes').upload(path, file, {upsert:true});
-  if (error) { toast('❌ Error subiendo: '+error.message,'error'); return null; }
+  const { error } = await db.storage.from('comprobantes').upload(path, file, { upsert: true });
+  if (error) { toast('❌ Error subiendo: ' + error.message, 'error'); return null; }
   const { data: u } = db.storage.from('comprobantes').getPublicUrl(path);
   return u.publicUrl;
 }
+
 async function deleteComprobante(url, ventaId) {
   if (!url || !confirm('¿Eliminar comprobante?')) return;
   const path = url.split('/comprobantes/')[1];
   if (path) await db.storage.from('comprobantes').remove([path]);
-  await db.from('ventas').update({comprobante_url:null}).eq('id', ventaId);
+  await db.from('ventas').update({ comprobante_url: null }).eq('id', ventaId);
   toast('🗑️ Comprobante eliminado');
   await loadVentas(); renderVentas();
 }
+
 function renderComprobantePreview(url) {
   const wrap = document.getElementById('comprobante-preview');
   if (!wrap) return;
@@ -1082,38 +1335,47 @@ function renderComprobantePreview(url) {
 
 document.addEventListener('click', e => {
   if (!e.target.closest('.smart-input-row'))
-    document.querySelectorAll('.dropdown-list').forEach(d=>d.style.display='none');
+    document.querySelectorAll('.dropdown-list').forEach(d => d.style.display = 'none');
 });
 
-// USUARIOS (admin)
+// ═══════════════════════════════════════════════
+//  USUARIOS (admin)
+// ═══════════════════════════════════════════════
 async function renderUsers() {
   const { data, error } = await db.from('usuarios').select('*').order('nombre');
-  if (error) { toast('❌ Error cargando usuarios','error'); return; }
-  document.getElementById('users-grid').innerHTML = data.map(u=>`
-    <div class="user-card" style="${!u.activo?'opacity:0.5;':''}">
+  if (error) { toast('❌ Error cargando usuarios', 'error'); return; }
+  document.getElementById('users-grid').innerHTML = data.map(u => `
+    <div class="user-card" style="${!u.activo ? 'opacity:0.5;' : ''}">
       <div class="user-card-header">
         <div class="user-card-avatar">${u.nombre[0].toUpperCase()}</div>
         <div>
-          <div class="user-card-name">${u.nombre}${!u.activo?' <span style="color:var(--red);font-size:11px;">(inactivo)</span>':''}</div>
-          <div class="user-card-role">@${u.usuario} · <span style="color:${u.rol==='admin'?'var(--accent2)':'var(--green)'}">${u.rol}</span></div>
+          <div class="user-card-name">${u.nombre}${!u.activo ? ' <span style="color:var(--red);font-size:11px;">(inactivo)</span>' : ''}</div>
+          <div class="user-card-role">@${u.usuario} · <span style="color:${u.rol === 'admin' ? 'var(--accent2)' : 'var(--green)'}">${u.rol}</span></div>
         </div>
       </div>
       <div class="user-card-actions">
         <button class="icon-btn" onclick="openUserModal('${u.id}')">✏️ Editar</button>
-        ${u.usuario!=='admin'?`<button class="icon-btn danger" onclick="toggleUserActive('${u.id}',${u.activo})">${u.activo?'🚫 Desactivar':'✅ Activar'}</button>`:''}
+        ${u.usuario !== 'admin' ? `<button class="icon-btn danger" onclick="toggleUserActive('${u.id}',${u.activo})">${u.activo ? '🚫 Desactivar' : '✅ Activar'}</button>` : ''}
       </div>
     </div>`).join('');
 }
+
 async function toggleUserActive(id, active) {
-  if (!confirm(`¿${active?'desactivar':'activar'} este usuario?`)) return;
-  const { error } = await db.from('usuarios').update({activo:!active}).eq('id',id);
-  if (error) toast('❌ '+error.message,'error');
-  else { toast(`✅ Usuario ${active?'desactivado':'activado'}`); renderUsers(); await loadAgents(); buildAgentSelector(); }
+  if (!confirm(`¿${active ? 'desactivar' : 'activar'} este usuario?`)) return;
+  const { error } = await db.from('usuarios').update({ activo: !active }).eq('id', id);
+  if (error) toast('❌ ' + error.message, 'error');
+  else {
+    toast(`✅ Usuario ${active ? 'desactivado' : 'activado'}`);
+    renderUsers();
+    await loadAgents();
+    buildAgentSelector();
+  }
 }
+
 function openUserModal(id) {
   document.getElementById('user-modal').classList.add('open');
   if (id) {
-    db.from('usuarios').select('*').eq('id',id).single().then(({data}) => {
+    db.from('usuarios').select('*').eq('id', id).single().then(({ data }) => {
       if (!data) return;
       document.getElementById('user-modal-title').textContent = 'Editar Usuario';
       document.getElementById('edit-user-id').value = data.id;
@@ -1124,11 +1386,12 @@ function openUserModal(id) {
     });
   } else {
     document.getElementById('user-modal-title').textContent = 'Nuevo Agente';
-    ['edit-user-id','u-nombre','u-user','u-pass'].forEach(id=>document.getElementById(id).value='');
+    ['edit-user-id', 'u-nombre', 'u-user', 'u-pass'].forEach(fid => document.getElementById(fid).value = '');
     document.getElementById('u-rol').value = 'agente';
   }
 }
 function closeUserModal() { document.getElementById('user-modal').classList.remove('open'); }
+
 async function saveUser() {
   const id   = document.getElementById('edit-user-id').value;
   const data = {
@@ -1138,43 +1401,58 @@ async function saveUser() {
     rol:      document.getElementById('u-rol').value,
     activo:   true,
   };
-  if (!data.nombre||!data.usuario||!data.password) { toast('⚠️ Completa todos los campos','error'); return; }
+  if (!data.nombre || !data.usuario || !data.password) { toast('⚠️ Completa todos los campos', 'error'); return; }
   try {
-    if (id) { const {error}=await db.from('usuarios').update(data).eq('id',id); if(error) throw error; }
-    else    { const {error}=await db.from('usuarios').insert(data);              if(error) throw error; }
-    closeUserModal(); renderUsers(); await loadAgents(); buildAgentSelector();
-    toast('✅ Usuario guardado','success');
-  } catch(e) { toast('❌ '+e.message,'error'); }
+    if (id) { const { error } = await db.from('usuarios').update(data).eq('id', id); if (error) throw error; }
+    else    { const { error } = await db.from('usuarios').insert(data);              if (error) throw error; }
+    closeUserModal();
+    renderUsers();
+    await loadAgents();
+    buildAgentSelector();
+    toast('✅ Usuario guardado', 'success');
+  } catch(e) { toast('❌ ' + e.message, 'error'); }
 }
 
-// ═══ EXPORT CSV ═══
+// ═══════════════════════════════════════════════
+//  EXPORT CSV
+// ═══════════════════════════════════════════════
 function exportCSV() {
   const isAdmin = currentUser?.rol === 'admin';
-  const headers = ['ID','Fecha','Nombre','Celular','Producto','Cantidad','Monto (Bs.)','Ubicación','Estado','Notas',...(isAdmin?['Agente']:[])];
-  const rows = ventas.map(v=>[
+  const headers = [
+    'ID', 'Fecha', 'Nombre', 'Celular', 'Productos', 'Monto (Bs.)',
+    'Ubicación', 'Estado', 'Notas',
+    ...(isAdmin ? ['Agente'] : [])
+  ];
+  const rows = ventas.map(v => [
     v.id,
     v.fecha,
     v.cliente?.nombre  || '',
     v.cliente?.celular || '',
-    v.producto_rel?.nombre || '',
-    v.cantidad    || 1,
+    (v.venta_items || []).map(it => {
+      const pn   = it.producto_rel?.nombre || '';
+      const cant = it.cantidad || 1;
+      const sub  = it.subtotal ? ` (Bs.${parseFloat(it.subtotal).toFixed(0)})` : '';
+      return `${pn} x${cant}${sub}`;
+    }).join(' + '),
     v.monto_total || '',
-    // ── Ubicación exclusivamente del cliente ──
     v.cliente?.ubicacion || '',
     v.estado || '',
     v.notas  || '',
-    ...(isAdmin ? [v.agente?.nombre||''] : [])
-  ].map(x=>`"${(x||'').toString().replace(/"/g,'""')}"`).join(','));
-  const csv  = [headers.join(','),...rows].join('\n');
-  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+    ...(isAdmin ? [v.agente?.nombre || ''] : [])
+  ].map(x => `"${(x || '').toString().replace(/"/g, '""')}"`).join(','));
+
+  const csv  = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
   a.download = `LIT_CRM_${currentUser.nombre}_${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
-  toast('📥 CSV exportado','success');
+  toast('📥 CSV exportado', 'success');
 }
 
-// ═══ BOLIVIA — Datos geográficos ═══
+// ═══════════════════════════════════════════════
+//  BOLIVIA — Datos geográficos
+// ═══════════════════════════════════════════════
 const BOLIVIA_GEO = {
   "Santa Cruz": { capital: "Santa Cruz de la Sierra", provincias: { "Andrés Ibáñez": { capital: "Santa Cruz de la Sierra", municipios: ["Santa Cruz de la Sierra","Cotoca","Porongo","La Guardia","El Torno","Warnes"] }, "Warnes": { capital: "Warnes", municipios: ["Warnes","Okinawa Uno"] }, "Ichilo": { capital: "Buena Vista", municipios: ["Buena Vista","San Carlos","Yapacaní","San Juan"] }, "Sara": { capital: "Portachuelo", municipios: ["Portachuelo","Santa Rosa del Sara","Colpa Bélgica"] }, "Obispo Santisteban": { capital: "Montero", municipios: ["Montero","Saavedra","Mineros","General Saavedra"] }, "Ñuflo de Chávez": { capital: "Concepción", municipios: ["Concepción","San Julián","San Antonio de Lomerío","Cuatro Cañadas","San Ramón","San Javier"] }, "Velasco": { capital: "San Ignacio de Velasco", municipios: ["San Ignacio de Velasco","San Miguel de Velasco","San Rafael"] }, "Chiquitos": { capital: "San José de Chiquitos", municipios: ["San José de Chiquitos","Pailón","Roboré","Charagua"] }, "Cordillera": { capital: "Camiri", municipios: ["Camiri","Charagua","Cabezas","Boyuibe","Cuevo","Gutiérrez","Lagunillas"] }, "Florida": { capital: "Samaipata", municipios: ["Samaipata","Mairana","Pampagrande"] }, "Vallegrande": { capital: "Vallegrande", municipios: ["Vallegrande","Moro Moro","Pucará"] }, "Manuel María Caballero": { capital: "Comarapa", municipios: ["Comarapa","Saipina"] }, "Germán Busch": { capital: "Puerto Suárez", municipios: ["Puerto Suárez","Puerto Quijarro","Carmen Rivero Torres"] }, "Ángel Sandoval": { capital: "San Matías", municipios: ["San Matías"] } } },
   "La Paz": { capital: "La Paz", provincias: { "Murillo": { capital: "La Paz", municipios: ["La Paz","El Alto","Palca","Mecapaca","Achocalla","Viacha"] }, "Omasuyos": { capital: "Achacachi", municipios: ["Achacachi","Ancoraimes"] }, "Pacajes": { capital: "Coro Coro", municipios: ["Coro Coro","Comanche","Charaña","Calacoto"] }, "Larecaja": { capital: "Sorata", municipios: ["Sorata","Guanay","Teoponte"] }, "Sud Yungas": { capital: "Chulumani", municipios: ["Chulumani","Irupana","Yanacachi","Palos Blancos","La Asunta"] }, "Nor Yungas": { capital: "Coroico", municipios: ["Coroico","Coripata"] }, "Caranavi": { capital: "Caranavi", municipios: ["Caranavi"] }, "Los Andes": { capital: "Pucarani", municipios: ["Pucarani","Laja","Batallas","Puerto Pérez"] }, "Aroma": { capital: "Sica Sica", municipios: ["Sica Sica","Ayo Ayo","Calamarca","Colquencha","Umala"] } } },
@@ -1197,10 +1475,8 @@ function initGeoSelectors() {
     const o = document.createElement('option'); o.value = dep; o.textContent = dep; selDep.appendChild(o);
   });
   function updateUbicacionInput() {
-    const dep  = selDep.value;
-    const prov = selProv.value;
-    const mun  = selMun.value;
-    const inp  = document.getElementById('f-ubicacion');
+    const dep = selDep.value, prov = selProv.value, mun = selMun.value;
+    const inp = document.getElementById('f-ubicacion');
     if (!inp) return;
     if (mun)       inp.value = `${dep} - ${prov} - ${mun}`;
     else if (prov) inp.value = `${dep} - ${prov}`;
@@ -1219,7 +1495,7 @@ function initGeoSelectors() {
     });
   };
   selProv.onchange = () => {
-    const dep = selDep.value; const prov = selProv.value;
+    const dep = selDep.value, prov = selProv.value;
     selMun.innerHTML = '<option value="">— Municipio —</option>';
     selMun.disabled  = !prov;
     updateUbicacionInput();
@@ -1228,7 +1504,7 @@ function initGeoSelectors() {
     const capDep   = BOLIVIA_GEO[dep].capital;
     provData.municipios.forEach(mun => {
       const o = document.createElement('option'); o.value = mun;
-      o.textContent = mun === capDep ? mun+' ★ (cap. departamental)' : mun === provData.capital ? mun+' · (cap. provincial)' : mun;
+      o.textContent = mun === capDep ? mun + ' ★ (cap. departamental)' : mun === provData.capital ? mun + ' · (cap. provincial)' : mun;
       selMun.appendChild(o);
     });
   };
@@ -1245,22 +1521,28 @@ function onDireccionKeydown(e) {
   wrap.innerHTML = `<iframe src="https://maps.google.com/maps?q=${q}&output=embed&hl=es" width="100%" height="220" style="border:0;border-radius:8px;margin-top:8px;" allowfullscreen="" loading="lazy"></iframe>`;
 }
 
-// ═══ TOAST ═══
+// ═══════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════
 let toastTimer;
-function toast(msg, type='') {
+function toast(msg, type = '') {
   const el = document.getElementById('toast');
   document.getElementById('toast-msg').textContent = msg;
   el.className = 'toast show ' + type;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>el.classList.remove('show'), 4000);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 4000);
 }
 
-// Cerrar modales al click en overlay
-document.getElementById('venta-modal').addEventListener('click',    e=>{if(e.target===e.currentTarget) closeVentaModal();});
-document.getElementById('user-modal').addEventListener('click',     e=>{if(e.target===e.currentTarget) closeUserModal();});
-document.getElementById('delete-modal').addEventListener('click',   e=>{if(e.target===e.currentTarget) closeDeleteModal();});
-document.getElementById('producto-modal').addEventListener('click', e=>{if(e.target===e.currentTarget) closeProductoModal();});
-document.getElementById('delete-confirm-input').addEventListener('keydown', e=>{if(e.key==='Enter') document.getElementById('delete-confirm-btn').click();});
+// ═══════════════════════════════════════════════
+//  CERRAR MODALES AL CLICK EN OVERLAY
+// ═══════════════════════════════════════════════
+document.getElementById('venta-modal').addEventListener('click',    e => { if (e.target === e.currentTarget) closeVentaModal(); });
+document.getElementById('user-modal').addEventListener('click',     e => { if (e.target === e.currentTarget) closeUserModal(); });
+document.getElementById('delete-modal').addEventListener('click',   e => { if (e.target === e.currentTarget) closeDeleteModal(); });
+document.getElementById('producto-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeProductoModal(); });
+document.getElementById('delete-confirm-input').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click(); });
 
-// Init
+// ═══════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════
 initTheme();
