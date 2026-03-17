@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LIT CRM — Gestión de Clientes</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="logo-icon">L</div>
+      <h1>LIT <span style="color:var(--accent)">CRM</span></h1>
+      <p>Gestión de clientes y ventas</p>
+    </div>
+    <div class="login-error" id="login-error">Usuario o contraseña incorrectos</div>
+    <div class="form-group">
+      <label>Usuario</label>
+      <input type="text" id="login-user" placeholder="tu usuario" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>Contraseña</label>
+      <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn-primary" onclick="doLogin()">Ingresar →</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" style="display:none;flex-direction:column;">
+
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">LIT <span>CRM</span></div>
+      <div class="topbar-badge">PRO</div>
+    </div>
+    <div class="topbar-right">
+      <!-- Botón tema día/noche -->
+      <button id="theme-toggle" onclick="toggleTheme()" title="Cambiar tema">🌙 Noche</button>
+
+      <button class="sync-btn" id="sync-btn" onclick="syncData()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+        <span>Sincronizar</span>
+      </button>
+      <div class="user-chip">
+        <div class="user-avatar" id="user-avatar-top">D</div>
+        <span id="user-name-top" style="font-size:13px;">—</span>
+      </div>
+      <button class="logout-btn" onclick="doLogout()">Salir</button>
+    </div>
+  </div>
+
+  <div class="nav-tabs">
+    <div class="nav-tab active" data-view="dashboard" onclick="showView('dashboard')">📊 Dashboard</div>
+    <div class="nav-tab" data-view="ventas"    onclick="showView('ventas')">📋 Registros</div>
+    <div class="nav-tab" id="tab-config"   data-view="config"   onclick="showView('config')"   style="display:none;">⚙️ Config</div>
+    <div class="nav-tab" id="tab-usuarios" data-view="usuarios" onclick="showView('usuarios')" style="display:none;">🔐 Usuarios</div>
+  </div>
+
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div class="view active" id="view-dashboard">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Dashboard</div>
+          <div class="section-sub" id="dash-date"></div>
+          <div style="font-size:12px;color:var(--accent2);margin-top:2px;" id="dash-subtitle"></div>
+        </div>
+        <button class="add-btn" onclick="exportCSV()">📥 Exportar CSV</button>
+      </div>
+      <div id="dashboard-agent-row" style="display:none;align-items:center;gap:12px;margin-bottom:20px;">
+        <span style="font-size:13px;color:var(--text2);">Ver datos de:</span>
+        <div id="agent-selector-wrap"></div>
+      </div>
+      <div class="stats-grid" id="stats-grid"></div>
+      <div class="dash-grid">
+        <div class="dash-card"><div class="dash-card-title">📦 Por Producto</div><div id="prod-chart"></div></div>
+        <div class="dash-card"><div class="dash-card-title">📍 Top Ciudades</div><div id="city-chart"></div></div>
+        <div class="dash-card"><div class="dash-card-title">📞 Pendientes urgentes</div><div class="today-list" id="today-list"></div></div>
+        <div class="dash-card"><div class="dash-card-title">🔄 Pipeline</div><div id="status-chart"></div></div>
+        <div class="dash-card" id="agents-card" style="display:none;grid-column:span 2;">
+          <div class="dash-card-title">👤 Rendimiento por Agente</div>
+          <div id="agents-chart"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- REGISTROS / VENTAS -->
+    <div class="view" id="view-ventas">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Registros</div>
+          <div class="section-sub" id="ventas-count">Cargando...</div>
+        </div>
+        <button class="add-btn" onclick="openVentaModal()">+ Nuevo Registro</button>
+      </div>
+      <!-- Tabs activos / archivados -->
+      <div style="display:flex;gap:0;margin-bottom:16px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;width:fit-content;">
+        <button id="tab-activos" onclick="setArchivoFiltro(false)" class="archivo-tab archivo-tab-active">📋 Activos</button>
+        <button id="tab-archivados" onclick="setArchivoFiltro(true)" class="archivo-tab">🔒 Archivados</button>
+      </div>
+
+      <div class="toolbar">
+        <input class="search-box" type="text" id="search-input" placeholder="🔍  Nombre, celular, producto, notas..." oninput="renderVentas()">
+        <select class="filter-select" id="filter-status" onchange="renderVentas()">
+          <option value="">Todos los estados</option>
+          <option value="rellamada">🔁 Rellamada</option>
+          <option value="seguimiento">🔄 Seguimiento</option>
+          <option value="interesado">🌟 Interesado</option>
+          <option value="agendar">📅 Agendar</option>
+          <option value="sin_respuesta">📵 Sin respuesta</option>
+          <option value="no_interesado">👎 No interesado</option>
+          <option value="enviado">📦 Enviado</option>
+          <option value="vendido">✅ Vendido</option>
+          <option value="cancelado">❌ Cancelado</option>
+          <option value="spam">🚫 SPAM</option>
+        </select>
+        <select class="filter-select" id="filter-producto" onchange="renderVentas()">
+          <option value="">Todos los productos</option>
+          <option value="calibrum">Calibrum</option>
+          <option value="colageno">Colágeno Premium</option>
+          <option value="osteofor">Osteofor</option>
+          <option value="alivia">Alivia Fen</option>
+          <option value="harmonia">Harmonia</option>
+          <option value="resver">Resver Plus</option>
+        </select>
+        <select class="filter-select" id="filter-ciudad" onchange="renderVentas()">
+          <option value="">Todas las ciudades</option>
+        </select>
+        <select class="filter-select" id="filter-agente" onchange="renderVentas()" style="display:none;">
+          <option value="">👥 Todos los agentes</option>
+        </select>
+      </div>
+      <div class="table-wrap desktop-table">
+        <div class="table-info">
+          <span id="table-count">0 registros</span>
+          <span style="color:var(--text3);font-size:12px;">Clic en fila para editar</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th><th>Cliente</th><th>Celular</th><th>Producto</th>
+              <th>Lugar</th><th>Estado</th><th>Notas</th>
+              <th id="th-agente" style="display:none;">Agente</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="ventas-tbody"></tbody>
+        </table>
+      </div>
+      <div class="mobile-cards" id="ventas-cards"></div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+
+    <!-- CONFIG -->
+    <div class="view" id="view-config">
+      <div class="section-title" style="margin-bottom:20px;">⚙️ Configuración</div>
+      <div class="config-card">
+        <div class="config-card-title">🗄️ Estructura de la base de datos v3</div>
+        <div class="code-block">clientes  → celular (único), nombre, ciudad, producto_interes, notas
+            faltas, sin_respuesta (contadores automáticos), flag
+
+ventas    → cliente_id (FK), agente_id (FK), fecha, producto
+            ciudad, estado, intentos, notas, comprobante_url</div>
+        <div class="info-box">💡 Un cliente puede tener múltiples ventas/seguimientos de distintos agentes. Los contadores de faltas y sin_respuesta se actualizan automáticamente vía triggers en Supabase.</div>
+      </div>
+      <div class="config-card">
+        <div class="config-card-title">📋 Reglas automáticas</div>
+        <div style="font-size:13px;color:var(--text2);line-height:2.2;">
+          📵 <b style="color:var(--text);">5× Sin respuesta</b> → Estado cambia a <b>No interesado</b> automáticamente<br>
+          ❌ <b style="color:var(--text);">2× Cancelado</b> → Estado cambia a <b>SPAM</b> automáticamente<br>
+          🔁 <b style="color:var(--text);">3× Rellamada</b> → Se archiva automáticamente como <b>No interesado</b><br>
+          ⚠️ El admin puede editar manualmente cualquier estado para revertirlo
+        </div>
+      </div>
+      <div class="config-card">
+        <div class="config-card-title">📥 Exportar</div>
+        <button class="btn-save" onclick="exportCSV()" style="background:var(--green);">📥 Exportar CSV completo</button>
+      </div>
+    </div>
+
+    <!-- USUARIOS -->
+    <div class="view" id="view-usuarios">
+      <div class="section-header">
+        <div><div class="section-title">Usuarios</div><div class="section-sub">Agentes y administradores</div></div>
+        <button class="add-btn" onclick="openUserModal(null)">+ Nuevo Agente</button>
+      </div>
+      <div class="users-grid" id="users-grid"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODAL VENTA/REGISTRO -->
+<div class="modal-overlay" id="venta-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Nuevo Registro</div>
+      <button class="modal-close" onclick="closeVentaModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-venta-id">
+      <input type="hidden" id="f-cliente-id">
+
+      <!-- Banner de registro archivado -->
+      <div id="archived-banner" style="display:none;background:rgba(90,90,122,0.2);border:1px solid rgba(90,90,122,0.4);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--text2);">
+        🔒 <b style="color:var(--text);">Registro archivado.</b> Este ciclo de venta está cerrado y no puede modificarse.
+        Solo el administrador puede editarlo.
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Fecha</label>
+          <input class="smart-input" type="date" id="f-fecha">
+        </div>
+        <div class="field">
+          <label>Celular</label>
+          <input class="smart-input" type="tel" id="f-celular" placeholder="70000000" oninput="onCelularInput()">
+          <div id="celular-suggestion" style="display:none;margin-top:6px;padding:8px 12px;font-size:12px;border-radius:6px;cursor:default;border:1px solid rgba(34,211,164,0.3);"></div>
+        </div>
+      </div>
+
+      <div id="cliente-info-box" style="margin-bottom:12px;display:none;"></div>
+
+      <div class="field">
+        <label>Nombre del Cliente</label>
+        <input class="smart-input" id="f-nombre" placeholder="Nombre completo o s/n">
+      </div>
+
+      <div class="field">
+        <label>Producto</label>
+        <div class="smart-input-row" style="position:relative;">
+          <input class="smart-input" id="f-producto" placeholder="Selecciona o escribe...">
+          <button class="select-btn" onclick="toggleDropdown('dd-producto')">▾ Elegir</button>
+          <div class="dropdown-list" id="dd-producto" style="display:none;top:42px;">
+            <div class="dropdown-item" onclick="selectOption('f-producto','Calibrum','dd-producto')">💜 Calibrum</div>
+            <div class="dropdown-item" onclick="selectOption('f-producto','Colágeno Premium','dd-producto')">💚 Colágeno Premium</div>
+            <div class="dropdown-item" onclick="selectOption('f-producto','Osteofor','dd-producto')">💛 Osteofor</div>
+            <div class="dropdown-item" onclick="selectOption('f-producto','Alivia Fen','dd-producto')">🧡 Alivia Fen</div>
+            <div class="dropdown-item" onclick="selectOption('f-producto','Harmonia','dd-producto')">🩷 Harmonia</div>
+            <div class="dropdown-item" onclick="selectOption('f-producto','Resver Plus','dd-producto')">❤️ Resver Plus</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Ubicación <span style="color:var(--text3);font-weight:400;font-size:10px;">(selecciona o escribe directamente)</span></label>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
+          <select class="smart-input" id="sel-departamento" style="font-size:12px;padding:8px 10px;">
+            <option value="">— Departamento —</option>
+          </select>
+          <select class="smart-input" id="sel-provincia" disabled style="font-size:12px;padding:8px 10px;">
+            <option value="">— Provincia —</option>
+          </select>
+          <select class="smart-input" id="sel-municipio" disabled style="font-size:12px;padding:8px 10px;">
+            <option value="">— Municipio —</option>
+          </select>
+        </div>
+        <input class="smart-input" id="f-ciudad" placeholder="O escribe la ciudad directamente...">
+      </div>
+
+      <div class="field">
+        <label>Dirección Residencial <span style="color:var(--text3);font-weight:400;font-size:10px;">(presiona Enter para ver en mapa)</span></label>
+        <input class="smart-input" id="f-direccion" placeholder="Ej: Av. Cañoto 456, Barrio Equipetrol..." onkeydown="onDireccionKeydown(event)">
+        <div id="maps-preview"></div>
+      </div>
+
+      <!-- Agente: solo admin -->
+      <div class="field" id="agente-field" style="display:none;">
+        <label>Asignar a Agente</label>
+        <select class="smart-input" id="f-agente"></select>
+      </div>
+
+      <!-- Estado -->
+      <input type="hidden" id="f-estado" value="rellamada">
+      <div class="field">
+        <label>Estado</label>
+        <div class="quick-chips">
+          <span class="quick-chip active" data-estado="rellamada"     onclick="setEstado('rellamada',this)">🔁 Rellamada</span>
+          <span class="quick-chip"        data-estado="seguimiento"   onclick="setEstado('seguimiento',this)">🔄 Seguimiento</span>
+          <span class="quick-chip yellow" data-estado="interesado"    onclick="setEstado('interesado',this)">🌟 Interesado</span>
+          <span class="quick-chip"        data-estado="agendar"       onclick="setEstado('agendar',this)">📅 Agendar</span>
+          <span class="quick-chip red"    data-estado="sin_respuesta" onclick="setEstado('sin_respuesta',this)">📵 Sin respuesta</span>
+          <span class="quick-chip"        data-estado="no_interesado" onclick="setEstado('no_interesado',this)">👎 No interesado</span>
+          <span class="quick-chip"        data-estado="enviado"       onclick="setEstado('enviado',this)">📦 Enviado</span>
+          <span class="quick-chip green"  data-estado="vendido"       onclick="setEstado('vendido',this)">✅ Vendido</span>
+          <span class="quick-chip red"    data-estado="cancelado"     onclick="setEstado('cancelado',this)">❌ Cancelado</span>
+          <span class="quick-chip red"    data-estado="spam"          onclick="setEstado('spam',this)">🚫 SPAM</span>
+        </div>
+      </div>
+
+      <!-- Intentos (solo rellamada) -->
+      <div class="field" id="intentos-field">
+        <label>Cantidad de intentos de llamada <span style="color:var(--text3);font-weight:400;font-size:10px;">(máx 3 — al 3ro se archiva como No interesado)</span></label>
+        <input class="smart-input" type="number" id="f-intentos" value="1" min="1" max="20" style="width:120px;" oninput="onIntentosChange()">
+        <div id="intentos-warning" style="display:none;font-size:12px;margin-top:6px;padding:6px 10px;border-radius:6px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);"></div>
+      </div>
+
+      <div class="field">
+        <label>Notas <span style="color:var(--text3);font-weight:400;font-size:11px;">(texto libre)</span></label>
+        <textarea class="textarea" id="f-notas" placeholder="Detalles, dirección de entrega, próxima llamada..."></textarea>
+      </div>
+
+      <div class="field">
+        <label>Comprobante <span style="color:var(--text3);font-weight:400;font-size:11px;">(imagen o PDF, máx 5MB)</span></label>
+        <input type="file" id="f-comprobante" accept="image/jpeg,image/png,image/webp,application/pdf"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 14px;color:var(--text2);font-size:13px;cursor:pointer;">
+        <div id="comprobante-preview"></div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeVentaModal()">Cancelar</button>
+        <button class="btn-save" onclick="saveVenta()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL USUARIO -->
+<div class="modal-overlay" id="user-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="user-modal-title">Nuevo Agente</div>
+      <button class="modal-close" onclick="closeUserModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-user-id">
+      <div class="field-row">
+        <div class="field"><label>Nombre</label><input class="smart-input" id="u-nombre" placeholder="Nombre completo"></div>
+        <div class="field"><label>Usuario</label><input class="smart-input" id="u-user" placeholder="nombre_usuario"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Contraseña</label><input class="smart-input" type="password" id="u-pass" placeholder="••••••••"></div>
+        <div class="field"><label>Rol</label>
+          <select class="smart-input" id="u-rol">
+            <option value="agente">Agente</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeUserModal()">Cancelar</button>
+        <button class="btn-save" onclick="saveUser()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span class="toast-icon">ℹ️</span><span id="toast-msg">Listo</span></div>
+
+<!-- MODAL ELIMINAR -->
+<div class="modal-overlay" id="delete-modal">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title" style="color:var(--red);">🗑️ Eliminar registro</div>
+      <button class="modal-close" onclick="closeDeleteModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:14px;color:var(--text2);margin-bottom:12px;line-height:1.6;">
+        Esta acción <b style="color:var(--text);">no se puede deshacer</b>.<br>
+        Para confirmar, escribe el celular del cliente:
+      </p>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:4px;">Cliente: <b style="color:var(--text);" id="delete-modal-nombre"></b></div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:15px;font-weight:700;color:var(--accent2);letter-spacing:1px;" id="delete-modal-celular"></div>
+      <input class="smart-input" id="delete-confirm-input" placeholder="Escribe el celular aquí..." autocomplete="off" type="tel">
+      <div id="delete-modal-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;">⚠️ El celular no coincide</div>
+      <div class="modal-actions" style="margin-top:20px;">
+        <button class="btn-secondary" onclick="closeDeleteModal()">Cancelar</button>
+        <button id="delete-confirm-btn" style="background:var(--red);border:none;border-radius:var(--radius-sm);padding:11px 24px;color:white;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">
+          Eliminar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
