@@ -382,7 +382,9 @@ function renderDashboard() {
   document.getElementById('dashboard-agent-row').style.display = isAdmin ? 'flex' : 'none';
 
   const total = ventas.length;
-  const vendidos = ventas.filter(v => v.estado === 'vendido').length;
+  const vendidos = ventas
+    .filter(v => v.estado === 'vendido')
+    .reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0);
   const montoVendidos = ventas
     .filter(v => v.estado === 'vendido')
     .reduce((sum, v) => sum + (parseFloat(v.monto_total) || 0), 0);
@@ -535,11 +537,14 @@ function getFiltered() {
 
 function renderVentas() {
   populateCityFilter();
-  const filtered   = getFiltered();
-  const total      = filtered.length;
+  const filtered = getFiltered();
+  const total = filtered.length;
+  const totalUnidades = estado === 'vendido'
+    ? filtered.reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0)
+    : null;
   const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
   if (currentPage > totalPages) currentPage = 1;
-  const page    = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const page = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const isAdmin = currentUser?.rol === 'admin';
 
   document.getElementById('ventas-count').textContent = `${total} ${mostrarArchivados ? 'archivados' : 'activos'} encontrados`;
@@ -1545,9 +1550,9 @@ function toast(msg, type = '') {
 }
 
 //  CERRAR MODALES AL CLICK EN OVERLAY
-document.getElementById('venta-modal').addEventListener('click',    e => { if (e.target === e.currentTarget) closeVentaModal(); });
-document.getElementById('user-modal').addEventListener('click',     e => { if (e.target === e.currentTarget) closeUserModal(); });
-document.getElementById('delete-modal').addEventListener('click',   e => { if (e.target === e.currentTarget) closeDeleteModal(); });
+document.getElementById('venta-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeVentaModal(); });
+document.getElementById('user-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeUserModal(); });
+document.getElementById('delete-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeleteModal(); });
 document.getElementById('producto-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeProductoModal(); });
 document.getElementById('delete-confirm-input').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click(); });
 document.getElementById('stat-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeStatModal(); });
@@ -1581,7 +1586,9 @@ function renderStatModal() {
   const isAdmin = currentUser?.rol === 'admin';
 
   document.getElementById('stat-modal-body').innerHTML = `
-    <div style="font-size:12px;color:var(--text3);margin-bottom:12px;">${total} registros</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:12px;">
+      ${total} ventas${totalUnidades !== null ? ` · ${totalUnidades} unidades` : ''}
+    </div>
     <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;">
         <thead>
