@@ -256,7 +256,7 @@ function renderDashboard() {
 
   document.getElementById('stats-grid').innerHTML = `
     <div class="stat-card"><div class="stat-icon" style="background:var(--accent-glow);">📋</div>
-      <div class="stat-value" style="color:var(--accent2);">${total}</div><div class="stat-label">TOTAL VENTAS</div></div>
+      <div class="stat-value" style="color:var(--accent2);">${total}</div><div class="stat-label">MOVIMIENTOS</div></div>
     <div class="stat-card"><div class="stat-icon" style="background:var(--green-bg);">✅</div>
       <div class="stat-value" style="color:var(--green);">${vendidos}</div><div class="stat-label">VENDIDOS</div></div>
     <div class="stat-card"><div class="stat-icon" style="background:var(--blue-bg);">📦</div>
