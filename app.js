@@ -1603,6 +1603,7 @@ function toast(msg, type = '') {
   toastTimer = setTimeout(() => el.classList.remove('show'), 4000);
 }
 
+/*
 // CERRAR MODALES AL CLICK EN OVERLAY
 document.getElementById('venta-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeVentaModal(); });
 document.getElementById('user-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeUserModal(); });
@@ -1610,6 +1611,32 @@ document.getElementById('delete-modal').addEventListener('click', e => { if (e.t
 document.getElementById('producto-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeProductoModal(); });
 document.getElementById('delete-confirm-input').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click(); });
 document.getElementById('stat-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeStatModal(); });
+*/
+
+// CERRAR MODALES AL CLICK EN X
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const modals = [
+      { id: 'venta-modal', closeFunc: closeVentaModal },
+      { id: 'user-modal', closeFunc: closeUserModal },
+      { id: 'delete-modal', closeFunc: closeDeleteModal },
+      { id: 'producto-modal', closeFunc: closeProductoModal },
+      { id: 'stat-modal', closeFunc: closeStatModal }
+    ];
+
+    for (const { id, closeFunc } of modals) {
+      const modal = document.getElementById(id);
+      if (modal?.classList.contains('open')) {
+        closeFunc();
+        break;
+      }
+    }
+  }
+});
+
+document.getElementById('delete-confirm-input').addEventListener('keydown', e => { 
+  if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click(); 
+});
 
 // STAT MODAL (igual al original)
 let statModalPage = 1;
