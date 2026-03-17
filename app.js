@@ -1,35 +1,57 @@
-const SUPABASE_URL      = 'https://txjgdglfzskirujqctra.supabase.co';
+const SUPABASE_URL = 'https://txjgdglfzskirujqctra.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4amdkZ2xmenNraXJ1anFjdHJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2NzYzNzYsImV4cCI6MjA4OTI1MjM3Nn0.b3o9KHVaspzyRnMhmB6uX2jLjadWgAFJM-iYHKHjXr0';
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// SessionManager 
+const SessionManager = {
+  STORAGE_KEY: 'litcrm_session_user',
+  saveSession(userData) {
+    sessionStorage.setItem(this.STORAGE_KEY, JSON.stringify(userData));
+  },
+  getSession() {
+    const data = sessionStorage.getItem(this.STORAGE_KEY);
+    return data ? JSON.parse(data) : null;
+  },
+  clearSession() {
+    sessionStorage.removeItem(this.STORAGE_KEY);
+  }
+}
+
 const ESTADOS = {
-  rellamada:    { label: '🔁 Rellamada',      badge: 'badge-rellamada',  color: 'var(--accent2)' },
-  seguimiento:  { label: '🔄 Seguimiento',    badge: 'badge-seguimiento',color: 'var(--blue)' },
-  interesado:   { label: '🌟 Interesado',     badge: 'badge-interesado', color: 'var(--yellow)' },
-  agendar:      { label: '📅 Agendar',        badge: 'badge-agendar',    color: 'var(--orange)' },
-  sin_respuesta:{ label: '📵 Sin respuesta',  badge: 'badge-sinresp',    color: 'var(--red)' },
-  no_interesado:{ label: '👎 No interesado',  badge: 'badge-noint',      color: 'var(--text3)' },
-  enviado:      { label: '📦 Enviado',        badge: 'badge-enviado',    color: 'var(--blue)' },
-  vendido:      { label: '✅ Vendido',        badge: 'badge-vendido',    color: 'var(--green)' },
-  cancelado:    { label: '❌ Cancelado',      badge: 'badge-cancelado',  color: '#f87171' },
-  spam:         { label: '🚫 SPAM',           badge: 'badge-spam',       color: 'var(--text3)' },
+  rellamada: { label: '🔁 Rellamada', badge: 'badge-rellamada',  color: 'var(--accent2)' },
+  seguimiento: { label: '🔄 Seguimiento', badge: 'badge-seguimiento',color: 'var(--blue)' },
+  interesado: { label: '🌟 Interesado', badge: 'badge-interesado', color: 'var(--yellow)' },
+  agendar: { label: '📅 Agendar', badge: 'badge-agendar', color: 'var(--orange)' },
+  sin_respuesta:{ label: '📵 Sin respuesta', badge: 'badge-sinresp', color: 'var(--red)' },
+  no_interesado:{ label: '👎 No interesado', badge: 'badge-noint', color: 'var(--text3)' },
+  enviado: { label: '📦 Enviado', badge: 'badge-enviado', color: 'var(--blue)' },
+  vendido: { label: '✅ Vendido', badge: 'badge-vendido', color: 'var(--green)' },
+  cancelado: { label: '❌ Cancelado', badge: 'badge-cancelado', color: '#f87171' },
+  spam: { label: '🚫 SPAM', badge: 'badge-spam', color: 'var(--text3)' },
 };
 
 // Van a archivados
 const ESTADOS_CIERRE = ['vendido', 'no_interesado', 'spam', 'cancelado'];
 const MAX_RELLAMADAS = 3;
 
-let currentUser      = null;
-let ventas           = [];
-let allAgents        = [];
-let allProductos     = [];
+let currentUser = null;
+let ventas = [];
+let allAgents = [];
+let allProductos = [];
 let selectedAgentId  = 'all';
-let currentPage      = 1;
-const PAGE_SIZE      = 25;
+let currentPage = 1;
+const PAGE_SIZE = 25;
 let mostrarArchivados = false;
 
-//  THEME
+// Debounce para búsqueda
+let _searchTimer;
+function debouncedRenderVentas() {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(renderVentas, 250);
+}
+
+// THEME
 function initTheme() {
   applyTheme(localStorage.getItem('litcrm-theme') || 'white');
 }
@@ -38,21 +60,34 @@ function applyTheme(theme) {
   localStorage.setItem('litcrm-theme', theme);
   const btn = document.getElementById('theme-toggle');
   if (btn) {
-    if (theme === 'night')      btn.textContent = '☀️ Día';
-    else if (theme === 'day')   btn.textContent = '🌙 Noche';
-    else                        btn.textContent = '🌿 Menta';
+    if (theme === 'night') btn.textContent = '☀️ Día';
+    else if (theme === 'day') btn.textContent = '🌙 Noche';
+    else btn.textContent = '🌿 Menta';
   }
 }
 function toggleTheme() {
   const order = ['white', 'day', 'night'];
-  const cur   = document.documentElement.getAttribute('data-theme') || 'white';
+  const cur = document.documentElement.getAttribute('data-theme') || 'white';
   applyTheme(order[(order.indexOf(cur) + 1) % 3]);
 }
 
-//  AUTH
-async function doLogin() {
-  const u    = document.getElementById('login-user').value.trim();
-  const p    = document.getElementById('login-pass').value;
+// Initialize Session
+function initializeSession() {
+  const savedSession = SessionManager.getSession();
+  if (savedSession && savedSession.id) {
+    currentUser = savedSession;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('user-name-top').textContent = savedSession.nombre;
+    document.getElementById('user-avatar-top').textContent = savedSession.nombre[0].toUpperCase();
+    initApp().catch(e => console.error('Error inicializando app:', e));
+  }
+}
+
+// AUTH
+async function doLogin() {  
+  const u = document.getElementById('login-user').value.trim();
+  const p = document.getElementById('login-pass').value;
   const errEl = document.getElementById('login-error');
   errEl.style.display = 'none';
   try {
@@ -69,6 +104,7 @@ async function doLogin() {
     document.getElementById('tab-config').style.display    = isAdmin ? '' : 'none';
     document.getElementById('tab-usuarios').style.display  = isAdmin ? '' : 'none';
     await initApp();
+    SessionManager.saveSession(data); 
   } catch(e) {
     errEl.textContent   = 'Error: ' + e.message;
     errEl.style.display = 'block';
@@ -80,20 +116,24 @@ document.addEventListener('keydown', e => {
 
 function doLogout() {
   currentUser = null; ventas = []; allAgents = []; allProductos = [];
-  document.getElementById('app').style.display        = 'none';
+  document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
   showViewDirect('dashboard');
+  SessionManager.clearSession();
 }
 
-//  INIT
+// INIT
 async function initApp() {
   document.getElementById('dash-date').textContent =
     new Date().toLocaleDateString('es-BO', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
-  await loadProductos();
-  if (currentUser.rol === 'admin') { await loadAgents(); buildAgentSelector(); }
-  await loadVentas();
+  if (currentUser.rol === 'admin') {
+    await Promise.all([loadProductos(), loadAgents(), loadVentas()]);
+    buildAgentSelector();
+  } else {
+    await Promise.all([loadProductos(), loadVentas()]);
+  }
   renderDashboard();
   initGeoSelectors();
   renderVentas();
@@ -102,7 +142,7 @@ async function initApp() {
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
 }
 
-//  PRODUCTOS — catálogo
+// PRODUCTOS — catálogo
 async function loadProductos() {
   const { data, error } = await db.from('productos')
     .select('*').eq('activo', true).order('nombre');
@@ -124,7 +164,7 @@ function populateProductoFilter() {
   });
 }
 
-//  PRODUCTOS — vista admin CRUD
+// PRODUCTOS — vista admin CRUD
 async function renderProductos() {
   await loadProductosAll();
   const grid = document.getElementById('productos-grid');
@@ -203,10 +243,10 @@ function addPromoRow(data) {
 }
 
 async function saveProducto() {
-  const id         = document.getElementById('edit-producto-id').value;
-  const nombre     = document.getElementById('p-nombre').value.trim();
+  const id = document.getElementById('edit-producto-id').value;
+  const nombre = document.getElementById('p-nombre').value.trim();
   const precioBase = parseFloat(document.getElementById('p-precio-base').value) || 0;
-  const activo     = document.getElementById('p-activo').value === 'true';
+  const activo = document.getElementById('p-activo').value === 'true';
   if (!nombre) { toast('⚠️ El nombre es obligatorio', 'error'); return; }
   const rows = document.querySelectorAll('#promos-editor > div');
   const promociones = [];
@@ -246,7 +286,7 @@ async function toggleProductoActivo(id, activo) {
   renderProductos();
 }
 
-//  CARGAR VENTAS (incluye venta_items)
+// CARGAR VENTAS
 async function loadVentas() {
   try {
     let query = db.from('ventas')
@@ -313,20 +353,25 @@ async function onAgentFilterChange() {
   renderVentas();
 }
 
+let _syncing = false;
 async function syncData() {
+  if (_syncing) return;
+  _syncing = true;
   const btn = document.getElementById('sync-btn');
   btn.classList.add('syncing');
   try {
-    await loadProductos();
-    await loadVentas();
+    await Promise.all([loadProductos(), loadVentas()]);
     renderDashboard();
     renderVentas();
     populateProductoFilter();
     toast('✅ Datos actualizados', 'success');
-  } finally { btn.classList.remove('syncing'); }
+  } finally {
+    btn.classList.remove('syncing');
+    _syncing = false;
+  }
 }
 
-//  NAV
+// NAV
 function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
@@ -344,24 +389,24 @@ function showViewDirect(name) {
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
 }
 
-//  STATUS / BADGE HELPERS
+// STATUS / BADGE HELPERS
 function statusBadge(estado) {
   const e = ESTADOS[estado] || ESTADOS.rellamada;
   return `<span class="badge ${e.badge}">${e.label}</span>`;
 }
 function flagBadge(cliente) {
   if (!cliente) return '';
-  if (cliente.flag === 'spam')        return `<span class="badge badge-spam" title="SPAM: ${cliente.faltas} cancelaciones">🚫 SPAM</span>`;
-  if (cliente.faltas >= 1)            return `<span class="badge badge-cancelado" title="${cliente.faltas} cancelación(es)">⚠️ ${cliente.faltas} falta${cliente.faltas > 1 ? 's' : ''}</span>`;
-  if (cliente.sin_respuesta >= 4)     return `<span class="badge badge-sinresp" title="${cliente.sin_respuesta} sin respuesta">📵 ${cliente.sin_respuesta}×</span>`;
+  if (cliente.flag === 'spam') return `<span class="badge badge-spam" title="SPAM: ${cliente.faltas} cancelaciones">🚫 SPAM</span>`;
+  if (cliente.faltas >= 1) return `<span class="badge badge-cancelado" title="${cliente.faltas} cancelación(es)">⚠️ ${cliente.faltas} falta${cliente.faltas > 1 ? 's' : ''}</span>`;
+  if (cliente.sin_respuesta >= 4) return `<span class="badge badge-sinresp" title="${cliente.sin_respuesta} sin respuesta">📵 ${cliente.sin_respuesta}×</span>`;
   return '';
 }
 function prodChip(nombre) {
   if (!nombre) return '';
   const nl = nombre.toLowerCase();
-  if (nl.includes('calibr'))                          return `<span class="prod-chip prod-calibrum">${nombre}</span>`;
-  if (nl.includes('colag'))                           return `<span class="prod-chip prod-colageno">${nombre}</span>`;
-  if (nl.includes('osteo'))                           return `<span class="prod-chip prod-osteofor">${nombre}</span>`;
+  if (nl.includes('calibr')) return `<span class="prod-chip prod-calibrum">${nombre}</span>`;
+  if (nl.includes('colag')) return `<span class="prod-chip prod-colageno">${nombre}</span>`;
+  if (nl.includes('osteo')) return `<span class="prod-chip prod-osteofor">${nombre}</span>`;
   if (nl.includes('alivia') || nl.includes('aliviah')) return `<span class="prod-chip prod-alivia">${nombre}</span>`;
   return `<span class="prod-chip">${nombre}</span>`;
 }
@@ -453,7 +498,7 @@ function renderDashboard() {
     if (c && c !== 's/c' && c !== '') cities[c] = (cities[c] || 0) + 1;
   });
   const sortedC = Object.entries(cities).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  const maxC    = sortedC[0]?.[1] || 1;
+  const maxC = sortedC[0]?.[1] || 1;
   document.getElementById('city-chart').innerHTML = sortedC.map(([k, v]) => `
     <div class="bar-row"><div class="bar-label">${k}</div>
     <div class="bar-track"><div class="bar-fill" style="width:${(v/maxC*100).toFixed(0)}%;background:var(--blue)"></div></div>
@@ -482,9 +527,9 @@ function renderDashboard() {
     const agStats = allAgents.filter(a => a.rol === 'agente').map(ag => {
       const av = ventas.filter(v => v.agente_id === ag.id);
       return {
-        nombre:      ag.nombre,
-        total:       av.length,
-        vendidos:    av.filter(v => v.estado === 'vendido').length,
+        nombre: ag.nombre,
+        total: av.length,
+        vendidos: av.filter(v => v.estado === 'vendido').length,
         interesados: av.filter(v => v.estado === 'interesado').length,
       };
     });
@@ -508,29 +553,29 @@ function renderDashboard() {
 //  VENTAS — lista + filtros
 function populateCityFilter() {
   const cities = [...new Set(ventas.map(v => v.cliente?.ubicacion).filter(c => c && c !== 's/c' && c !== ''))].sort();
-  const sel    = document.getElementById('filter-ubicacion');
+  const sel = document.getElementById('filter-ubicacion');
   while (sel.options.length > 1) sel.remove(1);
   cities.forEach(c => { const o = document.createElement('option'); o.value = c.toLowerCase(); o.textContent = c; sel.appendChild(o); });
 }
 
 function getFiltered() {
-  const search    = document.getElementById('search-input').value.toLowerCase();
-  const status    = document.getElementById('filter-status').value;
-  const prodId    = document.getElementById('filter-producto').value;
+  const search = document.getElementById('search-input').value.toLowerCase();
+  const status = document.getElementById('filter-status').value;
+  const prodId = document.getElementById('filter-producto').value;
   const ubicacion = document.getElementById('filter-ubicacion').value;
-  const agente    = document.getElementById('filter-agente')?.value || '';
+  const agente = document.getElementById('filter-agente')?.value || '';
   return ventas.filter(v => {
     if (!!v.archivado !== mostrarArchivados) return false;
-    const nombre   = v.cliente?.nombre  || '';
-    const cel      = v.cliente?.celular || '';
+    const nombre = v.cliente?.nombre  || '';
+    const cel = v.cliente?.celular || '';
     // Construir string de búsqueda incluyendo nombres de productos de los ítems
     const prodNames = (v.venta_items || []).map(it => it.productos?.nombre || '').join(' ');
     const haystack  = `${nombre} ${cel} ${prodNames} ${v.cliente?.ubicacion || ''} ${v.notas || ''}`.toLowerCase();
-    if (search    && !haystack.includes(search))                                        return false;
-    if (status    && v.estado !== status)                                               return false;
-    if (prodId    && !(v.venta_items || []).some(it => it.producto_id == prodId))       return false;
-    if (ubicacion && !(v.cliente?.ubicacion || '').toLowerCase().includes(ubicacion))   return false;
-    if (agente    && v.agente_id !== agente)                                            return false;
+    if (search && !haystack.includes(search)) return false;
+    if (status && v.estado !== status) return false;
+    if (prodId && !(v.venta_items || []).some(it => it.producto_id == prodId)) return false;
+    if (ubicacion && !(v.cliente?.ubicacion || '').toLowerCase().includes(ubicacion)) return false;
+    if (agente && v.agente_id !== agente) return false;
     return true;
   });
 }
@@ -622,14 +667,7 @@ function setArchivoFiltro(archivado) {
   renderVentas();
 }
 
-// ═══════════════════════════════════════════════
 //  VENTA ITEMS — multi-producto
-// ═══════════════════════════════════════════════
-
-/**
- * Añade una fila de ítem al formulario de venta.
- * @param {object} [data] - { producto_id, cantidad, subtotal } para pre-rellenar (modo edición)
- */
 function addVentaItem(data) {
   const wrap = document.getElementById('venta-items-wrap');
   const idx  = Date.now(); // id único para cada fila
@@ -683,11 +721,6 @@ function removeVentaItem(btn) {
   recalcMonto();
 }
 
-/**
- * Al cambiar el producto de una fila: muestra sus promociones y calcula subtotal.
- * @param {HTMLSelectElement} sel
- * @param {object} [preData] - { subtotal, promo_index } para modo edición
- */
 function onItemProductoChange(sel, preData) {
   const row        = sel.closest('[data-idx]');
   const pid        = parseInt(sel.value);
@@ -868,9 +901,7 @@ function clearVentaItems() {
   document.getElementById('monto-tag').textContent     = '';
 }
 
-// ═══════════════════════════════════════════════
-//  MODAL VENTA
-// ═══════════════════════════════════════════════
+// MODAL VENTA
 let celularTimer = null;
 
 async function onCelularInput() {
@@ -987,7 +1018,7 @@ async function openVentaModal(id) {
   }
 
   if (id) {
-    // ── MODO EDICIÓN ──────────────────────────────
+    // MODO EDICIÓN
     const v = ventas.find(x => x.id === id);
     if (!v) return;
 
@@ -1004,7 +1035,7 @@ async function openVentaModal(id) {
     lockFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.disabled = shouldLock; });
     document.querySelectorAll('.quick-chip').forEach(ch => {
       ch.style.pointerEvents = shouldLock ? 'none' : '';
-      ch.style.opacity       = shouldLock ? '0.4'  : '';
+      ch.style.opacity = shouldLock ? '0.4'  : '';
     });
     const addItemBtn = document.getElementById('btn-add-item');
     if (addItemBtn) addItemBtn.style.display = shouldLock ? 'none' : '';
@@ -1013,14 +1044,14 @@ async function openVentaModal(id) {
 
     // Rellenar campos
     document.getElementById('edit-venta-id').value   = id;
-    document.getElementById('f-fecha').value         = v.fecha || '';
-    document.getElementById('f-celular').value       = v.cliente?.celular || '';
-    document.getElementById('f-nombre').value        = v.cliente?.nombre  || '';
-    document.getElementById('f-cliente-id').value    = v.cliente_id || '';
-    document.getElementById('f-ubicacion').value     = v.cliente?.ubicacion || '';
-    document.getElementById('f-notas').value         = v.notas || '';
-    document.getElementById('f-direccion').value     = v.cliente?.direccion_residencial || '';
-    document.getElementById('f-monto').value         = v.monto_total || '';
+    document.getElementById('f-fecha').value = v.fecha || '';
+    document.getElementById('f-celular').value = v.cliente?.celular || '';
+    document.getElementById('f-nombre').value = v.cliente?.nombre  || '';
+    document.getElementById('f-cliente-id').value = v.cliente_id || '';
+    document.getElementById('f-ubicacion').value = v.cliente?.ubicacion || '';
+    document.getElementById('f-notas').value = v.notas || '';
+    document.getElementById('f-direccion').value = v.cliente?.direccion_residencial || '';
+    document.getElementById('f-monto').value = v.monto_total || '';
     document.getElementById('monto-tag').textContent = '';
 
     // Ítems de venta
@@ -1029,8 +1060,8 @@ async function openVentaModal(id) {
     if (itemsExistentes.length > 0) {
       itemsExistentes.forEach(it => addVentaItem({
         producto_id: it.producto_id,
-        cantidad:    it.cantidad,
-        subtotal:    it.subtotal,
+        cantidad: it.cantidad,
+        subtotal: it.subtotal,
       }));
     } else {
       addVentaItem(); // fila vacía si no hay ítems registrados
@@ -1054,7 +1085,7 @@ async function openVentaModal(id) {
 
     // Estado
     document.getElementById('f-intentos').value = v.intentos || 1;
-    document.getElementById('f-estado').value   = v.estado   || 'rellamada';
+    document.getElementById('f-estado').value = v.estado || 'rellamada';
     document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');
     toggleIntentosField(v.estado);
 
@@ -1064,7 +1095,7 @@ async function openVentaModal(id) {
     renderComprobantePreview(v.comprobante_url || null);
 
   } else {
-    // ── MODO NUEVO ────────────────────────────────
+    // MODO NUEVO
     document.getElementById('modal-title').textContent = 'Nuevo Registro';
     document.getElementById('edit-venta-id').value     = '';
     const archivedBanner = document.getElementById('archived-banner');
@@ -1078,13 +1109,13 @@ async function openVentaModal(id) {
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) saveBtn.style.display = '';
 
-    document.getElementById('f-fecha').value         = new Date().toISOString().split('T')[0];
-    document.getElementById('f-celular').value       = '';
-    document.getElementById('f-nombre').value        = '';
-    document.getElementById('f-cliente-id').value    = '';
-    document.getElementById('f-ubicacion').value     = '';
-    document.getElementById('f-notas').value         = '';
-    document.getElementById('f-direccion').value     = '';
+    document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
+    document.getElementById('f-celular').value = '';
+    document.getElementById('f-nombre').value  = '';
+    document.getElementById('f-cliente-id').value = '';
+    document.getElementById('f-ubicacion').value = '';
+    document.getElementById('f-notas').value = '';
+    document.getElementById('f-direccion').value = '';
 
     const mpNew = document.getElementById('maps-preview');
     if (mpNew) mpNew.innerHTML = '';
@@ -1144,9 +1175,7 @@ function closeVentaModal() {
   document.getElementById('venta-modal').classList.remove('open');
 }
 
-// ═══════════════════════════════════════════════
-//  GUARDAR VENTA (con venta_items)
-// ═══════════════════════════════════════════════
+// GUARDAR VENTA (con venta_items)
 async function saveVenta() {
   const ventaId   = document.getElementById('edit-venta-id').value;
   const celular   = document.getElementById('f-celular').value.trim();
@@ -1179,18 +1208,18 @@ async function saveVenta() {
       const { data: newC, error: errC } = await db.from('clientes')
         .insert({
           celular,
-          nombre:                nombre || 's/n',
+          nombre: nombre || 's/n',
           ubicacion,
-          producto_interes:      prodNombreParaPerfil || null,
+          producto_interes: prodNombreParaPerfil || null,
           direccion_residencial: direccion,
         }).select().single();
       if (errC) throw errC;
       cId = newC.id;
     } else {
       await db.from('clientes').update({
-        nombre:                nombre || 's/n',
+        nombre: nombre || 's/n',
         ubicacion,
-        producto_interes:      prodNombreParaPerfil || undefined,
+        producto_interes: prodNombreParaPerfil || undefined,
         direccion_residencial: direccion,
       }).eq('id', cId);
     }
@@ -1220,9 +1249,9 @@ async function saveVenta() {
       fecha,
       notas,
       monto_total: monto,
-      estado:      estadoFinal,
-      intentos:    estado === 'rellamada' ? intentos : 1,
-      archivado:   debeArchivar,
+      estado: estadoFinal,
+      intentos: estado === 'rellamada' ? intentos : 1,
+      archivado: debeArchivar,
     };
 
     let savedId;
@@ -1258,8 +1287,23 @@ async function saveVenta() {
     const url = await uploadComprobante(savedId);
     if (url) await db.from('ventas').update({ comprobante_url: url }).eq('id', savedId);
 
+    // Traer solo el registro guardado y actualizar array local
+    const { data: ventaActualizada } = await db.from('ventas')
+      .select(`id, cliente_id, agente_id, fecha, estado, intentos,
+        notas, comprobante_url, archivado, monto_total,
+        cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
+                             producto_interes, notas, faltas, sin_respuesta, flag ),
+        agente:agente_id ( id, nombre ),
+        venta_items ( id, cantidad, subtotal, producto_id, productos ( id, nombre ))`)
+      .eq('id', savedId).single();
+
+    if (ventaActualizada) {
+      const idx = ventas.findIndex(v => v.id === savedId);
+      if (idx >= 0) ventas[idx] = ventaActualizada;
+      else ventas.unshift(ventaActualizada);
+    }
+
     closeVentaModal();
-    await loadVentas();
     renderVentas();
     renderDashboard();
   } catch(e) {
@@ -1267,9 +1311,7 @@ async function saveVenta() {
   }
 }
 
-// ═══════════════════════════════════════════════
-//  ELIMINAR VENTA
-// ═══════════════════════════════════════════════
+// ELIMINAR VENTA
 function deleteVenta(id) {
   const v       = ventas.find(x => x.id === id);
   const celular = v?.cliente?.celular || '';
@@ -1306,16 +1348,16 @@ function deleteVenta(id) {
           flag:          (spamCount || 0) > 0 ? 'spam' : 'normal',
         }).eq('id', clienteId);
       }
+      ventas = ventas.filter(v => v.id !== id);
       toast('🗑️ Registro eliminado');
-      await loadVentas(); renderVentas(); renderDashboard();
+      renderVentas();
+      renderDashboard();
     } catch(e) { toast('❌ ' + e.message, 'error'); }
   };
 }
 function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); }
 
-// ═══════════════════════════════════════════════
-//  COMPROBANTE
-// ═══════════════════════════════════════════════
+// COMPROBANTE
 async function uploadComprobante(ventaId) {
   const input = document.getElementById('f-comprobante');
   const file  = input?.files?.[0];
@@ -1355,9 +1397,7 @@ document.addEventListener('click', e => {
     document.querySelectorAll('.dropdown-list').forEach(d => d.style.display = 'none');
 });
 
-// ═══════════════════════════════════════════════
-//  USUARIOS (admin)
-// ═══════════════════════════════════════════════
+// USUARIOS (admin)
 async function renderUsers() {
   const { data, error } = await db.from('usuarios').select('*').order('nombre');
   if (error) { toast('❌ Error cargando usuarios', 'error'); return; }
@@ -1430,9 +1470,7 @@ async function saveUser() {
   } catch(e) { toast('❌ ' + e.message, 'error'); }
 }
 
-// ═══════════════════════════════════════════════
 //  EXPORT CSV
-// ═══════════════════════════════════════════════
 function exportCSV() {
   const isAdmin = currentUser?.rol === 'admin';
   const headers = [
@@ -1536,7 +1574,7 @@ function onDireccionKeydown(e) {
   wrap.innerHTML = `<iframe src="https://maps.google.com/maps?q=${q}&output=embed&hl=es" width="100%" height="220" style="border:0;border-radius:8px;margin-top:8px;" allowfullscreen="" loading="lazy"></iframe>`;
 }
 
-//  TOAST
+// TOAST
 let toastTimer;
 function toast(msg, type = '') {
   const el = document.getElementById('toast');
@@ -1546,7 +1584,7 @@ function toast(msg, type = '') {
   toastTimer = setTimeout(() => el.classList.remove('show'), 4000);
 }
 
-//  CERRAR MODALES AL CLICK EN OVERLAY
+// CERRAR MODALES AL CLICK EN OVERLAY
 document.getElementById('venta-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeVentaModal(); });
 document.getElementById('user-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeUserModal(); });
 document.getElementById('delete-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeleteModal(); });
@@ -1554,7 +1592,7 @@ document.getElementById('producto-modal').addEventListener('click', e => { if (e
 document.getElementById('delete-confirm-input').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click(); });
 document.getElementById('stat-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeStatModal(); });
 
-// ═══ STAT MODAL ═══
+// STAT MODAL
 let statModalPage = 1;
 const STAT_PAGE_SIZE = 10;
 let statModalEstado = '';
@@ -1629,5 +1667,5 @@ function renderStatModal() {
   `;
 }
 
-//  INIT
+// INIT
 initTheme();

@@ -104,7 +104,7 @@
         <button id="tab-archivados" onclick="setArchivoFiltro(true)" class="archivo-tab">🔒 Archivados</button>
       </div>
       <div class="toolbar">
-        <input class="search-box" type="text" id="search-input" placeholder="🔍  Nombre, celular, producto, notas..." oninput="renderVentas()">
+        <input class="search-box" type="text" id="search-input" placeholder="🔍  Nombre, celular, producto, notas..." oninput="debouncedRenderVentas()">
         <select class="filter-select" id="filter-status" onchange="renderVentas()">
           <option value="">Todos los estados</option>
           <option value="rellamada">🔁 Rellamada</option>
@@ -431,5 +431,9 @@ venta_items → venta_id, producto_id (FK→productos), cantidad, subtotal</div>
 </div>
 
 <script src="app.js"></script>
+<script>
+  initTheme();
+  initializeSession();
+</script>
 </body>
 </html>
