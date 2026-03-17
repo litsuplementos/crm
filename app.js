@@ -1012,7 +1012,7 @@ async function onCelularInput() {
       infoBox.innerHTML = spamBanner + cicloWarning + `
         <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;">
           <div style="color:var(--accent2);font-weight:600;margin-bottom:4px;">👤 Cliente registrado ${flagBadge(data)}</div>
-          ${sinRespCount > 0 ? `<div style="color:${sinRespCount >= 4 ? 'var(--red)' : 'var(--text2)'};font-size:11px;">📵 ${sinRespCount}/4 sin respuesta</div>` : ''}
+          ${sinRespCount > 0 ? `<div style="color:${sinRespCount >= 3 ? 'var(--red)' : 'var(--text2)'};font-size:11px;">📵 ${sinRespCount}/4 sin respuesta${sinRespCount >= 3 ? ' — ⚠️ próximo cierra el ciclo' : ''}</div>` : ''}
           ${data.faltas > 0 && data.flag !== 'spam' ? `<div style="color:var(--orange);font-size:11px;">❌ ${data.faltas} cancelación(es)</div>` : ''}
           ${data.notas ? `<div style="color:var(--text2);margin-top:4px;">${data.notas}</div>` : ''}
         </div>`;
@@ -1239,6 +1239,20 @@ async function saveVenta() {
         toast('🔕 Marcado como No interesado (3 rellamadas)', 'error');
       } else if (intentos === MAX_RELLAMADAS - 1) {
         toast(`⚠️ ${intentos}/${MAX_RELLAMADAS} intentos — próximo cierra el ciclo`, 'error');
+      }
+    }
+
+    if (estado === 'sin_respuesta') {
+      const clienteActual = ventas.find(v => v.cliente_id === cId)?.cliente;
+      const sinRespActual = clienteActual?.sin_respuesta || 0;
+      if (sinRespActual >= 3) { // >= 3 porque al guardar este se sumará 1 más = 4
+        const ok = confirm(
+          `Este cliente ya tiene ${sinRespActual + 1} sin respuesta.\n` +
+          `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
+        );
+        if (!ok) return;
+        estadoFinal = 'no_interesado';
+        toast('🔕 Marcado como No interesado (4 sin respuesta)', 'error');
       }
     }
 
