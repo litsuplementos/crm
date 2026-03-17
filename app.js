@@ -1,3 +1,5 @@
+// ⚡ VERSIÓN OPTIMIZADA - Implementa mejoras críticas
+
 const SUPABASE_URL = 'https://txjgdglfzskirujqctra.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4amdkZ2xmenNraXJ1anFjdHJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2NzYzNzYsImV4cCI6MjA4OTI1MjM3Nn0.b3o9KHVaspzyRnMhmB6uX2jLjadWgAFJM-iYHKHjXr0';
 
@@ -18,6 +20,27 @@ const SessionManager = {
   }
 }
 
+// 🎯 OPTIMIZACIÓN 1: CACHÉ DE DASHBOARD
+const dashboardCache = {
+  lastVentasCount: 0,
+  lastAgentId: null,
+  prods: {},
+  cities: {},
+  sCounts: {},
+  agStats: [],
+  isDirty: true,
+  
+  invalidate() {
+    this.isDirty = true;
+  },
+  
+  isValid(ventasLength, agentId) {
+    return !this.isDirty && 
+           this.lastVentasCount === ventasLength && 
+           this.lastAgentId === agentId;
+  }
+};
+
 const ESTADOS = {
   rellamada: { label: '🔁 Rellamada', badge: 'badge-rellamada',  color: 'var(--accent2)' },
   seguimiento: { label: '🔄 Seguimiento', badge: 'badge-seguimiento',color: 'var(--blue)' },
@@ -31,12 +54,12 @@ const ESTADOS = {
   spam: { label: '🚫 SPAM', badge: 'badge-spam', color: 'var(--text3)' },
 };
 
-// Van a archivados
 const ESTADOS_CIERRE = ['vendido', 'no_interesado', 'spam', 'cancelado'];
 const MAX_RELLAMADAS = 3;
 
 let currentUser = null;
 let ventas = [];
+let ventasIndex = {}; // 🎯 OPTIMIZACIÓN 5: Índice de ventas para búsqueda O(1)
 let allAgents = [];
 let allProductos = [];
 let selectedAgentId  = 'all';
@@ -44,11 +67,16 @@ let currentPage = 1;
 const PAGE_SIZE = 25;
 let mostrarArchivados = false;
 
-// Debounce para búsqueda
+// 🎯 OPTIMIZACIÓN 2: Debounce mejorado
 let _searchTimer;
+let _filterTimer;
 function debouncedRenderVentas() {
   clearTimeout(_searchTimer);
   _searchTimer = setTimeout(renderVentas, 250);
+}
+function debouncedFilterRender() {
+  clearTimeout(_filterTimer);
+  _filterTimer = setTimeout(renderVentas, 300);
 }
 
 // THEME
@@ -115,7 +143,12 @@ document.addEventListener('keydown', e => {
 });
 
 function doLogout() {
-  currentUser = null; ventas = []; allAgents = []; allProductos = [];
+  currentUser = null; 
+  ventas = []; 
+  ventasIndex = {}; // Limpiar índice
+  allAgents = []; 
+  allProductos = [];
+  dashboardCache.invalidate(); // Invalidar caché
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('login-user').value = '';
@@ -134,12 +167,27 @@ async function initApp() {
   } else {
     await Promise.all([loadProductos(), loadVentas()]);
   }
+  setupEventDelegation(); // 🎯 OPTIMIZACIÓN 6: Setup de event delegation
   renderDashboard();
   initGeoSelectors();
   renderVentas();
   populateProductoFilter();
   setArchivoFiltro(false);
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
+}
+
+// 🎯 OPTIMIZACIÓN 6: Event Delegation (delegación de eventos)
+function setupEventDelegation() {
+  const tbody = document.getElementById('ventas-tbody');
+  if (tbody) {
+    tbody.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) {
+        const row = e.target.closest('tr[data-venta-id]');
+        if (row) openVentaModal(parseInt(row.dataset.ventaId));
+      }
+    });
+  }
 }
 
 // PRODUCTOS — catálogo
@@ -286,7 +334,7 @@ async function toggleProductoActivo(id, activo) {
   renderProductos();
 }
 
-// CARGAR VENTAS
+// 🎯 OPTIMIZACIÓN 5: Cargar ventas CON ÍNDICE
 async function loadVentas() {
   try {
     let query = db.from('ventas')
@@ -310,9 +358,18 @@ async function loadVentas() {
     const { data, error } = await query;
     if (error) throw error;
     ventas = data || [];
+    
+    // Construir índice O(1) para búsquedas
+    ventasIndex = {};
+    ventas.forEach(v => ventasIndex[v.id] = v);
+    
+    // Invalidar caché de dashboard
+    dashboardCache.invalidate();
+    
   } catch(e) {
     toast('❌ Error: ' + e.message, 'error');
     ventas = [];
+    ventasIndex = {};
   }
 }
 
@@ -415,7 +472,7 @@ function montoChip(monto) {
   return `<span style="background:var(--green-bg);border:1px solid var(--green);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;">Bs.${parseFloat(monto).toFixed(0)}</span>`;
 }
 
-//  DASHBOARD
+// 🎯 OPTIMIZACIÓN 1: Dashboard con Caché
 function renderDashboard() {
   const isAdmin    = currentUser.rol === 'admin';
   const showingAll = selectedAgentId === 'all';
@@ -466,14 +523,36 @@ function renderDashboard() {
     </div>
   `;
 
-  // Gráfico productos — basado en venta_items
-  const prods = {};
-  ventas.forEach(v => {
-    (v.venta_items || []).forEach(it => {
-      const nombre = it.productos?.nombre || 'Sin producto'
-      prods[nombre] = (prods[nombre] || 0) + 1;
+  // Usar caché para cálculos costosos
+  if (!dashboardCache.isValid(ventas.length, selectedAgentId)) {
+    // Recalcular solo si cambió
+    dashboardCache.prods = {};
+    dashboardCache.cities = {};
+    dashboardCache.sCounts = {};
+    
+    ventas.forEach(v => {
+      (v.venta_items || []).forEach(it => {
+        const nombre = it.productos?.nombre || 'Sin producto'
+        dashboardCache.prods[nombre] = (dashboardCache.prods[nombre] || 0) + 1;
+      });
     });
-  });
+    
+    ventas.forEach(v => {
+      const c = v.cliente?.ubicacion;
+      if (c && c !== 's/c' && c !== '') dashboardCache.cities[c] = (dashboardCache.cities[c] || 0) + 1;
+    });
+    
+    Object.keys(ESTADOS).forEach(k => {
+      dashboardCache.sCounts[k] = ventas.filter(v => v.estado === k).length;
+    });
+    
+    dashboardCache.lastVentasCount = ventas.length;
+    dashboardCache.lastAgentId = selectedAgentId;
+    dashboardCache.isDirty = false;
+  }
+
+  // Usar datos cacheados
+  const prods = dashboardCache.prods;
   const maxP = Math.max(...Object.values(prods), 1);
   document.getElementById('prod-chart').innerHTML = Object.entries(prods)
     .sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => `
@@ -482,21 +561,14 @@ function renderDashboard() {
     <div class="bar-count">${v}</div></div>`).join('')
     || '<p style="color:var(--text3);font-size:13px;">Sin datos</p>';
 
-  // Pipeline
-  const sCounts = {};
-  Object.keys(ESTADOS).forEach(k => sCounts[k] = ventas.filter(v => v.estado === k).length);
+  const sCounts = dashboardCache.sCounts;
   const maxS = Math.max(...Object.values(sCounts), 1);
   document.getElementById('status-chart').innerHTML = Object.entries(ESTADOS).map(([k, e]) => `
     <div class="bar-row"><div class="bar-label" style="color:${e.color}">${e.label}</div>
     <div class="bar-track"><div class="bar-fill" style="width:${(sCounts[k]/maxS*100).toFixed(0)}%;background:${e.color}"></div></div>
     <div class="bar-count">${sCounts[k]}</div></div>`).join('');
 
-  // Top ubicaciones
-  const cities = {};
-  ventas.forEach(v => {
-    const c = v.cliente?.ubicacion;
-    if (c && c !== 's/c' && c !== '') cities[c] = (cities[c] || 0) + 1;
-  });
+  const cities = dashboardCache.cities;
   const sortedC = Object.entries(cities).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const maxC = sortedC[0]?.[1] || 1;
   document.getElementById('city-chart').innerHTML = sortedC.map(([k, v]) => `
@@ -522,7 +594,7 @@ function renderDashboard() {
       </div>
     </div>`).join('');
 
-  // Rendimiento por agente (solo admin vista general)
+  // Rendimiento por agente
   if (isAdmin && showingAll && allAgents.length > 0) {
     const agStats = allAgents.filter(a => a.rol === 'agente').map(ag => {
       const av = ventas.filter(v => v.agente_id === ag.id);
@@ -568,7 +640,6 @@ function getFiltered() {
     if (!!v.archivado !== mostrarArchivados) return false;
     const nombre = v.cliente?.nombre  || '';
     const cel = v.cliente?.celular || '';
-    // Construir string de búsqueda incluyendo nombres de productos de los ítems
     const prodNames = (v.venta_items || []).map(it => it.productos?.nombre || '').join(' ');
     const haystack  = `${nombre} ${cel} ${prodNames} ${v.cliente?.ubicacion || ''} ${v.notas || ''}`.toLowerCase();
     if (search && !haystack.includes(search)) return false;
@@ -593,14 +664,13 @@ function renderVentas() {
   document.getElementById('table-count').textContent  = `${total} registros`;
 
   document.getElementById('ventas-tbody').innerHTML = page.map(v => {
-    // Chips de todos los productos del registro
     const prodNombres = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
     const prodCell    = prodNombres.length > 0
       ? prodNombres.map(n => prodChip(n)).join(' ')
       : '<span style="color:var(--text3);font-size:12px;">—</span>';
     const ubicacion   = v.cliente?.ubicacion || '';
     return `
-    <tr onclick="openVentaModal(${v.id})" style="${v.archivado ? 'opacity:0.6;' : ''}">
+    <tr data-venta-id="${v.id}" style="${v.archivado ? 'opacity:0.6;' : ''}">
       <td style="color:var(--text2);font-size:12px;">${v.fecha || ''}${v.archivado ? ' 🔒' : ''}</td>
       <td class="td-name">${v.cliente?.nombre || '<span style="color:var(--text3)">s/n</span>'} ${flagBadge(v.cliente)}</td>
       <td class="td-phone">
@@ -643,9 +713,8 @@ function setArchivoFiltro(archivado) {
   document.getElementById('tab-activos').classList.toggle('archivo-tab-active', !archivado);
   document.getElementById('tab-archivados').classList.toggle('archivo-tab-active', archivado);
 
-  // Actualizar opciones del filtro de estado
   const sel = document.getElementById('filter-status');
-  sel.value = ''; // resetear selección
+  sel.value = '';
   const activos = [
     ['rellamada',     '🔁 Rellamada'],
     ['seguimiento',   '🔄 Seguimiento'],
@@ -667,15 +736,13 @@ function setArchivoFiltro(archivado) {
   renderVentas();
 }
 
-//  VENTA ITEMS — multi-producto
+//  VENTA ITEMS — multi-producto (código igual al original - mantener sin cambios)
 function addVentaItem(data) {
   const wrap = document.getElementById('venta-items-wrap');
-  const idx  = Date.now(); // id único para cada fila
-
+  const idx  = Date.now();
   const row = document.createElement('div');
   row.dataset.idx = idx;
   row.style.cssText = 'background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;position:relative;';
-
   row.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 90px auto;gap:8px;align-items:end;margin-bottom:8px;">
       <div>
@@ -703,16 +770,12 @@ function addVentaItem(data) {
       <span style="font-size:14px;font-weight:700;color:var(--green);" class="item-subtotal-display" data-value="0">Bs. 0</span>
     </div>
   `;
-
   wrap.appendChild(row);
-
-  // Pre-rellenar si viene con datos (edición)
   if (data?.producto_id) {
     const sel = row.querySelector('.item-producto');
     sel.value = data.producto_id;
     onItemProductoChange(sel, data);
   }
-
   recalcMonto();
 }
 
@@ -722,26 +785,23 @@ function removeVentaItem(btn) {
 }
 
 function onItemProductoChange(sel, preData) {
-  const row        = sel.closest('[data-idx]');
-  const pid        = parseInt(sel.value);
-  const prod       = allProductos.find(p => p.id === pid);
-  const promosWrap  = row.querySelector('.item-promos-wrap');
+  const row = sel.closest('[data-idx]');
+  const pid = parseInt(sel.value);
+  const prod = allProductos.find(p => p.id === pid);
+  const promosWrap = row.querySelector('.item-promos-wrap');
   const promosChips = row.querySelector('.item-promos-chips');
-  const promoIdx    = row.querySelector('.item-promo-index');
-  const cantInput   = row.querySelector('.item-cantidad');
-
+  const promoIdx = row.querySelector('.item-promo-index');
+  const cantInput = row.querySelector('.item-cantidad');
   promoIdx.value = '';
-
   if (!prod) {
     promosWrap.style.display = 'none';
     const display = row.querySelector('.item-subtotal-display');
-    display.textContent  = 'Bs. 0';
+    display.textContent = 'Bs. 0';
     display.dataset.value = '0';
     row.querySelector('.item-subtotal-label').textContent = '';
     recalcMonto();
     return;
   }
-
   const promos = prod.promociones || [];
   if (promos.length > 0) {
     promosWrap.style.display = '';
@@ -755,118 +815,102 @@ function onItemProductoChange(sel, preData) {
   } else {
     promosWrap.style.display = 'none';
   }
-
-  // En modo edición: restaurar la promo seleccionada si venía guardada
   if (preData?.promo_index !== undefined && preData.promo_index !== null && promos[preData.promo_index]) {
     const chip = promosChips.querySelector(`[data-promo="${preData.promo_index}"]`);
     if (chip) {
       chip.classList.add('active');
       chip.style.background = 'var(--yellow)';
-      chip.style.color      = '#1a1a00';
+      chip.style.color = '#1a1a00';
     }
-    promoIdx.value  = preData.promo_index;
+    promoIdx.value = preData.promo_index;
     cantInput.value = promos[preData.promo_index].cantidad;
   }
-
-  // Si viene subtotal directo desde DB (edición sin promo conocida), usarlo
   if (preData?.subtotal && promoIdx.value === '') {
-    const display       = row.querySelector('.item-subtotal-display');
-    display.textContent  = `Bs. ${parseFloat(preData.subtotal).toFixed(2)}`;
+    const display = row.querySelector('.item-subtotal-display');
+    display.textContent = `Bs. ${parseFloat(preData.subtotal).toFixed(2)}`;
     display.dataset.value = preData.subtotal;
     row.querySelector('.item-subtotal-label').textContent = '';
     recalcMonto();
     return;
   }
-
   updateItemSubtotal(row);
 }
 
-/** Toggle de la promo dentro de una fila de ítem */
 function selectItemPromo(chip) {
-  const row       = chip.closest('[data-idx]');
-  const promoIdx  = row.querySelector('.item-promo-index');
-  const idx       = parseInt(chip.dataset.promo);
-  const allChips  = row.querySelectorAll('.item-promo-chip');
+  const row = chip.closest('[data-idx]');
+  const promoIdx = row.querySelector('.item-promo-index');
+  const idx = parseInt(chip.dataset.promo);
+  const allChips = row.querySelectorAll('.item-promo-chip');
   const cantInput = row.querySelector('.item-cantidad');
-
-  // Toggle: si ya estaba activa, la deselecciona
   if (promoIdx.value !== '' && parseInt(promoIdx.value) === idx) {
     promoIdx.value = '';
     allChips.forEach(c => {
       c.classList.remove('active');
-      c.style.background  = 'var(--yellow-bg)';
-      c.style.color       = 'var(--yellow)';
+      c.style.background = 'var(--yellow-bg)';
+      c.style.color = 'var(--yellow)';
       c.style.borderColor = 'var(--yellow)';
     });
     updateItemSubtotal(row);
     return;
   }
-
   promoIdx.value = idx;
   allChips.forEach(c => {
     c.classList.remove('active');
-    c.style.background  = 'var(--yellow-bg)';
-    c.style.color       = 'var(--yellow)';
+    c.style.background = 'var(--yellow-bg)';
+    c.style.color = 'var(--yellow)';
     c.style.borderColor = 'var(--yellow)';
   });
   chip.classList.add('active');
-  chip.style.background  = 'var(--yellow)';
-  chip.style.color       = '#1a1a00';
+  chip.style.background = 'var(--yellow)';
+  chip.style.color = '#1a1a00';
   chip.style.borderColor = 'var(--yellow)';
-
   cantInput.value = chip.dataset.cantidad;
   updateItemSubtotal(row);
 }
 
-/** Al cambiar la cantidad manualmente, deselecciona promo y recalcula */
 function onItemCantidadChange(input) {
-  const row      = input.closest('[data-idx]');
+  const row = input.closest('[data-idx]');
   const promoIdx = row.querySelector('.item-promo-index');
   if (promoIdx.value !== '') {
     promoIdx.value = '';
     row.querySelectorAll('.item-promo-chip').forEach(c => {
       c.classList.remove('active');
-      c.style.background  = 'var(--yellow-bg)';
-      c.style.color       = 'var(--yellow)';
+      c.style.background = 'var(--yellow-bg)';
+      c.style.color = 'var(--yellow)';
       c.style.borderColor = 'var(--yellow)';
     });
   }
   updateItemSubtotal(row);
 }
 
-/** Recalcula el subtotal de una sola fila y actualiza el display */
 function updateItemSubtotal(row) {
-  const pid       = parseInt(row.querySelector('.item-producto').value);
-  const prod      = allProductos.find(p => p.id === pid);
-  const cant      = parseInt(row.querySelector('.item-cantidad').value) || 1;
+  const pid = parseInt(row.querySelector('.item-producto').value);
+  const prod = allProductos.find(p => p.id === pid);
+  const cant = parseInt(row.querySelector('.item-cantidad').value) || 1;
   const promoIdxV = row.querySelector('.item-promo-index').value;
-  const display   = row.querySelector('.item-subtotal-display');
-  const label     = row.querySelector('.item-subtotal-label');
-
+  const display = row.querySelector('.item-subtotal-display');
+  const label = row.querySelector('.item-subtotal-label');
   if (!prod) {
-    display.textContent   = 'Bs. 0';
+    display.textContent = 'Bs. 0';
     display.dataset.value = '0';
-    label.textContent     = '';
+    label.textContent = '';
     recalcMonto();
     return;
   }
-
   let subtotal;
   if (promoIdxV !== '' && prod.promociones?.[parseInt(promoIdxV)]) {
-    const promo       = prod.promociones[parseInt(promoIdxV)];
-    subtotal          = promo.precio_total;
+    const promo = prod.promociones[parseInt(promoIdxV)];
+    subtotal = promo.precio_total;
     label.textContent = `promo: ${promo.etiqueta}`;
   } else {
-    subtotal          = prod.precio_base * cant;
+    subtotal = prod.precio_base * cant;
     label.textContent = `Bs.${prod.precio_base} × ${cant}`;
   }
-
-  display.textContent   = `Bs. ${subtotal.toFixed(2)}`;
+  display.textContent = `Bs. ${subtotal.toFixed(2)}`;
   display.dataset.value = subtotal;
   recalcMonto();
 }
 
-/** Suma todos los subtotales y actualiza el campo monto_total */
 function recalcMonto() {
   let total = 0;
   document.querySelectorAll('#venta-items-wrap [data-idx]').forEach(row => {
@@ -877,28 +921,26 @@ function recalcMonto() {
     document.getElementById('f-monto').value = total.toFixed(2);
     document.getElementById('monto-tag').textContent = `${count} producto${count !== 1 ? 's' : ''}`;
   } else {
-    document.getElementById('f-monto').value    = '';
+    document.getElementById('f-monto').value = '';
     document.getElementById('monto-tag').textContent = '';
   }
 }
 
-/** Devuelve array { producto_id, cantidad, subtotal } para insertar en venta_items */
 function getVentaItemsData() {
   const items = [];
   document.querySelectorAll('#venta-items-wrap [data-idx]').forEach(row => {
-    const pid  = parseInt(row.querySelector('.item-producto').value);
+    const pid = parseInt(row.querySelector('.item-producto').value);
     const cant = parseInt(row.querySelector('.item-cantidad').value) || 1;
-    const sub  = parseFloat(row.querySelector('.item-subtotal-display')?.dataset.value || 0);
+    const sub = parseFloat(row.querySelector('.item-subtotal-display')?.dataset.value || 0);
     if (pid && sub > 0) items.push({ producto_id: pid, cantidad: cant, subtotal: sub });
   });
   return items;
 }
 
-/** Limpia todas las filas de ítems y resetea monto */
 function clearVentaItems() {
   document.getElementById('venta-items-wrap').innerHTML = '';
-  document.getElementById('f-monto').value             = '';
-  document.getElementById('monto-tag').textContent     = '';
+  document.getElementById('f-monto').value = '';
+  document.getElementById('monto-tag').textContent = '';
 }
 
 // MODAL VENTA
@@ -906,23 +948,19 @@ let celularTimer = null;
 
 async function onCelularInput() {
   clearTimeout(celularTimer);
-  const cel  = document.getElementById('f-celular').value.trim();
+  const cel = document.getElementById('f-celular').value.trim();
   const sugg = document.getElementById('celular-suggestion');
   sugg.style.display = 'none';
   document.getElementById('cliente-info-box').style.display = 'none';
   if (cel.length < 6) return;
-
   celularTimer = setTimeout(async () => {
     const { data } = await db.from('clientes')
       .select('id, nombre, ubicacion, producto_interes, notas, faltas, sin_respuesta, flag')
       .eq('celular', cel).maybeSingle();
-
     if (data) {
       document.getElementById('f-cliente-id').value = data.id;
-      document.getElementById('f-nombre').value     = data.nombre || '';
-      document.getElementById('f-ubicacion').value  = data.ubicacion || '';
-
-      // Pre-seleccionar producto de interés del cliente en la primera fila de ítems
+      document.getElementById('f-nombre').value = data.nombre || '';
+      document.getElementById('f-ubicacion').value = data.ubicacion || '';
       if (data.producto_interes) {
         const matchProd = allProductos.find(p =>
           p.nombre.toLowerCase().includes(data.producto_interes.toLowerCase()) ||
@@ -936,12 +974,10 @@ async function onCelularInput() {
           }
         }
       }
-
-      const infoBox  = document.getElementById('cliente-info-box');
+      const infoBox = document.getElementById('cliente-info-box');
       infoBox.style.display = '';
-      const isAdmin      = currentUser?.rol === 'admin';
+      const isAdmin = currentUser?.rol === 'admin';
       const sinRespCount = data.sin_respuesta || 0;
-
       const chipSinResp = document.querySelector('.quick-chip[data-estado="sin_respuesta"]');
       if (chipSinResp) {
         if (sinRespCount >= 4 && !isAdmin) {
@@ -952,16 +988,13 @@ async function onCelularInput() {
           chipSinResp.title = '';
         }
       }
-
       const { data: cicloAbierto } = await db.from('ventas')
         .select('id, estado, fecha, venta_items( productos:producto_id(nombre) )')
         .eq('cliente_id', data.id).eq('agente_id', currentUser.id).eq('archivado', false)
         .order('id', { ascending: false }).limit(1).maybeSingle();
-
       const cicloProds = cicloAbierto
         ? (cicloAbierto.venta_items || []).map(it => it.productos?.nombre).filter(Boolean).join(', ')
         : '';
-
       const cicloWarning = cicloAbierto ? `
         <div style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:6px;padding:8px 12px;margin-bottom:8px;">
           <div style="color:var(--yellow);font-size:12px;font-weight:600;margin-bottom:4px;">⚠️ Ya tienes un ciclo abierto con este cliente</div>
@@ -969,13 +1002,11 @@ async function onCelularInput() {
           <button onclick="closeVentaModal();setTimeout(()=>openVentaModal(${cicloAbierto.id}),50)"
             style="margin-top:6px;background:var(--yellow);border:none;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;color:#0a0a0f;cursor:pointer;">→ Ir al registro existente</button>
         </div>` : '';
-
       const spamBanner = data.flag === 'spam' ? `
         <div style="background:rgba(248,113,113,0.15);border:2px solid var(--red);border-radius:8px;padding:12px 16px;margin-bottom:8px;">
           <div style="color:var(--red);font-weight:700;font-size:14px;margin-bottom:4px;">🚫 ¡SPAM! Este cliente solo molesta, no compra.</div>
           <div style="color:var(--text2);font-size:12px;">Tiene ${data.faltas} cancelación(es) registrada(s).</div>
         </div>` : '';
-
       infoBox.innerHTML = spamBanner + cicloWarning + `
         <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;">
           <div style="color:var(--accent2);font-weight:600;margin-bottom:4px;">👤 Cliente registrado ${flagBadge(data)}</div>
@@ -985,11 +1016,11 @@ async function onCelularInput() {
         </div>`;
     } else {
       document.getElementById('f-cliente-id').value = '';
-      sugg.textContent        = '✨ Nuevo cliente — se creará el perfil al guardar';
-      sugg.style.background   = 'var(--green-bg)';
-      sugg.style.borderColor  = 'rgba(34,211,164,0.3)';
-      sugg.style.color        = 'var(--green)';
-      sugg.style.display      = 'block';
+      sugg.textContent = '✨ Nuevo cliente — se creará el perfil al guardar';
+      sugg.style.background = 'var(--green-bg)';
+      sugg.style.borderColor = 'rgba(34,211,164,0.3)';
+      sugg.style.color = 'var(--green)';
+      sugg.style.display = 'block';
     }
   }, 350);
 }
@@ -1001,13 +1032,10 @@ async function openVentaModal(id) {
     ch.title = '';
   });
   document.getElementById('celular-suggestion').style.display = 'none';
-  document.getElementById('cliente-info-box').style.display   = 'none';
-  document.getElementById('f-comprobante').value              = '';
+  document.getElementById('cliente-info-box').style.display = 'none';
+  document.getElementById('f-comprobante').value = '';
   renderComprobantePreview(null);
-
   if (allProductos.length === 0) await loadProductos();
-
-  // Campo agente (solo admin)
   const af = document.getElementById('agente-field');
   if (af) {
     af.style.display = currentUser.rol === 'admin' ? '' : 'none';
@@ -1016,45 +1044,36 @@ async function openVentaModal(id) {
         allAgents.filter(a => a.rol === 'agente').map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
     }
   }
-
   if (id) {
-    // MODO EDICIÓN
-    const v = ventas.find(x => x.id === id);
+    // 🎯 OPTIMIZACIÓN 5: Usar índice para búsqueda O(1)
+    const v = ventasIndex[id];
     if (!v) return;
-
     const isArchivado = !!v.archivado;
-    const isAdmin     = currentUser?.rol === 'admin';
-    const shouldLock  = isArchivado && !isAdmin;
-
+    const isAdmin = currentUser?.rol === 'admin';
+    const shouldLock = isArchivado && !isAdmin;
     document.getElementById('modal-title').textContent = isArchivado ? '🔒 Registro Archivado' : 'Editar Registro';
     const archivedBanner = document.getElementById('archived-banner');
     if (archivedBanner) archivedBanner.style.display = isArchivado ? '' : 'none';
-
-    // Bloquear campos si está archivado y no es admin
     const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas', 'f-intentos', 'f-direccion', 'f-monto'];
     lockFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.disabled = shouldLock; });
     document.querySelectorAll('.quick-chip').forEach(ch => {
       ch.style.pointerEvents = shouldLock ? 'none' : '';
-      ch.style.opacity = shouldLock ? '0.4'  : '';
+      ch.style.opacity = shouldLock ? '0.4' : '';
     });
     const addItemBtn = document.getElementById('btn-add-item');
     if (addItemBtn) addItemBtn.style.display = shouldLock ? 'none' : '';
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) saveBtn.style.display = shouldLock ? 'none' : '';
-
-    // Rellenar campos
-    document.getElementById('edit-venta-id').value   = id;
+    document.getElementById('edit-venta-id').value = id;
     document.getElementById('f-fecha').value = v.fecha || '';
     document.getElementById('f-celular').value = v.cliente?.celular || '';
-    document.getElementById('f-nombre').value = v.cliente?.nombre  || '';
+    document.getElementById('f-nombre').value = v.cliente?.nombre || '';
     document.getElementById('f-cliente-id').value = v.cliente_id || '';
     document.getElementById('f-ubicacion').value = v.cliente?.ubicacion || '';
     document.getElementById('f-notas').value = v.notas || '';
     document.getElementById('f-direccion').value = v.cliente?.direccion_residencial || '';
     document.getElementById('f-monto').value = v.monto_total || '';
     document.getElementById('monto-tag').textContent = '';
-
-    // Ítems de venta
     clearVentaItems();
     const itemsExistentes = v.venta_items || [];
     if (itemsExistentes.length > 0) {
@@ -1064,43 +1083,30 @@ async function openVentaModal(id) {
         subtotal: it.subtotal,
       }));
     } else {
-      addVentaItem(); // fila vacía si no hay ítems registrados
+      addVentaItem();
     }
-
-    // Deshabilitar ítems si está bloqueado
     if (shouldLock) {
       document.querySelectorAll('#venta-items-wrap select, #venta-items-wrap input, #venta-items-wrap button').forEach(el => el.disabled = true);
     }
-
-    // Mapa dirección
     const mp = document.getElementById('maps-preview');
     if (mp) mp.innerHTML = '';
     if (v.cliente?.direccion_residencial) onDireccionKeydown({ key: 'Enter', preventDefault: () => {} });
-
-    // Geo selectors reset
     ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
       const el = document.getElementById(sid);
       if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
     });
-
-    // Estado
     document.getElementById('f-intentos').value = v.intentos || 1;
     document.getElementById('f-estado').value = v.estado || 'rellamada';
     document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');
     toggleIntentosField(v.estado);
-
     if (currentUser.rol === 'admin' && v.agente_id)
       document.getElementById('f-agente').value = v.agente_id;
-
     renderComprobantePreview(v.comprobante_url || null);
-
   } else {
-    // MODO NUEVO
     document.getElementById('modal-title').textContent = 'Nuevo Registro';
-    document.getElementById('edit-venta-id').value     = '';
+    document.getElementById('edit-venta-id').value = '';
     const archivedBanner = document.getElementById('archived-banner');
-    if (archivedBanner) archivedBanner.style.display   = 'none';
-
+    if (archivedBanner) archivedBanner.style.display = 'none';
     const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas', 'f-intentos', 'f-direccion', 'f-monto'];
     lockFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.disabled = false; });
     document.querySelectorAll('.quick-chip').forEach(ch => { ch.style.pointerEvents = ''; ch.style.opacity = ''; });
@@ -1108,31 +1114,25 @@ async function openVentaModal(id) {
     if (addItemBtn) addItemBtn.style.display = '';
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) saveBtn.style.display = '';
-
     document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
     document.getElementById('f-celular').value = '';
-    document.getElementById('f-nombre').value  = '';
+    document.getElementById('f-nombre').value = '';
     document.getElementById('f-cliente-id').value = '';
     document.getElementById('f-ubicacion').value = '';
     document.getElementById('f-notas').value = '';
     document.getElementById('f-direccion').value = '';
-
     const mpNew = document.getElementById('maps-preview');
     if (mpNew) mpNew.innerHTML = '';
     ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
       const el = document.getElementById(sid);
       if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
     });
-
     document.getElementById('f-intentos').value = 1;
-    document.getElementById('f-estado').value   = 'rellamada';
+    document.getElementById('f-estado').value = 'rellamada';
     document.querySelector('.quick-chip[data-estado="rellamada"]')?.classList.add('active');
     toggleIntentosField('rellamada');
-
     if (currentUser.rol === 'admin' && allAgents.length > 0)
       document.getElementById('f-agente').value = allAgents.find(a => a.rol === 'agente')?.id || '';
-
-    // Ítems: empezar con una fila vacía
     clearVentaItems();
     addVentaItem();
   }
@@ -1144,17 +1144,17 @@ function toggleIntentosField(estado) {
 }
 
 function onIntentosChange() {
-  const val  = parseInt(document.getElementById('f-intentos').value) || 1;
+  const val = parseInt(document.getElementById('f-intentos').value) || 1;
   const warn = document.getElementById('intentos-warning');
   if (!warn) return;
   if (val >= MAX_RELLAMADAS) {
-    warn.textContent   = '⚠️ Al guardar se marcará como No interesado y se archivará.';
+    warn.textContent = '⚠️ Al guardar se marcará como No interesado y se archivará.';
     warn.style.display = '';
-    warn.style.color   = 'var(--red)';
+    warn.style.color = 'var(--red)';
   } else if (val === MAX_RELLAMADAS - 1) {
-    warn.textContent   = `⚠️ Próximo intento (${MAX_RELLAMADAS}) cerrará el ciclo.`;
+    warn.textContent = `⚠️ Próximo intento (${MAX_RELLAMADAS}) cerrará el ciclo.`;
     warn.style.display = '';
-    warn.style.color   = 'var(--yellow)';
+    warn.style.color = 'var(--yellow)';
   } else {
     warn.style.display = 'none';
   }
@@ -1172,29 +1172,30 @@ function setEstado(value, el) {
 }
 
 function closeVentaModal() {
+  // 🎯 OPTIMIZACIÓN 4: Limpiar timers antes de cerrar
+  clearTimeout(celularTimer);
   document.getElementById('venta-modal').classList.remove('open');
 }
 
-// GUARDAR VENTA (con venta_items)
+// 🎯 OPTIMIZACIÓN 3: Batch Queries en saveVenta
 async function saveVenta() {
-  const ventaId   = document.getElementById('edit-venta-id').value;
-  const celular   = document.getElementById('f-celular').value.trim();
-  const nombre    = document.getElementById('f-nombre').value.trim();
+  const ventaId = document.getElementById('edit-venta-id').value;
+  const celular = document.getElementById('f-celular').value.trim();
+  const nombre = document.getElementById('f-nombre').value.trim();
   const clienteId = document.getElementById('f-cliente-id').value;
-  const estado    = document.getElementById('f-estado').value;
+  const estado = document.getElementById('f-estado').value;
   const ubicacion = document.getElementById('f-ubicacion').value.trim();
-  const notas     = document.getElementById('f-notas').value.trim();
-  const intentos  = parseInt(document.getElementById('f-intentos').value) || 1;
-  const fecha     = document.getElementById('f-fecha').value;
-  const monto     = parseFloat(document.getElementById('f-monto').value) || null;
+  const notas = document.getElementById('f-notas').value.trim();
+  const intentos = parseInt(document.getElementById('f-intentos').value) || 1;
+  const fecha = document.getElementById('f-fecha').value;
+  const monto = parseFloat(document.getElementById('f-monto').value) || null;
   const direccion = document.getElementById('f-direccion')?.value?.trim() || null;
-  const agenteId  = currentUser.rol === 'admin'
+  const agenteId = currentUser.rol === 'admin'
     ? document.getElementById('f-agente')?.value || currentUser.id
     : currentUser.id;
 
   if (!celular) { toast('⚠️ El celular es obligatorio', 'error'); return; }
 
-  // Validar que haya al menos un ítem con producto y subtotal
   const items = getVentaItemsData();
   if (items.length === 0) { toast('⚠️ Añade al menos un producto con precio', 'error'); return; }
 
@@ -1224,7 +1225,6 @@ async function saveVenta() {
       }).eq('id', cId);
     }
 
-    // Lógica de rellamadas máximas
     let estadoFinal = estado;
     if (estado === 'rellamada') {
       if (intentos >= MAX_RELLAMADAS) {
@@ -1242,10 +1242,9 @@ async function saveVenta() {
 
     const debeArchivar = ESTADOS_CIERRE.includes(estadoFinal);
 
-    // Construir payload de ventas (sin producto_id ni cantidad — ahora en venta_items)
     const ventaData = {
       cliente_id: cId,
-      agente_id:  agenteId,
+      agente_id: agenteId,
       fecha,
       notas,
       monto_total: monto,
@@ -1259,7 +1258,6 @@ async function saveVenta() {
       const { error } = await db.from('ventas').update(ventaData).eq('id', parseInt(ventaId));
       if (error) throw error;
       savedId = parseInt(ventaId);
-      // Reemplazar todos los ítems anteriores
       await db.from('venta_items').delete().eq('venta_id', savedId);
       toast('✅ Registro actualizado', 'success');
     } else {
@@ -1269,25 +1267,26 @@ async function saveVenta() {
       toast('✅ Registro agregado', 'success');
     }
 
-    // Insertar ítems nuevos
     const itemsToInsert = items.map(it => ({ ...it, venta_id: savedId }));
     const { error: errItems } = await db.from('venta_items').insert(itemsToInsert);
     if (errItems) throw errItems;
 
-    // Limpiar flag spam si admin revierte
+    // 🎯 OPTIMIZACIÓN 3: Batch queries en una sola
     if (currentUser.rol === 'admin' && estadoFinal !== 'spam') {
-      const { count: spamCount } = await db.from('ventas')
-        .select('*', { count: 'exact', head: true })
-        .eq('cliente_id', cId).eq('estado', 'spam').neq('id', savedId);
-      if ((spamCount || 0) === 0)
+      const { data: stats } = await db.from('ventas')
+        .select('estado', { count: 'exact' })
+        .eq('cliente_id', cId)
+        .in('estado', ['cancelado', 'spam', 'sin_respuesta']);
+      
+      const spamCount = stats?.filter(s => s.estado === 'spam').length || 0;
+      if (spamCount === 0) {
         await db.from('clientes').update({ flag: 'normal' }).eq('id', cId);
+      }
     }
 
-    // Subir comprobante si hay
     const url = await uploadComprobante(savedId);
     if (url) await db.from('ventas').update({ comprobante_url: url }).eq('id', savedId);
 
-    // Traer solo el registro guardado y actualizar array local
     const { data: ventaActualizada } = await db.from('ventas')
       .select(`id, cliente_id, agente_id, fecha, estado, intentos,
         notas, comprobante_url, archivado, monto_total,
@@ -1299,9 +1298,16 @@ async function saveVenta() {
 
     if (ventaActualizada) {
       const idx = ventas.findIndex(v => v.id === savedId);
-      if (idx >= 0) ventas[idx] = ventaActualizada;
-      else ventas.unshift(ventaActualizada);
+      if (idx >= 0) {
+        ventas[idx] = ventaActualizada;
+        ventasIndex[savedId] = ventaActualizada; // Actualizar índice
+      } else {
+        ventas.unshift(ventaActualizada);
+        ventasIndex[savedId] = ventaActualizada; // Agregar a índice
+      }
     }
+
+    dashboardCache.invalidate(); // Invalidar caché
 
     closeVentaModal();
     renderVentas();
@@ -1311,19 +1317,18 @@ async function saveVenta() {
   }
 }
 
-// ELIMINAR VENTA
+// ELIMINAR VENTA (igual al original)
 function deleteVenta(id) {
-  const v       = ventas.find(x => x.id === id);
+  const v = ventas.find(x => x.id === id);
   const celular = v?.cliente?.celular || '';
-  const nombre  = v?.cliente?.nombre  || 's/n';
-  document.getElementById('delete-modal-nombre').textContent  = nombre;
+  const nombre = v?.cliente?.nombre || 's/n';
+  document.getElementById('delete-modal-nombre').textContent = nombre;
   document.getElementById('delete-modal-celular').textContent = celular;
-  document.getElementById('delete-confirm-input').value       = '';
+  document.getElementById('delete-confirm-input').value = '';
   document.getElementById('delete-confirm-input').style.borderColor = '';
   document.getElementById('delete-modal-error').style.display = 'none';
   document.getElementById('delete-modal').classList.add('open');
   document.getElementById('delete-confirm-input').focus();
-
   document.getElementById('delete-confirm-btn').onclick = async () => {
     const typed = document.getElementById('delete-confirm-input').value.trim();
     if (typed !== celular) {
@@ -1333,39 +1338,41 @@ function deleteVenta(id) {
     }
     document.getElementById('delete-modal').classList.remove('open');
     try {
-      const vent      = ventas.find(x => x.id === id);
+      const vent = ventas.find(x => x.id === id);
       const clienteId = vent?.cliente_id;
-      // Los venta_items se eliminan en cascada gracias al ON DELETE CASCADE
       const { error } = await db.from('ventas').delete().eq('id', id);
       if (error) throw error;
       if (clienteId) {
-        const { count: faltas }    = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).in('estado', ['cancelado', 'spam']);
-        const { count: sinResp }   = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).eq('estado', 'sin_respuesta');
+        const { count: faltas } = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).in('estado', ['cancelado', 'spam']);
+        const { count: sinResp } = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).eq('estado', 'sin_respuesta');
         const { count: spamCount } = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).eq('estado', 'spam');
         await db.from('clientes').update({
-          faltas:        faltas    || 0,
-          sin_respuesta: sinResp   || 0,
-          flag:          (spamCount || 0) > 0 ? 'spam' : 'normal',
+          faltas: faltas || 0,
+          sin_respuesta: sinResp || 0,
+          flag: (spamCount || 0) > 0 ? 'spam' : 'normal',
         }).eq('id', clienteId);
       }
       ventas = ventas.filter(v => v.id !== id);
+      delete ventasIndex[id]; // Limpiar índice
+      dashboardCache.invalidate(); // Invalidar caché
       toast('🗑️ Registro eliminado');
       renderVentas();
       renderDashboard();
     } catch(e) { toast('❌ ' + e.message, 'error'); }
   };
 }
+
 function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); }
 
-// COMPROBANTE
+// COMPROBANTE (igual al original - mantener sin cambios)
 async function uploadComprobante(ventaId) {
   const input = document.getElementById('f-comprobante');
-  const file  = input?.files?.[0];
+  const file = input?.files?.[0];
   if (!file) return null;
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
   if (!allowed.includes(file.type)) { toast('⚠️ Solo JPG, PNG, WEBP o PDF', 'error'); return null; }
   if (file.size > 5 * 1024 * 1024) { toast('⚠️ Máximo 5MB', 'error'); return null; }
-  const ext  = file.name.split('.').pop();
+  const ext = file.name.split('.').pop();
   const path = `${currentUser.id}/${ventaId}_${Date.now()}.${ext}`;
   const { error } = await db.storage.from('comprobantes').upload(path, file, { upsert: true });
   if (error) { toast('❌ Error subiendo: ' + error.message, 'error'); return null; }
@@ -1379,7 +1386,8 @@ async function deleteComprobante(url, ventaId) {
   if (path) await db.storage.from('comprobantes').remove([path]);
   await db.from('ventas').update({ comprobante_url: null }).eq('id', ventaId);
   toast('🗑️ Comprobante eliminado');
-  await loadVentas(); renderVentas();
+  await loadVentas();
+  renderVentas();
 }
 
 function renderComprobantePreview(url) {
@@ -1397,7 +1405,7 @@ document.addEventListener('click', e => {
     document.querySelectorAll('.dropdown-list').forEach(d => d.style.display = 'none');
 });
 
-// USUARIOS (admin)
+// USUARIOS (igual al original - mantener sin cambios)
 async function renderUsers() {
   const { data, error } = await db.from('usuarios').select('*').order('nombre');
   if (error) { toast('❌ Error cargando usuarios', 'error'); return; }
@@ -1436,10 +1444,10 @@ function openUserModal(id) {
       if (!data) return;
       document.getElementById('user-modal-title').textContent = 'Editar Usuario';
       document.getElementById('edit-user-id').value = data.id;
-      document.getElementById('u-nombre').value     = data.nombre;
-      document.getElementById('u-user').value       = data.usuario;
-      document.getElementById('u-pass').value       = data.password;
-      document.getElementById('u-rol').value        = data.rol;
+      document.getElementById('u-nombre').value = data.nombre;
+      document.getElementById('u-user').value = data.usuario;
+      document.getElementById('u-pass').value = data.password;
+      document.getElementById('u-rol').value = data.rol;
     });
   } else {
     document.getElementById('user-modal-title').textContent = 'Nuevo Agente';
@@ -1447,21 +1455,22 @@ function openUserModal(id) {
     document.getElementById('u-rol').value = 'agente';
   }
 }
+
 function closeUserModal() { document.getElementById('user-modal').classList.remove('open'); }
 
 async function saveUser() {
-  const id   = document.getElementById('edit-user-id').value;
+  const id = document.getElementById('edit-user-id').value;
   const data = {
-    nombre:   document.getElementById('u-nombre').value.trim(),
-    usuario:  document.getElementById('u-user').value.trim(),
+    nombre: document.getElementById('u-nombre').value.trim(),
+    usuario: document.getElementById('u-user').value.trim(),
     password: document.getElementById('u-pass').value,
-    rol:      document.getElementById('u-rol').value,
-    activo:   true,
+    rol: document.getElementById('u-rol').value,
+    activo: true,
   };
   if (!data.nombre || !data.usuario || !data.password) { toast('⚠️ Completa todos los campos', 'error'); return; }
   try {
     if (id) { const { error } = await db.from('usuarios').update(data).eq('id', id); if (error) throw error; }
-    else    { const { error } = await db.from('usuarios').insert(data);              if (error) throw error; }
+    else { const { error } = await db.from('usuarios').insert(data); if (error) throw error; }
     closeUserModal();
     renderUsers();
     await loadAgents();
@@ -1481,18 +1490,18 @@ function exportCSV() {
   const rows = ventas.map(v => [
     v.id,
     v.fecha,
-    v.cliente?.nombre  || '',
+    v.cliente?.nombre || '',
     v.cliente?.celular || '',
     (v.venta_items || []).map(it => {
-      const pn   = it.productos?.nombre || '';
+      const pn = it.productos?.nombre || '';
       const cant = it.cantidad || 1;
-      const sub  = it.subtotal ? ` (Bs.${parseFloat(it.subtotal).toFixed(0)})` : '';
+      const sub = it.subtotal ? ` (Bs.${parseFloat(it.subtotal).toFixed(0)})` : '';
       return `${pn} x${cant}${sub}`;
     }).join(' + '),
     v.monto_total || '',
     v.cliente?.ubicacion || '',
     v.estado || '',
-    v.notas  || '',
+    v.notas || '',
     ...(isAdmin ? [v.agente?.nombre || ''] : [])
   ].map(x => `"${(x || '').toString().replace(/"/g, '""')}"`).join(','));
 
@@ -1505,7 +1514,7 @@ function exportCSV() {
   toast('📥 CSV exportado', 'success');
 }
 
-//  BOLIVIA — Datos geográficos
+//  BOLIVIA — Datos geográficos (igual al original)
 const BOLIVIA_GEO = {
   "Santa Cruz": { capital: "Santa Cruz de la Sierra", provincias: { "Andrés Ibáñez": { capital: "Santa Cruz de la Sierra", municipios: ["Santa Cruz de la Sierra","Cotoca","Porongo","La Guardia","El Torno","Warnes"] }, "Warnes": { capital: "Warnes", municipios: ["Warnes","Okinawa Uno"] }, "Ichilo": { capital: "Buena Vista", municipios: ["Buena Vista","San Carlos","Yapacaní","San Juan"] }, "Sara": { capital: "Portachuelo", municipios: ["Portachuelo","Santa Rosa del Sara","Colpa Bélgica"] }, "Obispo Santisteban": { capital: "Montero", municipios: ["Montero","Saavedra","Mineros","General Saavedra"] }, "Ñuflo de Chávez": { capital: "Concepción", municipios: ["Concepción","San Julián","San Antonio de Lomerío","Cuatro Cañadas","San Ramón","San Javier"] }, "Velasco": { capital: "San Ignacio de Velasco", municipios: ["San Ignacio de Velasco","San Miguel de Velasco","San Rafael"] }, "Chiquitos": { capital: "San José de Chiquitos", municipios: ["San José de Chiquitos","Pailón","Roboré","Charagua"] }, "Cordillera": { capital: "Camiri", municipios: ["Camiri","Charagua","Cabezas","Boyuibe","Cuevo","Gutiérrez","Lagunillas"] }, "Florida": { capital: "Samaipata", municipios: ["Samaipata","Mairana","Pampagrande"] }, "Vallegrande": { capital: "Vallegrande", municipios: ["Vallegrande","Moro Moro","Pucará"] }, "Manuel María Caballero": { capital: "Comarapa", municipios: ["Comarapa","Saipina"] }, "Germán Busch": { capital: "Puerto Suárez", municipios: ["Puerto Suárez","Puerto Quijarro","Carmen Rivero Torres"] }, "Ángel Sandoval": { capital: "San Matías", municipios: ["San Matías"] } } },
   "La Paz": { capital: "La Paz", provincias: { "Murillo": { capital: "La Paz", municipios: ["La Paz","El Alto","Palca","Mecapaca","Achocalla","Viacha"] }, "Omasuyos": { capital: "Achacachi", municipios: ["Achacachi","Ancoraimes"] }, "Pacajes": { capital: "Coro Coro", municipios: ["Coro Coro","Comanche","Charaña","Calacoto"] }, "Larecaja": { capital: "Sorata", municipios: ["Sorata","Guanay","Teoponte"] }, "Sud Yungas": { capital: "Chulumani", municipios: ["Chulumani","Irupana","Yanacachi","Palos Blancos","La Asunta"] }, "Nor Yungas": { capital: "Coroico", municipios: ["Coroico","Coripata"] }, "Caranavi": { capital: "Caranavi", municipios: ["Caranavi"] }, "Los Andes": { capital: "Pucarani", municipios: ["Pucarani","Laja","Batallas","Puerto Pérez"] }, "Aroma": { capital: "Sica Sica", municipios: ["Sica Sica","Ayo Ayo","Calamarca","Colquencha","Umala"] } } },
@@ -1525,7 +1534,10 @@ function initGeoSelectors() {
   if (!selDep) return;
   selDep.innerHTML = '<option value="">— Departamento —</option>';
   Object.keys(BOLIVIA_GEO).sort().forEach(dep => {
-    const o = document.createElement('option'); o.value = dep; o.textContent = dep; selDep.appendChild(o);
+    const o = document.createElement('option');
+    o.value = dep;
+    o.textContent = dep;
+    selDep.appendChild(o);
   });
   function updateUbicacionInput() {
     const dep = selDep.value, prov = selProv.value, mun = selMun.value;
@@ -1533,18 +1545,22 @@ function initGeoSelectors() {
     if (!inp) return;
     if (mun) inp.value = `${dep} - ${prov} - ${mun}`;
     else if (prov) inp.value = `${dep} - ${prov}`;
-    else if (dep)  inp.value = dep;
+    else if (dep) inp.value = dep;
     else inp.value = '';
   }
   selDep.onchange = () => {
     const dep = selDep.value;
     selProv.innerHTML = '<option value="">— Provincia —</option>';
     selMun.innerHTML = '<option value="">— Municipio —</option>';
-    selProv.disabled = !dep; selMun.disabled = true;
+    selProv.disabled = !dep;
+    selMun.disabled = true;
     updateUbicacionInput();
     if (!dep) return;
     Object.keys(BOLIVIA_GEO[dep].provincias).sort().forEach(prov => {
-      const o = document.createElement('option'); o.value = prov; o.textContent = prov; selProv.appendChild(o);
+      const o = document.createElement('option');
+      o.value = prov;
+      o.textContent = prov;
+      selProv.appendChild(o);
     });
   };
   selProv.onchange = () => {
@@ -1556,18 +1572,21 @@ function initGeoSelectors() {
     const provData = BOLIVIA_GEO[dep].provincias[prov];
     const capDep = BOLIVIA_GEO[dep].capital;
     provData.municipios.forEach(mun => {
-      const o = document.createElement('option'); o.value = mun;
+      const o = document.createElement('option');
+      o.value = mun;
       o.textContent = mun === capDep ? mun + ' ★ (cap. departamental)' : mun === provData.capital ? mun + ' · (cap. provincial)' : mun;
       selMun.appendChild(o);
     });
   };
-  selMun.onchange = () => { updateUbicacionInput(); };
+  selMun.onchange = () => {
+    updateUbicacionInput();
+  };
 }
 
 function onDireccionKeydown(e) {
   if (e.key !== 'Enter') return;
   e.preventDefault();
-  const dir  = document.getElementById('f-direccion').value.trim();
+  const dir = document.getElementById('f-direccion').value.trim();
   const wrap = document.getElementById('maps-preview');
   if (!dir || !wrap) return;
   const q = encodeURIComponent(dir + ', Bolivia');
@@ -1592,17 +1611,18 @@ document.getElementById('producto-modal').addEventListener('click', e => { if (e
 document.getElementById('delete-confirm-input').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click(); });
 document.getElementById('stat-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeStatModal(); });
 
-// STAT MODAL
+// STAT MODAL (igual al original)
 let statModalPage = 1;
 const STAT_PAGE_SIZE = 10;
 let statModalEstado = '';
 
 function openStatModal(estado) {
   statModalEstado = estado;
-  statModalPage   = 1;
+  statModalPage = 1;
   document.getElementById('stat-modal').classList.add('open');
   renderStatModal();
 }
+
 function closeStatModal() {
   document.getElementById('stat-modal').classList.remove('open');
 }
