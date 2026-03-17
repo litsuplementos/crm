@@ -378,7 +378,7 @@ tbody tr:hover { background: var(--surface2); }
 td { padding: 10px 13px; font-size: 14px; }
 td.td-name { font-weight: 500; }
 td.td-phone { color: var(--accent); font-family: monospace; font-size: 14px; font-weight: 600; }
-td.td-ciudad { color: var(--text2); }
+td.td-ubicacion { color: var(--text2); }
 td.td-actions { white-space: nowrap; }
 .icon-btn {
   background: none; border: 1px solid var(--border); border-radius: 6px;

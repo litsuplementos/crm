@@ -344,10 +344,20 @@ async function toggleProductoActivo(id, activo) {
 // ═══ CARGAR VENTAS ═══
 async function loadVentas() {
   try {
+    // ── Columnas reales de cada tabla ──────────────────────────────────────
+    // ventas:   id, cliente_id, agente_id, fecha, producto, estado, intentos,
+    //           notas, comprobante_url, archivado, producto_id, cantidad, monto_total
+    // clientes: id, celular, nombre, ubicacion, direccion_residencial,
+    //           producto_interes, notas, faltas, sin_respuesta, flag
+    // usuarios: id, nombre
+    // productos: id, nombre, precio_base
+    // ──────────────────────────────────────────────────────────────────────
     let query = db.from('ventas')
       .select(`
-        *,
-        cliente:cliente_id ( id, celular, nombre, ciudad, producto_interes, notas, faltas, sin_respuesta, flag, direccion_residencial ),
+        id, cliente_id, agente_id, fecha, producto, estado, intentos,
+        notas, comprobante_url, archivado, producto_id, cantidad, monto_total,
+        cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
+                             producto_interes, notas, faltas, sin_respuesta, flag ),
         agente:agente_id   ( id, nombre ),
         producto_rel:producto_id ( id, nombre, precio_base )
       `)
@@ -498,7 +508,7 @@ function renderDashboard() {
 
   const prods = {};
   ventas.forEach(v => {
-    const nombre = v.producto_rel?.nombre || v.producto || 'Sin producto';
+    const nombre = v.producto_rel?.nombre || 'Sin producto';
     prods[nombre] = (prods[nombre] || 0) + 1;
   });
   const maxP = Math.max(...Object.values(prods), 1);
@@ -515,9 +525,10 @@ function renderDashboard() {
     <div class="bar-track"><div class="bar-fill" style="width:${(sCounts[k]/maxS*100).toFixed(0)}%;background:${e.color}"></div></div>
     <div class="bar-count">${sCounts[k]}</div></div>`).join('');
 
+  // ── Ubicación viene siempre del cliente ──
   const cities = {};
   ventas.forEach(v => {
-    const c = v.ciudad || v.cliente?.ciudad;
+    const c = v.cliente?.ubicacion;
     if (c && c !== 's/c' && c !== '') cities[c] = (cities[c]||0) + 1;
   });
   const sortedC = Object.entries(cities).sort((a,b)=>b[1]-a[1]).slice(0,6);
@@ -568,28 +579,30 @@ function renderDashboard() {
 
 // ═══ VENTAS — lista + filtros ═══
 function populateCityFilter() {
-  const cities = [...new Set(ventas.map(v=>v.ciudad||v.cliente?.ciudad).filter(c=>c&&c!=='s/c'&&c!==''))].sort();
-  const sel = document.getElementById('filter-ciudad');
+  // ── Ubicación viene exclusivamente del cliente ──
+  const cities = [...new Set(ventas.map(v => v.cliente?.ubicacion).filter(c => c && c !== 's/c' && c !== ''))].sort();
+  const sel = document.getElementById('filter-ubicacion');
   while (sel.options.length > 1) sel.remove(1);
   cities.forEach(c => { const o=document.createElement('option'); o.value=c.toLowerCase(); o.textContent=c; sel.appendChild(o); });
 }
 
 function getFiltered() {
-  const search = document.getElementById('search-input').value.toLowerCase();
-  const status = document.getElementById('filter-status').value;
-  const prodId = document.getElementById('filter-producto').value;
-  const ciudad = document.getElementById('filter-ciudad').value;
-  const agente = document.getElementById('filter-agente')?.value || '';
+  const search    = document.getElementById('search-input').value.toLowerCase();
+  const status    = document.getElementById('filter-status').value;
+  const prodId    = document.getElementById('filter-producto').value;
+  const ubicacion = document.getElementById('filter-ubicacion').value;
+  const agente    = document.getElementById('filter-agente')?.value || '';
   return ventas.filter(v => {
     if (!!v.archivado !== mostrarArchivados) return false;
     const nombre     = v.cliente?.nombre || '';
     const cel        = v.cliente?.celular || '';
-    const prodNombre = v.producto_rel?.nombre || v.producto || '';
-    const haystack   = `${nombre} ${cel} ${prodNombre} ${v.ciudad||''} ${v.notas||''}`.toLowerCase();
+    const prodNombre = v.producto_rel?.nombre || '';
+    // ── Búsqueda incluye ubicacion del cliente ──
+    const haystack = `${nombre} ${cel} ${prodNombre} ${v.cliente?.ubicacion||''} ${v.notas||''}`.toLowerCase();
     if (search && !haystack.includes(search)) return false;
     if (status && v.estado !== status) return false;
     if (prodId && v.producto_id != prodId) return false;
-    if (ciudad && !(v.ciudad||v.cliente?.ciudad||'').toLowerCase().includes(ciudad)) return false;
+    if (ubicacion && !(v.cliente?.ubicacion||'').toLowerCase().includes(ubicacion)) return false;
     if (agente && v.agente_id !== agente) return false;
     return true;
   });
@@ -608,7 +621,9 @@ function renderVentas() {
   document.getElementById('table-count').textContent  = `${total} registros`;
 
   document.getElementById('ventas-tbody').innerHTML = page.map(v => {
-    const prodNombre = v.producto_rel?.nombre || v.producto || '';
+    const prodNombre = v.producto_rel?.nombre || '';
+    // ── Ubicación siempre del cliente ──
+    const ubicacion  = v.cliente?.ubicacion || '';
     return `
     <tr onclick="openVentaModal(${v.id})" style="${v.archivado?'opacity:0.6;':''}">
       <td style="color:var(--text2);font-size:12px;">${v.fecha||''}${v.archivado?' 🔒':''}</td>
@@ -619,7 +634,7 @@ function renderVentas() {
       <td>${prodChip(prodNombre)}</td>
       <td style="text-align:center;font-weight:600;color:var(--text2);">${v.cantidad||1}</td>
       <td>${v.monto_total ? montoChip(v.monto_total) : ''}</td>
-      <td class="td-ciudad">${v.ciudad||v.cliente?.ciudad||''}</td>
+      <td class="td-ubicacion">${ubicacion}</td>
       <td>${statusBadge(v.estado)}${v.estado==='rellamada'&&v.intentos>1?`<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>`:''}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);font-size:12px;" title="${v.notas||''}">${v.notas||''}${v.comprobante_url?` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>`:''}</td>
       ${isAdmin?`<td style="font-size:11px;color:var(--accent2);">${v.agente?.nombre||'—'}</td>`:''}
@@ -669,13 +684,13 @@ async function onCelularInput() {
 
   celularTimer = setTimeout(async () => {
     const { data } = await db.from('clientes')
-      .select('id, nombre, ciudad, producto_interes, notas, faltas, sin_respuesta, flag')
+      .select('id, nombre, ubicacion, producto_interes, notas, faltas, sin_respuesta, flag')
       .eq('celular', cel).maybeSingle();
 
     if (data) {
       document.getElementById('f-cliente-id').value = data.id;
       document.getElementById('f-nombre').value     = data.nombre || '';
-      document.getElementById('f-ciudad').value     = data.ciudad || '';
+      document.getElementById('f-ubicacion').value  = data.ubicacion || '';
 
       if (data.producto_interes) {
         const matchProd = allProductos.find(p =>
@@ -688,7 +703,7 @@ async function onCelularInput() {
         }
       }
 
-      const infoBox      = document.getElementById('cliente-info-box');
+      const infoBox  = document.getElementById('cliente-info-box');
       infoBox.style.display = '';
       const isAdmin      = currentUser?.rol === 'admin';
       const sinRespCount = data.sin_respuesta || 0;
@@ -740,7 +755,6 @@ async function onCelularInput() {
   }, 350);
 }
 
-// ── CORRECCIÓN: async + producto asignado DESPUÉS de populateProductoSelect ──
 async function openVentaModal(id) {
   document.getElementById('venta-modal').classList.add('open');
   document.querySelectorAll('.quick-chip').forEach(ch => {
@@ -755,7 +769,6 @@ async function openVentaModal(id) {
   document.getElementById('monto-tag').textContent             = '';
   renderComprobantePreview(null);
 
-  // Garantizar que el catálogo esté cargado antes de poblar el select
   if (allProductos.length === 0) await loadProductos();
   populateProductoSelect();
 
@@ -779,7 +792,7 @@ async function openVentaModal(id) {
 
     const isAdmin    = currentUser?.rol === 'admin';
     const shouldLock = isArchivado && !isAdmin;
-    ['f-fecha','f-celular','f-nombre','f-ciudad','f-notas','f-intentos','f-direccion','f-producto-id','f-cantidad','f-monto'].forEach(fid => {
+    ['f-fecha','f-celular','f-nombre','f-ubicacion','f-notas','f-intentos','f-direccion','f-producto-id','f-cantidad','f-monto'].forEach(fid => {
       const el = document.getElementById(fid); if (el) el.disabled = shouldLock;
     });
     document.querySelectorAll('.quick-chip').forEach(ch => {
@@ -793,13 +806,13 @@ async function openVentaModal(id) {
     document.getElementById('f-celular').value        = v.cliente?.celular || '';
     document.getElementById('f-nombre').value         = v.cliente?.nombre || '';
     document.getElementById('f-cliente-id').value     = v.cliente_id || '';
-    document.getElementById('f-ciudad').value         = v.ciudad || v.cliente?.ciudad || '';
+    // ── Ubicación siempre del cliente ──
+    document.getElementById('f-ubicacion').value      = v.cliente?.ubicacion || '';
     document.getElementById('f-notas').value          = v.notas || '';
     document.getElementById('f-direccion').value      = v.cliente?.direccion_residencial || '';
     document.getElementById('f-cantidad').value       = v.cantidad || 1;
     document.getElementById('f-monto').value          = v.monto_total || '';
 
-    // ── Producto: asignar DESPUÉS de que el select ya tiene opciones ──
     if (v.producto_id) {
       document.getElementById('f-producto-id').value = v.producto_id;
       onProductoChange();
@@ -823,7 +836,7 @@ async function openVentaModal(id) {
     document.getElementById('edit-venta-id').value = '';
     const archivedBanner = document.getElementById('archived-banner');
     if (archivedBanner) archivedBanner.style.display = 'none';
-    ['f-fecha','f-celular','f-nombre','f-ciudad','f-notas','f-intentos','f-direccion','f-producto-id','f-cantidad','f-monto'].forEach(fid => {
+    ['f-fecha','f-celular','f-nombre','f-ubicacion','f-notas','f-intentos','f-direccion','f-producto-id','f-cantidad','f-monto'].forEach(fid => {
       const el = document.getElementById(fid); if (el) el.disabled = false;
     });
     document.querySelectorAll('.quick-chip').forEach(ch => { ch.style.pointerEvents=''; ch.style.opacity=''; });
@@ -833,7 +846,7 @@ async function openVentaModal(id) {
     document.getElementById('f-celular').value       = '';
     document.getElementById('f-nombre').value        = '';
     document.getElementById('f-cliente-id').value    = '';
-    document.getElementById('f-ciudad').value        = '';
+    document.getElementById('f-ubicacion').value     = '';
     document.getElementById('f-notas').value         = '';
     document.getElementById('f-direccion').value     = '';
     document.getElementById('f-cantidad').value      = 1;
@@ -889,13 +902,15 @@ async function saveVenta() {
   const nombre     = document.getElementById('f-nombre').value.trim();
   const clienteId  = document.getElementById('f-cliente-id').value;
   const estado     = document.getElementById('f-estado').value;
-  const ciudad     = document.getElementById('f-ciudad').value.trim();
+  // ── Ubicación se guarda en el cliente, no en la venta ──
+  const ubicacion  = document.getElementById('f-ubicacion').value.trim();
   const notas      = document.getElementById('f-notas').value.trim();
   const intentos   = parseInt(document.getElementById('f-intentos').value) || 1;
   const fecha      = document.getElementById('f-fecha').value;
   const cantidad   = parseInt(document.getElementById('f-cantidad').value) || 1;
   const monto      = parseFloat(document.getElementById('f-monto').value) || null;
   const productoId = parseInt(document.getElementById('f-producto-id').value) || null;
+  const direccion  = document.getElementById('f-direccion')?.value?.trim() || null;
   const agenteId   = currentUser.rol === 'admin'
     ? document.getElementById('f-agente')?.value || currentUser.id
     : currentUser.id;
@@ -909,19 +924,25 @@ async function saveVenta() {
       : null;
 
     if (!cId) {
+      // ── Crear cliente nuevo con todos sus atributos ──
       const { data: newC, error: errC } = await db.from('clientes')
-        .insert({ celular, nombre: nombre||'s/n', ciudad,
-          producto_interes: prodNombreParaPerfil,
-          direccion_residencial: document.getElementById('f-direccion')?.value?.trim() || null })
+        .insert({
+          celular,
+          nombre:                nombre || 's/n',
+          ubicacion,
+          producto_interes:      prodNombreParaPerfil,
+          direccion_residencial: direccion,
+        })
         .select().single();
       if (errC) throw errC;
       cId = newC.id;
     } else {
-      const direccion = document.getElementById('f-direccion')?.value?.trim() || null;
+      // ── Actualizar cliente existente (solo atributos del cliente) ──
       await db.from('clientes').update({
-        nombre: nombre||'s/n', ciudad,
-        producto_interes: prodNombreParaPerfil || undefined,
-        direccion_residencial: direccion
+        nombre:                nombre || 's/n',
+        ubicacion,
+        producto_interes:      prodNombreParaPerfil || undefined,
+        direccion_residencial: direccion,
       }).eq('id', cId);
     }
 
@@ -941,12 +962,15 @@ async function saveVenta() {
     }
 
     const debeArchivar = ESTADOS_CIERRE.includes(estadoFinal);
+
+    // ── Solo columnas reales de la tabla ventas ──
     const ventaData = {
       cliente_id:  cId,
       agente_id:   agenteId,
-      fecha, ciudad, notas,
+      fecha,
+      notas,
       producto_id: productoId,
-      producto:    prodNombreParaPerfil,
+      producto:    prodNombreParaPerfil,   // columna texto legacy
       cantidad,
       monto_total: monto,
       estado:      estadoFinal,
@@ -976,7 +1000,7 @@ async function saveVenta() {
     }
 
     const url = await uploadComprobante(savedId);
-    if (url) await db.from('ventas').update({comprobante_url: url}).eq('id', savedId);
+    if (url) await db.from('ventas').update({ comprobante_url: url }).eq('id', savedId);
 
     closeVentaModal();
     await loadVentas();
@@ -1016,7 +1040,11 @@ function deleteVenta(id) {
         const { count: faltas }    = await db.from('ventas').select('*',{count:'exact',head:true}).eq('cliente_id',clienteId).in('estado',['cancelado','spam']);
         const { count: sinResp }   = await db.from('ventas').select('*',{count:'exact',head:true}).eq('cliente_id',clienteId).eq('estado','sin_respuesta');
         const { count: spamCount } = await db.from('ventas').select('*',{count:'exact',head:true}).eq('cliente_id',clienteId).eq('estado','spam');
-        await db.from('clientes').update({ faltas: faltas||0, sin_respuesta: sinResp||0, flag: (spamCount||0)>0?'spam':'normal' }).eq('id',clienteId);
+        await db.from('clientes').update({
+          faltas:        faltas  || 0,
+          sin_respuesta: sinResp || 0,
+          flag:          (spamCount||0) > 0 ? 'spam' : 'normal',
+        }).eq('id', clienteId);
       }
       toast('🗑️ Registro eliminado');
       await loadVentas(); renderVentas(); renderDashboard();
@@ -1129,15 +1157,20 @@ async function saveUser() {
 // ═══ EXPORT CSV ═══
 function exportCSV() {
   const isAdmin = currentUser?.rol === 'admin';
-  const headers = ['ID','Fecha','Nombre','Celular','Producto','Cantidad','Monto (Bs.)','Ciudad','Estado','Notas',...(isAdmin?['Agente']:[])];
+  const headers = ['ID','Fecha','Nombre','Celular','Producto','Cantidad','Monto (Bs.)','Ubicación','Estado','Notas',...(isAdmin?['Agente']:[])];
   const rows = ventas.map(v=>[
-    v.id, v.fecha,
-    v.cliente?.nombre||'', v.cliente?.celular||'',
-    v.producto_rel?.nombre||v.producto||'',
-    v.cantidad||1, v.monto_total||'',
-    v.ciudad||v.cliente?.ciudad||'',
-    v.estado||'', v.notas||'',
-    ...(isAdmin?[v.agente?.nombre||'']:[])
+    v.id,
+    v.fecha,
+    v.cliente?.nombre  || '',
+    v.cliente?.celular || '',
+    v.producto_rel?.nombre || '',
+    v.cantidad    || 1,
+    v.monto_total || '',
+    // ── Ubicación exclusivamente del cliente ──
+    v.cliente?.ubicacion || '',
+    v.estado || '',
+    v.notas  || '',
+    ...(isAdmin ? [v.agente?.nombre||''] : [])
   ].map(x=>`"${(x||'').toString().replace(/"/g,'""')}"`).join(','));
   const csv  = [headers.join(','),...rows].join('\n');
   const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
@@ -1170,25 +1203,23 @@ function initGeoSelectors() {
   Object.keys(BOLIVIA_GEO).sort().forEach(dep => {
     const o = document.createElement('option'); o.value = dep; o.textContent = dep; selDep.appendChild(o);
   });
-  // Helper para actualizar f-ciudad progresivamente
-  function updateCiudadInput() {
+  function updateUbicacionInput() {
     const dep  = selDep.value;
     const prov = selProv.value;
     const mun  = selMun.value;
-    const inp  = document.getElementById('f-ciudad');
+    const inp  = document.getElementById('f-ubicacion');
     if (!inp) return;
     if (mun)       inp.value = `${dep} - ${prov} - ${mun}`;
     else if (prov) inp.value = `${dep} - ${prov}`;
     else if (dep)  inp.value = dep;
     else           inp.value = '';
   }
-
   selDep.onchange = () => {
     const dep = selDep.value;
     selProv.innerHTML = '<option value="">— Provincia —</option>';
     selMun.innerHTML  = '<option value="">— Municipio —</option>';
     selProv.disabled  = !dep; selMun.disabled = true;
-    updateCiudadInput();
+    updateUbicacionInput();
     if (!dep) return;
     Object.keys(BOLIVIA_GEO[dep].provincias).sort().forEach(prov => {
       const o = document.createElement('option'); o.value = prov; o.textContent = prov; selProv.appendChild(o);
@@ -1198,7 +1229,7 @@ function initGeoSelectors() {
     const dep = selDep.value; const prov = selProv.value;
     selMun.innerHTML = '<option value="">— Municipio —</option>';
     selMun.disabled  = !prov;
-    updateCiudadInput();
+    updateUbicacionInput();
     if (!dep || !prov) return;
     const provData = BOLIVIA_GEO[dep].provincias[prov];
     const capDep   = BOLIVIA_GEO[dep].capital;
@@ -1208,9 +1239,7 @@ function initGeoSelectors() {
       selMun.appendChild(o);
     });
   };
-  selMun.onchange = () => {
-    updateCiudadInput();
-  };
+  selMun.onchange = () => { updateUbicacionInput(); };
 }
 
 function onDireccionKeydown(e) {

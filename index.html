@@ -80,8 +80,8 @@
       <div class="stats-grid" id="stats-grid"></div>
       <div class="dash-grid">
         <div class="dash-card"><div class="dash-card-title">📦 Por Producto</div><div id="prod-chart"></div></div>
-        <div class="dash-card"><div class="dash-card-title">📍 Top Ciudades</div><div id="city-chart"></div></div>
-        <div class="dash-card"><div class="dash-card-title">📞 Pendientes urgentes</div><div class="today-list" id="today-list"></div></div>
+        <div class="dash-card"><div class="dash-card-title">📍 Top Ubicaciones</div><div id="city-chart"></div></div>
+        <div class="dash-card"><div class="dash-card-title">📞 Pendientes (urgentes)</div><div class="today-list" id="today-list"></div></div>
         <div class="dash-card"><div class="dash-card-title">🔄 Pipeline</div><div id="status-chart"></div></div>
         <div class="dash-card" id="agents-card" style="display:none;grid-column:span 2;">
           <div class="dash-card-title">👤 Rendimiento por Agente</div>
@@ -121,8 +121,8 @@
         <select class="filter-select" id="filter-producto" onchange="renderVentas()">
           <option value="">Todos los productos</option>
         </select>
-        <select class="filter-select" id="filter-ciudad" onchange="renderVentas()">
-          <option value="">Todas las ciudades</option>
+        <select class="filter-select" id="filter-ubicacion" onchange="renderVentas()">
+          <option value="">Todas los lugares</option>
         </select>
         <select class="filter-select" id="filter-agente" onchange="renderVentas()" style="display:none;">
           <option value="">👥 Todos los agentes</option>
@@ -163,10 +163,10 @@
       <div class="config-card">
         <div class="config-card-title">🗄️ Estructura de la base de datos v3</div>
         <div class="code-block">productos → nombre, precio_base, promociones (jsonb), activo
-clientes  → celular (único), nombre, ciudad, producto_interes, notas
+clientes  → celular (único), nombre, ubicacion, producto_interes, notas
             faltas, sin_respuesta (contadores automáticos), flag
 ventas    → cliente_id, agente_id, producto_id (FK→productos)
-            cantidad, monto_total, ciudad, estado, intentos, notas</div>
+            cantidad, monto_total, ubicacion, estado, intentos, notas</div>
         <div class="info-box">💡 Los precios los gestiona el admin en la sección Productos. El agente selecciona el producto y la promoción, el monto se calcula automáticamente.</div>
       </div>
       <div class="config-card">
@@ -270,7 +270,7 @@ ventas    → cliente_id, agente_id, producto_id (FK→productos)
           <select class="smart-input" id="sel-provincia" disabled style="font-size:12px;padding:8px 10px;"><option value="">— Provincia —</option></select>
           <select class="smart-input" id="sel-municipio" disabled style="font-size:12px;padding:8px 10px;"><option value="">— Municipio —</option></select>
         </div>
-        <input class="smart-input" id="f-ciudad" placeholder="O escribe la ciudad directamente...">
+        <input class="smart-input" id="f-ubicacion" placeholder="O escribe la ubicación directamente...">
       </div>
 
       <div class="field">
