@@ -1,8 +1,3 @@
-// ═══════════════════════════════════════════════
-//  LIT CRM v3 — Clientes + Ventas + Productos
-//  Multi-producto por venta via venta_items
-// ═══════════════════════════════════════════════
-
 const SUPABASE_URL      = 'https://txjgdglfzskirujqctra.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4amdkZ2xmenNraXJ1anFjdHJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2NzYzNzYsImV4cCI6MjA4OTI1MjM3Nn0.b3o9KHVaspzyRnMhmB6uX2jLjadWgAFJM-iYHKHjXr0';
 
@@ -34,9 +29,7 @@ let currentPage      = 1;
 const PAGE_SIZE      = 25;
 let mostrarArchivados = false;
 
-// ═══════════════════════════════════════════════
 //  THEME
-// ═══════════════════════════════════════════════
 function initTheme() {
   applyTheme(localStorage.getItem('litcrm-theme') || 'white');
 }
@@ -56,9 +49,7 @@ function toggleTheme() {
   applyTheme(order[(order.indexOf(cur) + 1) % 3]);
 }
 
-// ═══════════════════════════════════════════════
 //  AUTH
-// ═══════════════════════════════════════════════
 async function doLogin() {
   const u    = document.getElementById('login-user').value.trim();
   const p    = document.getElementById('login-pass').value;
@@ -96,9 +87,7 @@ function doLogout() {
   showViewDirect('dashboard');
 }
 
-// ═══════════════════════════════════════════════
 //  INIT
-// ═══════════════════════════════════════════════
 async function initApp() {
   document.getElementById('dash-date').textContent =
     new Date().toLocaleDateString('es-BO', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
@@ -113,9 +102,7 @@ async function initApp() {
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
 }
 
-// ═══════════════════════════════════════════════
 //  PRODUCTOS — catálogo
-// ═══════════════════════════════════════════════
 async function loadProductos() {
   const { data, error } = await db.from('productos')
     .select('*').eq('activo', true).order('nombre');
@@ -137,9 +124,7 @@ function populateProductoFilter() {
   });
 }
 
-// ═══════════════════════════════════════════════
 //  PRODUCTOS — vista admin CRUD
-// ═══════════════════════════════════════════════
 async function renderProductos() {
   await loadProductosAll();
   const grid = document.getElementById('productos-grid');
@@ -261,9 +246,7 @@ async function toggleProductoActivo(id, activo) {
   renderProductos();
 }
 
-// ═══════════════════════════════════════════════
 //  CARGAR VENTAS (incluye venta_items)
-// ═══════════════════════════════════════════════
 async function loadVentas() {
   try {
     let query = db.from('ventas')
@@ -273,7 +256,7 @@ async function loadVentas() {
         cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
                              producto_interes, notas, faltas, sin_respuesta, flag ),
         agente:agente_id   ( id, nombre ),
-        venta_items ( id, cantidad, subtotal, producto_id, productos ( id, nombre )
+        venta_items ( id, cantidad, subtotal, producto_id, productos ( id, nombre ))
       `)
       .order('archivado', { ascending: true })
       .order('id', { ascending: false });
@@ -343,9 +326,7 @@ async function syncData() {
   } finally { btn.classList.remove('syncing'); }
 }
 
-// ═══════════════════════════════════════════════
 //  NAV
-// ═══════════════════════════════════════════════
 function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
@@ -363,9 +344,7 @@ function showViewDirect(name) {
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
 }
 
-// ═══════════════════════════════════════════════
 //  STATUS / BADGE HELPERS
-// ═══════════════════════════════════════════════
 function statusBadge(estado) {
   const e = ESTADOS[estado] || ESTADOS.rellamada;
   return `<span class="badge ${e.badge}">${e.label}</span>`;
@@ -391,9 +370,7 @@ function montoChip(monto) {
   return `<span style="background:var(--green-bg);border:1px solid var(--green);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;">Bs.${parseFloat(monto).toFixed(0)}</span>`;
 }
 
-// ═══════════════════════════════════════════════
 //  DASHBOARD
-// ═══════════════════════════════════════════════
 function renderDashboard() {
   const isAdmin    = currentUser.rol === 'admin';
   const showingAll = selectedAgentId === 'all';
@@ -510,9 +487,7 @@ function renderDashboard() {
   }
 }
 
-// ═══════════════════════════════════════════════
 //  VENTAS — lista + filtros
-// ═══════════════════════════════════════════════
 function populateCityFilter() {
   const cities = [...new Set(ventas.map(v => v.cliente?.ubicacion).filter(c => c && c !== 's/c' && c !== ''))].sort();
   const sel    = document.getElementById('filter-ubicacion');
@@ -1474,9 +1449,7 @@ function exportCSV() {
   toast('📥 CSV exportado', 'success');
 }
 
-// ═══════════════════════════════════════════════
 //  BOLIVIA — Datos geográficos
-// ═══════════════════════════════════════════════
 const BOLIVIA_GEO = {
   "Santa Cruz": { capital: "Santa Cruz de la Sierra", provincias: { "Andrés Ibáñez": { capital: "Santa Cruz de la Sierra", municipios: ["Santa Cruz de la Sierra","Cotoca","Porongo","La Guardia","El Torno","Warnes"] }, "Warnes": { capital: "Warnes", municipios: ["Warnes","Okinawa Uno"] }, "Ichilo": { capital: "Buena Vista", municipios: ["Buena Vista","San Carlos","Yapacaní","San Juan"] }, "Sara": { capital: "Portachuelo", municipios: ["Portachuelo","Santa Rosa del Sara","Colpa Bélgica"] }, "Obispo Santisteban": { capital: "Montero", municipios: ["Montero","Saavedra","Mineros","General Saavedra"] }, "Ñuflo de Chávez": { capital: "Concepción", municipios: ["Concepción","San Julián","San Antonio de Lomerío","Cuatro Cañadas","San Ramón","San Javier"] }, "Velasco": { capital: "San Ignacio de Velasco", municipios: ["San Ignacio de Velasco","San Miguel de Velasco","San Rafael"] }, "Chiquitos": { capital: "San José de Chiquitos", municipios: ["San José de Chiquitos","Pailón","Roboré","Charagua"] }, "Cordillera": { capital: "Camiri", municipios: ["Camiri","Charagua","Cabezas","Boyuibe","Cuevo","Gutiérrez","Lagunillas"] }, "Florida": { capital: "Samaipata", municipios: ["Samaipata","Mairana","Pampagrande"] }, "Vallegrande": { capital: "Vallegrande", municipios: ["Vallegrande","Moro Moro","Pucará"] }, "Manuel María Caballero": { capital: "Comarapa", municipios: ["Comarapa","Saipina"] }, "Germán Busch": { capital: "Puerto Suárez", municipios: ["Puerto Suárez","Puerto Quijarro","Carmen Rivero Torres"] }, "Ángel Sandoval": { capital: "San Matías", municipios: ["San Matías"] } } },
   "La Paz": { capital: "La Paz", provincias: { "Murillo": { capital: "La Paz", municipios: ["La Paz","El Alto","Palca","Mecapaca","Achocalla","Viacha"] }, "Omasuyos": { capital: "Achacachi", municipios: ["Achacachi","Ancoraimes"] }, "Pacajes": { capital: "Coro Coro", municipios: ["Coro Coro","Comanche","Charaña","Calacoto"] }, "Larecaja": { capital: "Sorata", municipios: ["Sorata","Guanay","Teoponte"] }, "Sud Yungas": { capital: "Chulumani", municipios: ["Chulumani","Irupana","Yanacachi","Palos Blancos","La Asunta"] }, "Nor Yungas": { capital: "Coroico", municipios: ["Coroico","Coripata"] }, "Caranavi": { capital: "Caranavi", municipios: ["Caranavi"] }, "Los Andes": { capital: "Pucarani", municipios: ["Pucarani","Laja","Batallas","Puerto Pérez"] }, "Aroma": { capital: "Sica Sica", municipios: ["Sica Sica","Ayo Ayo","Calamarca","Colquencha","Umala"] } } },
@@ -1545,9 +1518,7 @@ function onDireccionKeydown(e) {
   wrap.innerHTML = `<iframe src="https://maps.google.com/maps?q=${q}&output=embed&hl=es" width="100%" height="220" style="border:0;border-radius:8px;margin-top:8px;" allowfullscreen="" loading="lazy"></iframe>`;
 }
 
-// ═══════════════════════════════════════════════
 //  TOAST
-// ═══════════════════════════════════════════════
 let toastTimer;
 function toast(msg, type = '') {
   const el = document.getElementById('toast');
@@ -1557,16 +1528,12 @@ function toast(msg, type = '') {
   toastTimer = setTimeout(() => el.classList.remove('show'), 4000);
 }
 
-// ═══════════════════════════════════════════════
 //  CERRAR MODALES AL CLICK EN OVERLAY
-// ═══════════════════════════════════════════════
 document.getElementById('venta-modal').addEventListener('click',    e => { if (e.target === e.currentTarget) closeVentaModal(); });
 document.getElementById('user-modal').addEventListener('click',     e => { if (e.target === e.currentTarget) closeUserModal(); });
 document.getElementById('delete-modal').addEventListener('click',   e => { if (e.target === e.currentTarget) closeDeleteModal(); });
 document.getElementById('producto-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeProductoModal(); });
 document.getElementById('delete-confirm-input').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click(); });
 
-// ═══════════════════════════════════════════════
 //  INIT
-// ═══════════════════════════════════════════════
 initTheme();
