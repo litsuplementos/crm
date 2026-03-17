@@ -6,11 +6,11 @@
 /* ── TEMA BLANCO — default limpio ── */
 :root,
 [data-theme="white"] {
-  --bg: #f7f8fa;
-  --surface: #ffffff;
-  --surface2: #f0f2f5;
+  --bg: #d9d9d9;
+  --surface: #f0f0f0;
+  --surface2: #e4e4e4;
   --surface3: #e6e9ee;
-  --border: #e0e4eb;
+  --border: #bdbdbd;
 
   --accent: #6366f1;
   --accent2: #818cf8;
@@ -69,7 +69,7 @@
 
 /* ── TEMA NOCHE ── */
 [data-theme="night"] {
-  --bg: #31313b; --surface: #13131a; --surface2: #1c1c28; --surface3: #252535;
+  --bg: #1f1f26; --surface: #13131a; --surface2: #1c1c28; --surface3: #252535;
   --border: #2a2a3d; --accent: #7c5cfc; --accent2: #a78bfa;
   --accent-glow: rgba(124,92,252,0.25);
   --green: #22d3a4;   --green-bg: rgba(34,211,164,0.12);
