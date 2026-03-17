@@ -381,26 +381,42 @@ function renderDashboard() {
   document.getElementById('dash-subtitle').textContent = subtitle;
   document.getElementById('dashboard-agent-row').style.display = isAdmin ? 'flex' : 'none';
 
-  const total       = ventas.length;
-  const vendidos    = ventas.filter(v => v.estado === 'vendido').length;
-  const enviados    = ventas.filter(v => v.estado === 'enviado').length;
+  const total = ventas.length;
+  const vendidos = ventas.filter(v => v.estado === 'vendido').length;
+  const montoVendidos = ventas
+    .filter(v => v.estado === 'vendido')
+    .reduce((sum, v) => sum + (parseFloat(v.monto_total) || 0), 0);
+  const enviados  = ventas.filter(v => v.estado === 'enviado').length;
   const interesados = ventas.filter(v => v.estado === 'interesado').length;
   const seguimiento = ventas.filter(v => ['seguimiento', 'rellamada', 'agendar'].includes(v.estado)).length;
-  const sinResp     = ventas.filter(v => v.estado === 'sin_respuesta').length;
+  const sinResp = ventas.filter(v => v.estado === 'sin_respuesta').length;
 
   document.getElementById('stats-grid').innerHTML = `
     <div class="stat-card"><div class="stat-icon" style="background:var(--accent-glow);">📋</div>
       <div class="stat-value" style="color:var(--accent2);">${total}</div><div class="stat-label">MOVIMIENTOS</div></div>
-    <div class="stat-card"><div class="stat-icon" style="background:var(--green-bg);">✅</div>
-      <div class="stat-value" style="color:var(--green);">${vendidos}</div><div class="stat-label">VENDIDOS</div></div>
+
+    <div class="stat-card" onclick="openStatModal('vendido')" style="cursor:pointer;">
+      <div class="stat-icon" style="background:var(--green-bg);">✅</div>
+      <div class="stat-value" style="color:var(--green);">${vendidos}</div>
+      <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:4px;">Bs. ${montoVendidos.toFixed(0)}</div>
+      <div class="stat-label">VENDIDOS</div>
+    </div>
+
     <div class="stat-card"><div class="stat-icon" style="background:var(--blue-bg);">📦</div>
       <div class="stat-value" style="color:var(--blue);">${enviados}</div><div class="stat-label">ENVIADOS</div></div>
-    <div class="stat-card"><div class="stat-icon" style="background:var(--yellow-bg);">🌟</div>
-      <div class="stat-value" style="color:var(--yellow);">${interesados}</div><div class="stat-label">INTERESADOS</div></div>
+
+    <div class="stat-card" onclick="openStatModal('interesado')" style="cursor:pointer;">
+      <div class="stat-icon" style="background:var(--yellow-bg);">🌟</div>
+      <div class="stat-value" style="color:var(--yellow);">${interesados}</div><div class="stat-label">INTERESADOS</div>
+    </div>
+
     <div class="stat-card"><div class="stat-icon" style="background:rgba(96,165,250,0.12);">🔄</div>
       <div class="stat-value" style="color:var(--blue);">${seguimiento}</div><div class="stat-label">EN SEGUIMIENTO</div></div>
-    <div class="stat-card"><div class="stat-icon" style="background:var(--red-bg);">📵</div>
-      <div class="stat-value" style="color:var(--red);">${sinResp}</div><div class="stat-label">SIN RESPUESTA</div></div>
+
+    <div class="stat-card" onclick="openStatModal('sin_respuesta')" style="cursor:pointer;">
+      <div class="stat-icon" style="background:var(--red-bg);">📵</div>
+      <div class="stat-value" style="color:var(--red);">${sinResp}</div><div class="stat-label">SIN RESPUESTA</div>
+    </div>
   `;
 
   // Gráfico productos — basado en venta_items
@@ -1534,6 +1550,77 @@ document.getElementById('user-modal').addEventListener('click',     e => { if (e
 document.getElementById('delete-modal').addEventListener('click',   e => { if (e.target === e.currentTarget) closeDeleteModal(); });
 document.getElementById('producto-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeProductoModal(); });
 document.getElementById('delete-confirm-input').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click(); });
+document.getElementById('stat-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeStatModal(); });
+
+// ═══ STAT MODAL ═══
+let statModalPage = 1;
+const STAT_PAGE_SIZE = 10;
+let statModalEstado = '';
+
+function openStatModal(estado) {
+  statModalEstado = estado;
+  statModalPage   = 1;
+  document.getElementById('stat-modal').classList.add('open');
+  renderStatModal();
+}
+function closeStatModal() {
+  document.getElementById('stat-modal').classList.remove('open');
+}
+
+function renderStatModal() {
+  const estado = statModalEstado;
+  const labels = { vendido: '✅ Vendidos', interesado: '🌟 Interesados', sin_respuesta: '📵 Sin respuesta' };
+  document.getElementById('stat-modal-title').textContent = labels[estado] || estado;
+
+  const filtered = ventas.filter(v => v.estado === estado);
+  const total     = filtered.length;
+  const pages     = Math.ceil(total / STAT_PAGE_SIZE) || 1;
+  if (statModalPage > pages) statModalPage = 1;
+  const page = filtered.slice((statModalPage - 1) * STAT_PAGE_SIZE, statModalPage * STAT_PAGE_SIZE);
+
+  const isAdmin = currentUser?.rol === 'admin';
+
+  document.getElementById('stat-modal-body').innerHTML = `
+    <div style="font-size:12px;color:var(--text3);margin-bottom:12px;">${total} registros</div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="background:var(--surface2);padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Fecha</th>
+            <th style="background:var(--surface2);padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Cliente</th>
+            <th style="background:var(--surface2);padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Celular</th>
+            <th style="background:var(--surface2);padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Productos</th>
+            <th style="background:var(--surface2);padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Monto</th>
+            ${isAdmin ? `<th style="background:var(--surface2);padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Agente</th>` : ''}
+          </tr>
+        </thead>
+        <tbody>
+          ${page.map(v => {
+            const prods = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
+            const prodCell = prods.length > 0 ? prods.map(n => prodChip(n)).join(' ') : '—';
+            return `
+            <tr onclick="closeStatModal();setTimeout(()=>openVentaModal(${v.id}),50)" style="cursor:pointer;border-bottom:1px solid var(--border);" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+              <td style="padding:9px 12px;font-size:13px;color:var(--text2);">${v.fecha || ''}</td>
+              <td style="padding:9px 12px;font-size:13px;font-weight:500;">${v.cliente?.nombre || 's/n'}</td>
+              <td style="padding:9px 12px;font-size:13px;font-family:monospace;color:var(--accent2);">
+                <a href="tel:${v.cliente?.celular}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;">${v.cliente?.celular || ''}</a>
+              </td>
+              <td style="padding:9px 12px;">${prodCell}</td>
+              <td style="padding:9px 12px;">${v.monto_total ? montoChip(v.monto_total) : ''}</td>
+              ${isAdmin ? `<td style="padding:9px 12px;font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>` : ''}
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${pages > 1 ? `
+    <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:14px;">
+      <button class="page-btn" onclick="statModalPage--;renderStatModal()" ${statModalPage===1?'disabled':''}>‹</button>
+      ${Array.from({length:pages},(_,i)=>`<button class="page-btn ${i+1===statModalPage?'active':''}" onclick="statModalPage=${i+1};renderStatModal()">${i+1}</button>`).join('')}
+      <button class="page-btn" onclick="statModalPage++;renderStatModal()" ${statModalPage===pages?'disabled':''}>›</button>
+    </div>` : ''}
+  `;
+}
 
 //  INIT
 initTheme();

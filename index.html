@@ -419,6 +419,17 @@ venta_items → venta_id, producto_id (FK→productos), cantidad, subtotal</div>
   </div>
 </div>
 
+<!-- MODAL STAT -->
+<div class="modal-overlay" id="stat-modal">
+  <div class="modal" style="max-width:80vw;width:80vw;max-height:80vh;">
+    <div class="modal-header">
+      <div class="modal-title" id="stat-modal-title"></div>
+      <button class="modal-close" onclick="closeStatModal()">×</button>
+    </div>
+    <div class="modal-body" id="stat-modal-body" style="overflow-y:auto;max-height:calc(80vh - 80px);"></div>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>
