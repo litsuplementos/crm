@@ -395,7 +395,7 @@ venta_items → venta_id, producto_id (FK→productos), cantidad, subtotal</div>
 
 <div class="toast" id="toast"><span class="toast-icon">ℹ️</span><span id="toast-msg">Listo</span></div>
 
-<!-- MODAL ELIMINAR -->
+<!-- MODAL ELIMINAR REGISTRO -->
 <div class="modal-overlay" id="delete-modal">
   <div class="modal" style="max-width:420px;">
     <div class="modal-header">
@@ -414,6 +414,55 @@ venta_items → venta_id, producto_id (FK→productos), cantidad, subtotal</div>
       <div class="modal-actions" style="margin-top:20px;">
         <button class="btn-secondary" onclick="closeDeleteModal()">Cancelar</button>
         <button id="delete-confirm-btn" style="background:var(--red);border:none;border-radius:var(--radius-sm);padding:11px 24px;color:white;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">Eliminar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ELIMINAR USUARIO -->
+<div class="modal-overlay" id="delete-user-modal">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title" style="color:var(--red);">🗑️ Eliminar usuario</div>
+      <button class="modal-close" onclick="closeDeleteUserModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:14px;color:var(--text2);margin-bottom:12px;line-height:1.6;">
+        Esta acción <b style="color:var(--text);">no se puede deshacer</b>.<br>
+        Para confirmar, escribe el nombre del usuario:
+      </p>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:15px;font-weight:700;color:var(--accent2);" id="delete-user-nombre"></div>
+      <input class="smart-input" id="delete-user-confirm-input" placeholder="Escribe el nombre aquí..." autocomplete="off">
+      <div id="delete-user-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;">⚠️ El nombre no coincide</div>
+      <div class="modal-actions" style="margin-top:20px;">
+        <button class="btn-secondary" onclick="closeDeleteUserModal()">Cancelar</button>
+        <button id="delete-user-confirm-btn" style="background:var(--red);border:none;border-radius:var(--radius-sm);padding:11px 24px;color:white;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">Eliminar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ELIMINAR PRODUCTO -->
+<div class="modal-overlay" id="delete-producto-modal">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title" style="color:var(--red);">🗑️ Eliminar producto</div>
+      <button class="modal-close" onclick="closeDeleteProductoModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:14px;color:var(--text2);margin-bottom:12px;line-height:1.6;">
+        Esta acción <b style="color:var(--text);">no se puede deshacer</b>.<br>
+        Para confirmar, escribe el nombre del producto:
+      </p>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:15px;font-weight:700;color:var(--accent2);" id="delete-producto-nombre"></div>
+      <input class="smart-input" id="delete-producto-confirm-input" placeholder="Escribe el nombre aquí..." autocomplete="off">
+      <div id="delete-producto-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;">⚠️ El nombre no coincide</div>
+      <div id="delete-producto-warning" style="display:none;color:var(--red);font-size:12px;margin-top:6px;background:var(--red-bg);border:1px solid var(--red);border-radius:6px;padding:8px 12px;">
+        ⚠️ Este producto tiene ventas registradas y no puede eliminarse. Puedes desactivarlo en su lugar.
+      </div>
+      <div class="modal-actions" style="margin-top:20px;">
+        <button class="btn-secondary" onclick="closeDeleteProductoModal()">Cancelar</button>
+        <button id="delete-producto-confirm-btn" style="background:var(--red);border:none;border-radius:var(--radius-sm);padding:11px 24px;color:white;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">Eliminar</button>
       </div>
     </div>
   </div>

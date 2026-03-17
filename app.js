@@ -232,6 +232,7 @@ async function renderProductos() {
         <div style="display:flex;gap:6px;">
           <button class="icon-btn" onclick="openProductoModal(${p.id})">✏️</button>
           <button class="icon-btn danger" onclick="toggleProductoActivo(${p.id}, ${p.activo})">${p.activo ? '🚫' : '✅'}</button>
+          <button class="icon-btn danger" onclick="deleteProducto(${p.id})">🗑️</button>
         </div>
       </div>
       ${promos.length > 0 ? `
@@ -1318,7 +1319,83 @@ async function saveVenta() {
   }
 }
 
-// ELIMINAR VENTA (igual al original)
+// ELIMINAR USUARIO
+function deleteUser(id) {
+  db.from('usuarios').select('*').eq('id', id).single().then(({ data: u }) => {
+    if (!u) return;
+    if (u.usuario === 'admin') { toast('⚠️ No se puede eliminar el administrador principal', 'error'); return; }
+    document.getElementById('delete-user-nombre').textContent = u.nombre;
+    document.getElementById('delete-user-confirm-input').value = '';
+    document.getElementById('delete-user-confirm-input').style.borderColor = '';
+    document.getElementById('delete-user-error').style.display = 'none';
+    document.getElementById('delete-user-modal').classList.add('open');
+    document.getElementById('delete-user-confirm-input').focus();
+
+    document.getElementById('delete-user-confirm-btn').onclick = async () => {
+      const typed = document.getElementById('delete-user-confirm-input').value.trim();
+      if (typed !== u.nombre) {
+        document.getElementById('delete-user-confirm-input').style.borderColor = 'var(--red)';
+        document.getElementById('delete-user-error').style.display = '';
+        return;
+      }
+      document.getElementById('delete-user-modal').classList.remove('open');
+      try {
+        const { error } = await db.from('usuarios').delete().eq('id', id);
+        if (error) throw error;
+        toast('🗑️ Usuario eliminado');
+        renderUsers();
+        await loadAgents();
+        buildAgentSelector();
+      } catch(e) { toast('❌ ' + e.message, 'error'); }
+    };
+  });
+}
+function closeDeleteUserModal() {
+  document.getElementById('delete-user-modal').classList.remove('open');
+}
+
+// ELIMINAR PRODUCTO
+function deleteProducto(id) {
+  const prod = allProductos.find(p => p.id === id);
+  if (!prod) return;
+  document.getElementById('delete-producto-nombre').textContent = prod.nombre;
+  document.getElementById('delete-producto-confirm-input').value = '';
+  document.getElementById('delete-producto-confirm-input').style.borderColor = '';
+  document.getElementById('delete-producto-error').style.display = 'none';
+  document.getElementById('delete-producto-warning').style.display = 'none';
+  document.getElementById('delete-producto-modal').classList.add('open');
+  document.getElementById('delete-producto-confirm-input').focus();
+
+  document.getElementById('delete-producto-confirm-btn').onclick = async () => {
+    const typed = document.getElementById('delete-producto-confirm-input').value.trim();
+    if (typed !== prod.nombre) {
+      document.getElementById('delete-producto-confirm-input').style.borderColor = 'var(--red)';
+      document.getElementById('delete-producto-error').style.display = '';
+      return;
+    }
+    // Verificar si tiene venta_items
+    const { count } = await db.from('venta_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('producto_id', id);
+    if (count > 0) {
+      document.getElementById('delete-producto-warning').style.display = '';
+      return;
+    }
+    document.getElementById('delete-producto-modal').classList.remove('open');
+    try {
+      const { error } = await db.from('productos').delete().eq('id', id);
+      if (error) throw error;
+      toast('🗑️ Producto eliminado');
+      await loadProductosAll();
+      renderProductos();
+    } catch(e) { toast('❌ ' + e.message, 'error'); }
+  };
+}
+function closeDeleteProductoModal() {
+  document.getElementById('delete-producto-modal').classList.remove('open');
+}
+
+// ELIMINAR VENTA
 function deleteVenta(id) {
   const v = ventas.find(x => x.id === id);
   const celular = v?.cliente?.celular || '';
@@ -1421,7 +1498,10 @@ async function renderUsers() {
       </div>
       <div class="user-card-actions">
         <button class="icon-btn" onclick="openUserModal('${u.id}')">✏️ Editar</button>
-        ${u.usuario !== 'admin' ? `<button class="icon-btn danger" onclick="toggleUserActive('${u.id}',${u.activo})">${u.activo ? '🚫 Desactivar' : '✅ Activar'}</button>` : ''}
+        ${u.usuario !== 'admin' ? `
+          <button class="icon-btn danger" onclick="toggleUserActive('${u.id}',${u.activo})">${u.activo ? '🚫 Desactivar' : '✅ Activar'}</button>
+          <button class="icon-btn danger" onclick="deleteUser('${u.id}')">🗑️</button>
+        ` : ''}
       </div>
     </div>`).join('');
 }
@@ -1620,8 +1700,10 @@ document.addEventListener('keydown', (e) => {
     const modals = [
       { id: 'venta-modal', closeFunc: closeVentaModal },
       { id: 'user-modal', closeFunc: closeUserModal },
+      { id: 'delete-user-modal', closeFunc: closeDeleteUserModal },      
       { id: 'delete-modal', closeFunc: closeDeleteModal },
       { id: 'producto-modal', closeFunc: closeProductoModal },
+      { id: 'delete-producto-modal', closeFunc: closeDeleteProductoModal },
       { id: 'stat-modal', closeFunc: closeStatModal }
     ];
 
