@@ -40,9 +40,7 @@
       <div class="topbar-badge">PRO</div>
     </div>
     <div class="topbar-right">
-      <!-- Botón tema día/noche -->
       <button id="theme-toggle" onclick="toggleTheme()" title="Cambiar tema">⚪ Blanco</button>
-
       <button class="sync-btn" id="sync-btn" onclick="syncData()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
         <span>Sincronizar</span>
@@ -58,8 +56,9 @@
   <div class="nav-tabs">
     <div class="nav-tab active" data-view="dashboard" onclick="showView('dashboard')">📊 Dashboard</div>
     <div class="nav-tab" data-view="ventas"    onclick="showView('ventas')">📋 Registros</div>
-    <div class="nav-tab" id="tab-config"   data-view="config"   onclick="showView('config')"   style="display:none;">⚙️ Config</div>
-    <div class="nav-tab" id="tab-usuarios" data-view="usuarios" onclick="showView('usuarios')" style="display:none;">🔐 Usuarios</div>
+    <div class="nav-tab" id="tab-productos" data-view="productos" onclick="showView('productos')" style="display:none;">📦 Productos</div>
+    <div class="nav-tab" id="tab-config"    data-view="config"    onclick="showView('config')"    style="display:none;">⚙️ Config</div>
+    <div class="nav-tab" id="tab-usuarios"  data-view="usuarios"  onclick="showView('usuarios')"  style="display:none;">🔐 Usuarios</div>
   </div>
 
   <div class="main">
@@ -89,7 +88,7 @@
           <div id="agents-chart"></div>
         </div>
       </div>
-    </div></div><!-- /view-scroll-wrap dashboard -->
+    </div></div>
 
     <!-- REGISTROS / VENTAS -->
     <div class="view" id="view-ventas"><div class="view-scroll-wrap">
@@ -100,12 +99,10 @@
         </div>
         <button class="add-btn" onclick="openVentaModal()">+ Nuevo Registro</button>
       </div>
-      <!-- Tabs activos / archivados -->
       <div style="display:flex;gap:0;margin-bottom:16px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;width:fit-content;">
         <button id="tab-activos" onclick="setArchivoFiltro(false)" class="archivo-tab archivo-tab-active">📋 Activos</button>
         <button id="tab-archivados" onclick="setArchivoFiltro(true)" class="archivo-tab">🔒 Archivados</button>
       </div>
-
       <div class="toolbar">
         <input class="search-box" type="text" id="search-input" placeholder="🔍  Nombre, celular, producto, notas..." oninput="renderVentas()">
         <select class="filter-select" id="filter-status" onchange="renderVentas()">
@@ -123,12 +120,6 @@
         </select>
         <select class="filter-select" id="filter-producto" onchange="renderVentas()">
           <option value="">Todos los productos</option>
-          <option value="calibrum">Calibrum</option>
-          <option value="colageno">Colágeno Premium</option>
-          <option value="osteofor">Osteofor</option>
-          <option value="alivia">Alivia Fen</option>
-          <option value="harmonia">Harmonia</option>
-          <option value="resver">Resver Plus</option>
         </select>
         <select class="filter-select" id="filter-ciudad" onchange="renderVentas()">
           <option value="">Todas las ciudades</option>
@@ -146,7 +137,7 @@
           <thead>
             <tr>
               <th>Fecha</th><th>Cliente</th><th>Celular</th><th>Producto</th>
-              <th>Lugar</th><th>Estado</th><th>Notas</th>
+              <th>Cant.</th><th>Monto</th><th>Lugar</th><th>Estado</th><th>Notas</th>
               <th id="th-agente" style="display:none;">Agente</th><th></th>
             </tr>
           </thead>
@@ -155,19 +146,28 @@
       </div>
       <div class="mobile-cards" id="ventas-cards"></div>
       <div class="pagination" id="pagination"></div>
-    </div></div><!-- /view-scroll-wrap ventas -->
+    </div></div>
+
+    <!-- PRODUCTOS (admin) -->
+    <div class="view" id="view-productos"><div class="view-scroll-wrap">
+      <div class="section-header">
+        <div><div class="section-title">Productos</div><div class="section-sub">Precios base y promociones</div></div>
+        <button class="add-btn" onclick="openProductoModal()">+ Nuevo Producto</button>
+      </div>
+      <div id="productos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;"></div>
+    </div></div>
 
     <!-- CONFIG -->
     <div class="view" id="view-config"><div class="view-scroll-wrap">
       <div class="section-title" style="margin-bottom:20px;">⚙️ Configuración</div>
       <div class="config-card">
         <div class="config-card-title">🗄️ Estructura de la base de datos v3</div>
-        <div class="code-block">clientes  → celular (único), nombre, ciudad, producto_interes, notas
+        <div class="code-block">productos → nombre, precio_base, promociones (jsonb), activo
+clientes  → celular (único), nombre, ciudad, producto_interes, notas
             faltas, sin_respuesta (contadores automáticos), flag
-
-ventas    → cliente_id (FK), agente_id (FK), fecha, producto
-            ciudad, estado, intentos, notas, comprobante_url</div>
-        <div class="info-box">💡 Un cliente puede tener múltiples ventas/seguimientos de distintos agentes. Los contadores de faltas y sin_respuesta se actualizan automáticamente vía triggers en Supabase.</div>
+ventas    → cliente_id, agente_id, producto_id (FK→productos)
+            cantidad, monto_total, ciudad, estado, intentos, notas</div>
+        <div class="info-box">💡 Los precios los gestiona el admin en la sección Productos. El agente selecciona el producto y la promoción, el monto se calcula automáticamente.</div>
       </div>
       <div class="config-card">
         <div class="config-card-title">📋 Reglas automáticas</div>
@@ -182,7 +182,7 @@ ventas    → cliente_id (FK), agente_id (FK), fecha, producto
         <div class="config-card-title">📥 Exportar</div>
         <button class="btn-save" onclick="exportCSV()" style="background:var(--green);">📥 Exportar CSV completo</button>
       </div>
-    </div></div><!-- /view-scroll-wrap config -->
+    </div></div>
 
     <!-- USUARIOS -->
     <div class="view" id="view-usuarios"><div class="view-scroll-wrap">
@@ -191,12 +191,12 @@ ventas    → cliente_id (FK), agente_id (FK), fecha, producto
         <button class="add-btn" onclick="openUserModal(null)">+ Nuevo Agente</button>
       </div>
       <div class="users-grid" id="users-grid"></div>
-    </div></div><!-- /view-scroll-wrap usuarios -->
+    </div></div>
 
   </div>
 </div>
 
-<!-- MODAL VENTA/REGISTRO -->
+<!-- ═══ MODAL VENTA/REGISTRO ═══ -->
 <div class="modal-overlay" id="venta-modal">
   <div class="modal">
     <div class="modal-header">
@@ -207,10 +207,8 @@ ventas    → cliente_id (FK), agente_id (FK), fecha, producto
       <input type="hidden" id="edit-venta-id">
       <input type="hidden" id="f-cliente-id">
 
-      <!-- Banner de registro archivado -->
       <div id="archived-banner" style="display:none;background:rgba(90,90,122,0.2);border:1px solid rgba(90,90,122,0.4);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--text2);">
-        🔒 <b style="color:var(--text);">Registro archivado.</b> Este ciclo de venta está cerrado y no puede modificarse.
-        Solo el administrador puede editarlo.
+        🔒 <b style="color:var(--text);">Registro archivado.</b> Este ciclo de venta está cerrado. Solo el administrador puede editarlo.
       </div>
 
       <div class="field-row">
@@ -232,34 +230,45 @@ ventas    → cliente_id (FK), agente_id (FK), fecha, producto
         <input class="smart-input" id="f-nombre" placeholder="Nombre completo o s/n">
       </div>
 
+      <!-- PRODUCTO + CANTIDAD + PROMOCIÓN -->
+      <div class="field-row">
+        <div class="field">
+          <label>Producto</label>
+          <select class="smart-input" id="f-producto-id" onchange="onProductoChange()">
+            <option value="">— Seleccionar producto —</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Cantidad</label>
+          <input class="smart-input" type="number" id="f-cantidad" value="1" min="1" max="99"
+            style="width:100%;" oninput="onCantidadChange()">
+        </div>
+      </div>
+
+      <!-- PROMOCIONES disponibles (se llena dinámicamente) -->
+      <div class="field" id="promociones-wrap" style="display:none;">
+        <label>Promoción <span style="color:var(--text3);font-weight:400;font-size:10px;">(precio especial por cantidad)</span></label>
+        <div id="promociones-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;"></div>
+        <input type="hidden" id="f-promo-index" value="">
+      </div>
+
+      <!-- MONTO -->
       <div class="field">
-        <label>Producto</label>
-        <div class="smart-input-row" style="position:relative;">
-          <input class="smart-input" id="f-producto" placeholder="Selecciona o escribe...">
-          <button class="select-btn" onclick="toggleDropdown('dd-producto')">▾ Elegir</button>
-          <div class="dropdown-list" id="dd-producto" style="display:none;top:42px;">
-            <div class="dropdown-item" onclick="selectOption('f-producto','Calibrum','dd-producto')">💜 Calibrum</div>
-            <div class="dropdown-item" onclick="selectOption('f-producto','Colágeno Premium','dd-producto')">💚 Colágeno Premium</div>
-            <div class="dropdown-item" onclick="selectOption('f-producto','Osteofor','dd-producto')">💛 Osteofor</div>
-            <div class="dropdown-item" onclick="selectOption('f-producto','Alivia Fen','dd-producto')">🧡 Alivia Fen</div>
-            <div class="dropdown-item" onclick="selectOption('f-producto','Harmonia','dd-producto')">🩷 Harmonia</div>
-            <div class="dropdown-item" onclick="selectOption('f-producto','Resver Plus','dd-producto')">❤️ Resver Plus</div>
-          </div>
+        <label>Monto Total <span style="color:var(--text3);font-weight:400;font-size:10px;">(Bs. — editable)</span></label>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;font-weight:700;color:var(--text2);">Bs.</span>
+          <input class="smart-input" type="number" id="f-monto" placeholder="0.00" min="0" step="0.01"
+            style="flex:1;font-size:16px;font-weight:700;color:var(--green);">
+          <div id="monto-tag" style="font-size:11px;color:var(--text3);white-space:nowrap;"></div>
         </div>
       </div>
 
       <div class="field">
         <label>Ubicación <span style="color:var(--text3);font-weight:400;font-size:10px;">(selecciona o escribe directamente)</span></label>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
-          <select class="smart-input" id="sel-departamento" style="font-size:12px;padding:8px 10px;">
-            <option value="">— Departamento —</option>
-          </select>
-          <select class="smart-input" id="sel-provincia" disabled style="font-size:12px;padding:8px 10px;">
-            <option value="">— Provincia —</option>
-          </select>
-          <select class="smart-input" id="sel-municipio" disabled style="font-size:12px;padding:8px 10px;">
-            <option value="">— Municipio —</option>
-          </select>
+          <select class="smart-input" id="sel-departamento" style="font-size:12px;padding:8px 10px;"><option value="">— Departamento —</option></select>
+          <select class="smart-input" id="sel-provincia" disabled style="font-size:12px;padding:8px 10px;"><option value="">— Provincia —</option></select>
+          <select class="smart-input" id="sel-municipio" disabled style="font-size:12px;padding:8px 10px;"><option value="">— Municipio —</option></select>
         </div>
         <input class="smart-input" id="f-ciudad" placeholder="O escribe la ciudad directamente...">
       </div>
@@ -270,13 +279,11 @@ ventas    → cliente_id (FK), agente_id (FK), fecha, producto
         <div id="maps-preview"></div>
       </div>
 
-      <!-- Agente: solo admin -->
       <div class="field" id="agente-field" style="display:none;">
         <label>Asignar a Agente</label>
         <select class="smart-input" id="f-agente"></select>
       </div>
 
-      <!-- Estado -->
       <input type="hidden" id="f-estado" value="rellamada">
       <div class="field">
         <label>Estado</label>
@@ -294,9 +301,8 @@ ventas    → cliente_id (FK), agente_id (FK), fecha, producto
         </div>
       </div>
 
-      <!-- Intentos (solo rellamada) -->
       <div class="field" id="intentos-field">
-        <label>Cantidad de intentos de llamada <span style="color:var(--text3);font-weight:400;font-size:10px;">(máx 3 — al 3ro se archiva como No interesado)</span></label>
+        <label>Intentos de llamada <span style="color:var(--text3);font-weight:400;font-size:10px;">(máx 3 — al 3ro se archiva como No interesado)</span></label>
         <input class="smart-input" type="number" id="f-intentos" value="1" min="1" max="20" style="width:120px;" oninput="onIntentosChange()">
         <div id="intentos-warning" style="display:none;font-size:12px;margin-top:6px;padding:6px 10px;border-radius:6px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);"></div>
       </div>
@@ -321,7 +327,56 @@ ventas    → cliente_id (FK), agente_id (FK), fecha, producto
   </div>
 </div>
 
-<!-- MODAL USUARIO -->
+<!-- ═══ MODAL PRODUCTO ═══ -->
+<div class="modal-overlay" id="producto-modal">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <div class="modal-title" id="producto-modal-title">Nuevo Producto</div>
+      <button class="modal-close" onclick="closeProductoModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-producto-id">
+      <div class="field-row">
+        <div class="field" style="grid-column:span 2;">
+          <label>Nombre del Producto</label>
+          <input class="smart-input" id="p-nombre" placeholder="Ej: Calibrum">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Precio Base (Bs.)</label>
+          <input class="smart-input" type="number" id="p-precio-base" placeholder="150.00" min="0" step="0.01">
+        </div>
+        <div class="field" style="display:flex;align-items:flex-end;">
+          <label style="display:block;width:100%;">Estado</label>
+          <select class="smart-input" id="p-activo">
+            <option value="true">✅ Activo</option>
+            <option value="false">🚫 Inactivo</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- PROMOCIONES -->
+      <div class="field">
+        <label>Promociones <span style="color:var(--text3);font-weight:400;font-size:10px;">(precio especial por cantidad)</span></label>
+        <div id="promos-editor" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;"></div>
+        <button type="button" onclick="addPromoRow()"
+          style="background:var(--surface2);border:1px dashed var(--border);border-radius:8px;padding:8px 16px;color:var(--text2);font-size:13px;cursor:pointer;width:100%;transition:all 0.2s;"
+          onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+          onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">
+          + Añadir promoción
+        </button>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeProductoModal()">Cancelar</button>
+        <button class="btn-save" onclick="saveProducto()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL USUARIO ═══ -->
 <div class="modal-overlay" id="user-modal">
   <div class="modal">
     <div class="modal-header">
@@ -353,7 +408,7 @@ ventas    → cliente_id (FK), agente_id (FK), fecha, producto
 
 <div class="toast" id="toast"><span class="toast-icon">ℹ️</span><span id="toast-msg">Listo</span></div>
 
-<!-- MODAL ELIMINAR -->
+<!-- ═══ MODAL ELIMINAR ═══ -->
 <div class="modal-overlay" id="delete-modal">
   <div class="modal" style="max-width:420px;">
     <div class="modal-header">
@@ -371,9 +426,7 @@ ventas    → cliente_id (FK), agente_id (FK), fecha, producto
       <div id="delete-modal-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;">⚠️ El celular no coincide</div>
       <div class="modal-actions" style="margin-top:20px;">
         <button class="btn-secondary" onclick="closeDeleteModal()">Cancelar</button>
-        <button id="delete-confirm-btn" style="background:var(--red);border:none;border-radius:var(--radius-sm);padding:11px 24px;color:white;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">
-          Eliminar
-        </button>
+        <button id="delete-confirm-btn" style="background:var(--red);border:none;border-radius:var(--radius-sm);padding:11px 24px;color:white;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">Eliminar</button>
       </div>
     </div>
   </div>
