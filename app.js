@@ -27,7 +27,6 @@ const dashboardCache = {
   prods: {},
   cities: {},
   sCounts: {},
-  agStats: [],
   isDirty: true,
   lastIsAdmin: null,
   lastShowingAll: null,
@@ -77,10 +76,6 @@ function debouncedRenderVentas() {
   clearTimeout(_searchTimer);
   _searchTimer = setTimeout(renderVentas, 300);
 }
-function debouncedFilterRender() {
-  clearTimeout(_filterTimer);
-  _filterTimer = setTimeout(renderVentas, 300);
-}
 
 // THEME
 function initTheme() {
@@ -111,6 +106,10 @@ function initializeSession() {
     document.getElementById('app').style.display = 'flex';
     document.getElementById('user-name-top').textContent = savedSession.nombre;
     document.getElementById('user-avatar-top').textContent = savedSession.nombre[0].toUpperCase();
+    const isAdmin = savedSession.rol === 'admin';
+    document.getElementById('tab-productos').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-config').style.display    = isAdmin ? '' : 'none';
+    document.getElementById('tab-usuarios').style.display  = isAdmin ? '' : 'none';
     initApp().catch(e => console.error('Error inicializando app:', e));
   }
 }
@@ -151,6 +150,7 @@ function doLogout() {
   ventasIndex = {};
   allAgents = []; 
   allProductos = [];
+  selectedAgentId = 'all';
   dashboardCache.invalidate();
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
@@ -162,6 +162,13 @@ function doLogout() {
 
 // INIT
 async function initApp() {
+  // Ocultar filtros de agente por defecto, buildAgentSelector los mostrará si es admin
+  const wrap = document.getElementById('agent-selector-wrap');
+  if (wrap) wrap.innerHTML = '';
+  const filterAgente = document.getElementById('filter-agente');
+  if (filterAgente) filterAgente.style.display = 'none';
+  document.getElementById('dashboard-agent-row').style.display = 'none';
+
   document.getElementById('dash-date').textContent =
     new Date().toLocaleDateString('es-BO', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
   if (currentUser.rol === 'admin') {
@@ -477,13 +484,9 @@ function renderDashboard() {
   const isAdmin = currentUser.rol === 'admin';
   const showingAll = selectedAgentId === 'all';
   if (dashboardCache.isDirty || dashboardCache.lastIsAdmin !== isAdmin || dashboardCache.lastShowingAll !== showingAll) {
-    dashboardCache.agStats = allAgents.filter(a => a.rol === 'agente').map(ag => {
-      const av = ventas.filter(v => v.agente_id === ag.id);
-      return { nombre: ag.nombre, total: av.length, vendidos: av.filter(v => v.estado === 'vendido').length, interesados: av.filter(v => v.estado === 'interesado').length };
-    });
     dashboardCache.lastIsAdmin = isAdmin;
     dashboardCache.lastShowingAll = showingAll;
-  }  
+  }
 
   const subtitle = isAdmin
     ? (showingAll ? 'Vista general — todos los agentes' : `Filtrando: ${allAgents.find(a => a.id === selectedAgentId)?.nombre || ''}`)
@@ -1265,6 +1268,36 @@ async function saveVenta() {
   const items = getVentaItemsData();
   if (items.length === 0) { toast('⚠️ Añade al menos un producto con precio', 'error'); return; }
 
+  let estadoFinal = estado;
+
+  // Rellamada: límite 3
+  if (estado === 'rellamada' && intentos >= MAX_RELLAMADAS) {
+    const ok = confirm(
+      `Este registro ya tiene ${intentos} intentos de llamada.\n` +
+      `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
+    );
+    if (!ok) return;
+    estadoFinal = 'no_interesado';
+    toast('🔕 Marcado como No interesado (3 rellamadas)', 'error');
+  } else if (estado === 'rellamada' && intentos === MAX_RELLAMADAS - 1) {
+    toast(`⚠️ ${intentos}/${MAX_RELLAMADAS} intentos de llamada — próximo cierra el ciclo`, '');
+  }
+
+  // Sin respuesta: límite 4
+  if (estado === 'sin_respuesta' && intentos >= MAX_SIN_RESPUESTA) {
+    const ok = confirm(
+      `Este cliente ya tiene ${intentos} mensajes sin respuesta.\n` +
+      `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
+    );
+    if (!ok) return;
+    estadoFinal = 'no_interesado';
+    toast('🔕 Marcado como No interesado (4 sin respuesta)', 'error');
+  } else if (estado === 'sin_respuesta' && intentos === MAX_SIN_RESPUESTA - 1) {
+    toast(`⚠️ ${intentos}/${MAX_SIN_RESPUESTA} mensajes sin respuesta — próximo cierra el ciclo`, '');
+  }
+
+  const debeArchivar = ESTADOS_CIERRE.includes(estadoFinal);
+
   try {
     let cId = clienteId ? parseInt(clienteId) : null;
     const prodNombreParaPerfil = items
@@ -1290,36 +1323,6 @@ async function saveVenta() {
         direccion_residencial: direccion,
       }).eq('id', cId);
     }
-
-    let estadoFinal = estado;
-
-    // Rellamada: límite 3
-    if (estado === 'rellamada' && intentos >= MAX_RELLAMADAS) {
-      const ok = confirm(
-        `Este registro ya tiene ${intentos} intentos de llamada.\n` +
-        `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
-      );
-      if (!ok) return;
-      estadoFinal = 'no_interesado';
-      toast('🔕 Marcado como No interesado (3 rellamadas)', 'error');
-    } else if (estado === 'rellamada' && intentos === MAX_RELLAMADAS - 1) {
-      toast(`⚠️ ${intentos}/${MAX_RELLAMADAS} intentos de llamada — próximo cierra el ciclo`, 'error');
-    }
-
-    // Sin respuesta: límite 4
-    if (estado === 'sin_respuesta' && intentos >= MAX_SIN_RESPUESTA) {
-      const ok = confirm(
-        `Este cliente ya tiene ${intentos} mensajes sin respuesta.\n` +
-        `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
-      );
-      if (!ok) return;
-      estadoFinal = 'no_interesado';
-      toast('🔕 Marcado como No interesado (4 sin respuesta)', 'error');
-    } else if (estado === 'sin_respuesta' && intentos === MAX_SIN_RESPUESTA - 1) {
-      toast(`⚠️ ${intentos}/${MAX_SIN_RESPUESTA} mensajes sin respuesta — próximo cierra el ciclo`, 'error');
-    }
-
-    const debeArchivar = ESTADOS_CIERRE.includes(estadoFinal);
 
     const ventaData = {
       cliente_id: cId,
