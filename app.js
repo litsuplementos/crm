@@ -946,7 +946,6 @@ async function saveVenta() {
       agente_id:   agenteId,
       fecha, ciudad, notas,
       producto_id: productoId,
-      producto:    prodNombreParaPerfil,
       cantidad,
       monto_total: monto,
       estado:      estadoFinal,
