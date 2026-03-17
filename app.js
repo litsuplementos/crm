@@ -44,7 +44,7 @@ let mostrarArchivados = false;
 //  THEME (día / noche)
 // ═══════════════════════════════════════════════
 function initTheme() {
-  const saved = localStorage.getItem('litcrm-theme') || 'night';
+  const saved = localStorage.getItem('litcrm-theme') || 'white';
   applyTheme(saved);
 }
 
@@ -52,12 +52,12 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('litcrm-theme', theme);
   const btn = document.getElementById('theme-toggle');
-  if (btn) btn.textContent = theme === 'night' ? '☀️ Día' : '🌙 Noche';
+  if (btn) { if(theme==='night') btn.textContent='☀️ Día'; else if(theme==='day') btn.textContent='🌙 Noche'; else btn.textContent='🌿 Menta'; }
 }
 
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') || 'night';
-  applyTheme(current === 'night' ? 'day' : 'night');
+  const order = ['white','day','night']; const idx = order.indexOf(current); applyTheme(order[(idx+1)%3]);
 }
 
 // ═══════════════════════════════════════════════
@@ -256,7 +256,7 @@ function renderDashboard() {
 
   document.getElementById('stats-grid').innerHTML = `
     <div class="stat-card"><div class="stat-icon" style="background:var(--accent-glow);">📋</div>
-      <div class="stat-value" style="color:var(--accent2);">${total}</div><div class="stat-label">MOVIMIENTOS</div></div>
+      <div class="stat-value" style="color:var(--accent2);">${total}</div><div class="stat-label">TOTAL VENTAS</div></div>
     <div class="stat-card"><div class="stat-icon" style="background:var(--green-bg);">✅</div>
       <div class="stat-value" style="color:var(--green);">${vendidos}</div><div class="stat-label">VENDIDOS</div></div>
     <div class="stat-card"><div class="stat-icon" style="background:var(--blue-bg);">📦</div>
