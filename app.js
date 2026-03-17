@@ -498,7 +498,7 @@ function renderDashboard() {
 
   const prods = {};
   ventas.forEach(v => {
-    const nombre = v.producto_rel?.nombre || v.producto || 'Sin producto';
+    const nombre = v.producto_rel?.nombre || 'Sin producto';
     prods[nombre] = (prods[nombre] || 0) + 1;
   });
   const maxP = Math.max(...Object.values(prods), 1);
@@ -584,7 +584,7 @@ function getFiltered() {
     if (!!v.archivado !== mostrarArchivados) return false;
     const nombre     = v.cliente?.nombre || '';
     const cel        = v.cliente?.celular || '';
-    const prodNombre = v.producto_rel?.nombre || v.producto || '';
+    const prodNombre = v.producto_rel?.nombre || '';
     const haystack   = `${nombre} ${cel} ${prodNombre} ${v.ciudad||''} ${v.notas||''}`.toLowerCase();
     if (search && !haystack.includes(search)) return false;
     if (status && v.estado !== status) return false;
@@ -608,7 +608,7 @@ function renderVentas() {
   document.getElementById('table-count').textContent  = `${total} registros`;
 
   document.getElementById('ventas-tbody').innerHTML = page.map(v => {
-    const prodNombre = v.producto_rel?.nombre || v.producto || '';
+    const prodNombre = v.producto_rel?.nombre || '';
     return `
     <tr onclick="openVentaModal(${v.id})" style="${v.archivado?'opacity:0.6;':''}">
       <td style="color:var(--text2);font-size:12px;">${v.fecha||''}${v.archivado?' 🔒':''}</td>
@@ -1132,7 +1132,7 @@ function exportCSV() {
   const rows = ventas.map(v=>[
     v.id, v.fecha,
     v.cliente?.nombre||'', v.cliente?.celular||'',
-    v.producto_rel?.nombre||v.producto||'',
+    v.producto_rel?.nombre ||'',
     v.cantidad||1, v.monto_total||'',
     v.ciudad||v.cliente?.ciudad||'',
     v.estado||'', v.notas||'',
