@@ -1461,10 +1461,10 @@ function exportCSV() {
     ...(isAdmin ? [v.agente?.nombre || ''] : [])
   ].map(x => `"${(x || '').toString().replace(/"/g, '""')}"`).join(','));
 
-  const csv  = [headers.join(','), ...rows].join('\n');
+  const csv = [headers.join(','), ...rows].join('\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-  const a    = document.createElement('a');
-  a.href     = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
   a.download = `LIT_CRM_${currentUser.nombre}_${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
   toast('📥 CSV exportado', 'success');
@@ -1474,19 +1474,19 @@ function exportCSV() {
 const BOLIVIA_GEO = {
   "Santa Cruz": { capital: "Santa Cruz de la Sierra", provincias: { "Andrés Ibáñez": { capital: "Santa Cruz de la Sierra", municipios: ["Santa Cruz de la Sierra","Cotoca","Porongo","La Guardia","El Torno","Warnes"] }, "Warnes": { capital: "Warnes", municipios: ["Warnes","Okinawa Uno"] }, "Ichilo": { capital: "Buena Vista", municipios: ["Buena Vista","San Carlos","Yapacaní","San Juan"] }, "Sara": { capital: "Portachuelo", municipios: ["Portachuelo","Santa Rosa del Sara","Colpa Bélgica"] }, "Obispo Santisteban": { capital: "Montero", municipios: ["Montero","Saavedra","Mineros","General Saavedra"] }, "Ñuflo de Chávez": { capital: "Concepción", municipios: ["Concepción","San Julián","San Antonio de Lomerío","Cuatro Cañadas","San Ramón","San Javier"] }, "Velasco": { capital: "San Ignacio de Velasco", municipios: ["San Ignacio de Velasco","San Miguel de Velasco","San Rafael"] }, "Chiquitos": { capital: "San José de Chiquitos", municipios: ["San José de Chiquitos","Pailón","Roboré","Charagua"] }, "Cordillera": { capital: "Camiri", municipios: ["Camiri","Charagua","Cabezas","Boyuibe","Cuevo","Gutiérrez","Lagunillas"] }, "Florida": { capital: "Samaipata", municipios: ["Samaipata","Mairana","Pampagrande"] }, "Vallegrande": { capital: "Vallegrande", municipios: ["Vallegrande","Moro Moro","Pucará"] }, "Manuel María Caballero": { capital: "Comarapa", municipios: ["Comarapa","Saipina"] }, "Germán Busch": { capital: "Puerto Suárez", municipios: ["Puerto Suárez","Puerto Quijarro","Carmen Rivero Torres"] }, "Ángel Sandoval": { capital: "San Matías", municipios: ["San Matías"] } } },
   "La Paz": { capital: "La Paz", provincias: { "Murillo": { capital: "La Paz", municipios: ["La Paz","El Alto","Palca","Mecapaca","Achocalla","Viacha"] }, "Omasuyos": { capital: "Achacachi", municipios: ["Achacachi","Ancoraimes"] }, "Pacajes": { capital: "Coro Coro", municipios: ["Coro Coro","Comanche","Charaña","Calacoto"] }, "Larecaja": { capital: "Sorata", municipios: ["Sorata","Guanay","Teoponte"] }, "Sud Yungas": { capital: "Chulumani", municipios: ["Chulumani","Irupana","Yanacachi","Palos Blancos","La Asunta"] }, "Nor Yungas": { capital: "Coroico", municipios: ["Coroico","Coripata"] }, "Caranavi": { capital: "Caranavi", municipios: ["Caranavi"] }, "Los Andes": { capital: "Pucarani", municipios: ["Pucarani","Laja","Batallas","Puerto Pérez"] }, "Aroma": { capital: "Sica Sica", municipios: ["Sica Sica","Ayo Ayo","Calamarca","Colquencha","Umala"] } } },
-  "Cochabamba": { capital: "Cochabamba", provincias: { "Cercado": { capital: "Cochabamba", municipios: ["Cochabamba","Quillacollo","Sacaba","Colcapirhua","Sipe Sipe","Tiquipaya","Vinto"] }, "Chapare": { capital: "Sacaba", municipios: ["Sacaba","Colomi","Villa Tunari","Entre Ríos","Puerto Villarroel"] }, "Esteban Arze": { capital: "Tarata", municipios: ["Tarata","Arbieto","Santiváñez"] }, "Punata": { capital: "Punata", municipios: ["Punata","Villa Rivero","San Benito"] } } },
-  "Potosí": { capital: "Potosí", provincias: { "Tomás Frías": { capital: "Potosí", municipios: ["Potosí","Yocalla","Urmiri","Chaqui","Tacobamba"] }, "Antonio Quijarro": { capital: "Uyuni", municipios: ["Uyuni","Tomave","Porco"] }, "Sud Chichas": { capital: "Tupiza", municipios: ["Tupiza","Atocha"] }, "Modesto Omiste": { capital: "Villazón", municipios: ["Villazón"] } } },
-  "Oruro": { capital: "Oruro", provincias: { "Cercado": { capital: "Oruro", municipios: ["Oruro","El Choro","Soracachi"] } } },
-  "Chuquisaca": { capital: "Sucre", provincias: { "Oropeza": { capital: "Sucre", municipios: ["Sucre","Yotala","Poroma"] } } },
-  "Tarija": { capital: "Tarija", provincias: { "Cercado": { capital: "Tarija", municipios: ["Tarija","San Lorenzo","Uriondo","Padcaya"] }, "Gran Chaco": { capital: "Yacuiba", municipios: ["Yacuiba","Caraparí","Villamontes"] } } },
-  "Beni": { capital: "Trinidad", provincias: { "Cercado": { capital: "Trinidad", municipios: ["Trinidad","San Javier"] }, "Vaca Díez": { capital: "Riberalta", municipios: ["Riberalta","Guayaramerín"] } } },
-  "Pando": { capital: "Cobija", provincias: { "Nicolás Suárez": { capital: "Cobija", municipios: ["Cobija","Bolpebra","Bella Flor","Porvenir","San Pedro"] } } }
+  "Cochabamba": { capital: "Cochabamba", provincias: { "Cercado": { capital: "Cochabamba", municipios: ["Cochabamba","Quillacollo","Sacaba","Colcapirhua","Sipe Sipe","Tiquipaya","Vinto"] }, "Chapare": { capital: "Sacaba", municipios: ["Sacaba","Colomi","Villa Tunari","Entre Ríos","Puerto Villarroel"] }, "Esteban Arze": { capital: "Tarata", municipios: ["Tarata","Arbieto","Santiváñez"] }, "Punata": { capital: "Punata", municipios: ["Punata","Villa Rivero","San Benito"] }, "Aiquile": { capital: "Aiquile", municipios: ["Aiquile","Alalay"] }, "Arque": { capital: "Arque", municipios: ["Arque"] }, "Ayopaya": { capital: "Morochata", municipios: ["Morochata","Independencia"] }, "Campero": { capital: "Aiquile", municipios: ["Aiquile"] } } },
+  "Potosí": { capital: "Potosí", provincias: { "Tomás Frías": { capital: "Potosí", municipios: ["Potosí","Yocalla","Urmiri","Chaqui","Tacobamba"] }, "Antonio Quijarro": { capital: "Uyuni", municipios: ["Uyuni","Tomave","Porco"] }, "Sud Chichas": { capital: "Tupiza", municipios: ["Tupiza","Atocha"] }, "Modesto Omiste": { capital: "Villazón", municipios: ["Villazón"] }, "Chayanta": { capital: "Chayanta", municipios: ["Chayanta","Sacaca"] }, "Filemón Gómez": { capital: "Cotagaita", municipios: ["Cotagaita"] } } },
+  "Oruro": { capital: "Oruro", provincias: { "Cercado": { capital: "Oruro", municipios: ["Oruro","El Choro","Soracachi"] }, "Junín": { capital: "Junín", municipios: ["Junín","Chipaya"] }, "Avaroa": { capital: "Oruro", municipios: ["Oruro"] }, "Poopó": { capital: "Poopó", municipios: ["Poopó","Antacagasta"] }, "Dalence": { capital: "Huanuni", municipios: ["Huanuni"] } } },
+  "Chuquisaca": { capital: "Sucre", provincias: { "Oropeza": { capital: "Sucre", municipios: ["Sucre","Yotala","Poroma"] }, "Belisario Boeto": { capital: "Tarabuco", municipios: ["Tarabuco","Tomina","Alcalá"] }, "Jaime Zudáñez": { capital: "Monteagudo", municipios: ["Monteagudo","Huerta Mayu"] }, "Yamparáez": { capital: "Azurduy", municipios: ["Azurduy","Tarvita"] } } },
+  "Tarija": { capital: "Tarija", provincias: { "Cercado": { capital: "Tarija", municipios: ["Tarija","San Lorenzo","Uriondo","Padcaya"] }, "Gran Chaco": { capital: "Yacuiba", municipios: ["Yacuiba","Caraparí","Villamontes"] }, "Méndez": { capital: "Entre Ríos", municipios: ["Entre Ríos"] } } },
+  "Beni": { capital: "Trinidad", provincias: { "Cercado": { capital: "Trinidad", municipios: ["Trinidad","San Javier"] }, "Vaca Díez": { capital: "Riberalta", municipios: ["Riberalta","Guayaramerín"] }, "Yacuma": { capital: "Santa Rosa de Yacuma", municipios: ["Santa Rosa de Yacuma"] }, "Moxos": { capital: "San Ignacio de Moxos", municipios: ["San Ignacio de Moxos","Loreto"] }, "Ballivián": { capital: "Rurrenabaque", municipios: ["Rurrenabaque","Reyes"] } } },
+  "Pando": { capital: "Cobija", provincias: { "Nicolás Suárez": { capital: "Cobija", municipios: ["Cobija","Bolpebra","Bella Flor","Porvenir","San Pedro"] }, "Manuripi": { capital: "Filadelfia", municipios: ["Filadelfia"] } } }
 };
 
 function initGeoSelectors() {
-  const selDep  = document.getElementById('sel-departamento');
+  const selDep = document.getElementById('sel-departamento');
   const selProv = document.getElementById('sel-provincia');
-  const selMun  = document.getElementById('sel-municipio');
+  const selMun = document.getElementById('sel-municipio');
   if (!selDep) return;
   selDep.innerHTML = '<option value="">— Departamento —</option>';
   Object.keys(BOLIVIA_GEO).sort().forEach(dep => {
@@ -1496,16 +1496,16 @@ function initGeoSelectors() {
     const dep = selDep.value, prov = selProv.value, mun = selMun.value;
     const inp = document.getElementById('f-ubicacion');
     if (!inp) return;
-    if (mun)       inp.value = `${dep} - ${prov} - ${mun}`;
+    if (mun) inp.value = `${dep} - ${prov} - ${mun}`;
     else if (prov) inp.value = `${dep} - ${prov}`;
     else if (dep)  inp.value = dep;
-    else           inp.value = '';
+    else inp.value = '';
   }
   selDep.onchange = () => {
     const dep = selDep.value;
     selProv.innerHTML = '<option value="">— Provincia —</option>';
-    selMun.innerHTML  = '<option value="">— Municipio —</option>';
-    selProv.disabled  = !dep; selMun.disabled = true;
+    selMun.innerHTML = '<option value="">— Municipio —</option>';
+    selProv.disabled = !dep; selMun.disabled = true;
     updateUbicacionInput();
     if (!dep) return;
     Object.keys(BOLIVIA_GEO[dep].provincias).sort().forEach(prov => {
@@ -1515,11 +1515,11 @@ function initGeoSelectors() {
   selProv.onchange = () => {
     const dep = selDep.value, prov = selProv.value;
     selMun.innerHTML = '<option value="">— Municipio —</option>';
-    selMun.disabled  = !prov;
+    selMun.disabled = !prov;
     updateUbicacionInput();
     if (!dep || !prov) return;
     const provData = BOLIVIA_GEO[dep].provincias[prov];
-    const capDep   = BOLIVIA_GEO[dep].capital;
+    const capDep = BOLIVIA_GEO[dep].capital;
     provData.municipios.forEach(mun => {
       const o = document.createElement('option'); o.value = mun;
       o.textContent = mun === capDep ? mun + ' ★ (cap. departamental)' : mun === provData.capital ? mun + ' · (cap. provincial)' : mun;
@@ -1578,8 +1578,8 @@ function renderStatModal() {
   document.getElementById('stat-modal-title').textContent = labels[estado] || estado;
 
   const filtered = ventas.filter(v => v.estado === estado);
-  const total     = filtered.length;
-  const pages     = Math.ceil(total / STAT_PAGE_SIZE) || 1;
+  const total = filtered.length;
+  const pages = Math.ceil(total / STAT_PAGE_SIZE) || 1;
   if (statModalPage > pages) statModalPage = 1;
   const page = filtered.slice((statModalPage - 1) * STAT_PAGE_SIZE, statModalPage * STAT_PAGE_SIZE);
 
