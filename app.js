@@ -1082,6 +1082,7 @@ async function onCelularInput() {
           }
         }
       }
+      sugg.style.display = 'none';
       const infoBox = document.getElementById('cliente-info-box');
       infoBox.style.display = '';
       const { data: cicloAbierto } = await db.from('ventas')
@@ -1111,7 +1112,7 @@ async function onCelularInput() {
         </div>`;
     } else {
       document.getElementById('f-cliente-id').value = '';
-      sugg.textContent = '✨ Nuevo cliente — se creará el perfil al guardar';
+      sugg.textContent = '✨ Registro nuevo: Se creará el perfil al guardar';
       sugg.style.background = 'var(--green-bg)';
       sugg.style.borderColor = 'rgba(34,211,164,0.3)';
       sugg.style.color = 'var(--green)';
