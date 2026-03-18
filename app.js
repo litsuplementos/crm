@@ -156,6 +156,11 @@ function doLogout() {
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
+  document.getElementById('search-input').value = '';
+  document.getElementById('filter-status').value = '';
+  document.getElementById('filter-producto').value = '';
+  document.getElementById('filter-ubicacion').value = '';
+  document.getElementById('search-input').value = '';
   showViewDirect('dashboard');
   SessionManager.clearSession();
 }
@@ -1236,7 +1241,7 @@ async function openVentaModal(id) {
     if (currentUser.rol === 'admin' && v.agente_id)
       document.getElementById('f-agente').value = v.agente_id;
     
-    renderComprobantePreview(v.comprobante_url || null);
+    renderComprobantePreview(v.comprobante_url || null, shouldLock);
     
   } else {
     // NUEVO REGISTRO
@@ -1608,14 +1613,16 @@ async function deleteComprobante(url, ventaId) {
   renderVentas();
 }
 
-function renderComprobantePreview(url) {
+function renderComprobantePreview(url, locked = false) {
   const wrap = document.getElementById('comprobante-preview');
   if (!wrap) return;
   if (!url) { wrap.innerHTML = ''; return; }
   const isPdf = url.toLowerCase().includes('.pdf');
+  const btnEliminar = locked ? '' : `<button type="button" class="icon-btn danger" onclick="deleteComprobante('${url}',parseInt(document.getElementById('edit-venta-id').value))" style="font-size:11px;padding:3px 8px;">🗑️</button>`;
+  const btnEliminarImg = locked ? '' : `<button type="button" class="icon-btn danger" onclick="deleteComprobante('${url}',parseInt(document.getElementById('edit-venta-id').value))" style="position:absolute;top:4px;right:4px;font-size:11px;padding:3px 7px;background:var(--surface);">🗑️</button>`;
   wrap.innerHTML = isPdf
-    ? `<div style="display:flex;align-items:center;gap:8px;margin-top:8px;"><a href="${url}" target="_blank" style="color:var(--accent2);font-size:13px;">📄 Ver PDF</a><button type="button" class="icon-btn danger" onclick="deleteComprobante('${url}',parseInt(document.getElementById('edit-venta-id').value))" style="font-size:11px;padding:3px 8px;">🗑️</button></div>`
-    : `<div style="margin-top:8px;position:relative;display:inline-block;"><img src="${url}" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);" onerror="this.style.display='none'"><button type="button" class="icon-btn danger" onclick="deleteComprobante('${url}',parseInt(document.getElementById('edit-venta-id').value))" style="position:absolute;top:4px;right:4px;font-size:11px;padding:3px 7px;background:var(--surface);">🗑️</button></div>`;
+    ? `<div style="display:flex;align-items:center;gap:8px;margin-top:8px;"><a href="${url}" target="_blank" style="color:var(--accent2);font-size:13px;">📄 Ver PDF</a>${btnEliminar}</div>`
+    : `<div style="margin-top:8px;position:relative;display:inline-block;"><img src="${url}" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);" onerror="this.style.display='none'">${btnEliminarImg}</div>`;
 }
 
 document.addEventListener('click', e => {
