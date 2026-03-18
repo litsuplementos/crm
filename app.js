@@ -1,5 +1,3 @@
-// ⚡ VERSIÓN OPTIMIZADA - Implementa mejoras críticas
-
 const SUPABASE_URL = 'https://txjgdglfzskirujqctra.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4amdkZ2xmenNraXJ1anFjdHJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2NzYzNzYsImV4cCI6MjA4OTI1MjM3Nn0.b3o9KHVaspzyRnMhmB6uX2jLjadWgAFJM-iYHKHjXr0';
 
@@ -20,7 +18,7 @@ const SessionManager = {
   }
 }
 
-// 🎯 OPTIMIZACIÓN 1: CACHÉ DE DASHBOARD
+// CACHÉ DE DASHBOARD
 const dashboardCache = {
   lastVentasCount: 0,
   lastAgentId: null,
@@ -66,10 +64,10 @@ let allAgents = [];
 let allProductos = [];
 let selectedAgentId  = 'all';
 let currentPage = 1;
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 15;
 let mostrarArchivados = false;
 
-// 🎯 OPTIMIZACIÓN 2: Debounce mejorado
+// Debounce mejorado
 let _searchTimer;
 let _filterTimer;
 function debouncedRenderVentas() {
@@ -127,12 +125,12 @@ async function doLogin() {
     currentUser = data;
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
-    document.getElementById('user-name-top').textContent   = data.nombre;
+    document.getElementById('user-name-top').textContent = data.nombre;
     document.getElementById('user-avatar-top').textContent = data.nombre[0].toUpperCase();
     const isAdmin = data.rol === 'admin';
     document.getElementById('tab-productos').style.display = isAdmin ? '' : 'none';
-    document.getElementById('tab-config').style.display    = isAdmin ? '' : 'none';
-    document.getElementById('tab-usuarios').style.display  = isAdmin ? '' : 'none';
+    document.getElementById('tab-config').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-usuarios').style.display = isAdmin ? '' : 'none';
     await initApp();
     SessionManager.saveSession(data); 
   } catch(e) {
@@ -701,8 +699,10 @@ function renderVentas() {
       <td>${prodCell}</td>
       <td>${v.monto_total ? montoChip(v.monto_total) : ''}</td>
       <td class="td-ubicacion">${ubicacion}</td>
+
       <td>${statusBadge(v.estado)}${v.estado === 'rellamada' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}${v.estado === 'sin_respuesta' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);font-size:12px;" title="${v.notas || ''}">${v.notas || ''}${v.comprobante_url ? ` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>` : ''}</td>
+
+      <td style="min-width:280px;max-width:260px;overflow:hidden;white-space:normal;color:var(--text2);font-size:12px;" title="${v.notas || ''}">${v.notas || ''}${v.comprobante_url ? ` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>` : ''}</td>
       ${isAdmin ? `<td style="font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>` : ''}
       <td class="td-actions" onclick="event.stopPropagation()">
         <button class="icon-btn" onclick="openVentaModal(${v.id})">✏️</button>
@@ -1159,8 +1159,8 @@ async function openVentaModal(id) {
     
     // MENSAJE DINÁMICO
     const mensajeArchivado = (v?.estado === 'vendido' && vendidosEditables && !isAdmin)
-      ? '✏️ Registro vendido. Puedes hacer pequeños ajustes.'
-      : '🔒 Registro archivado. Este ciclo de venta está cerrado. Solo el administrador puede editarlo.';
+      ? '✏️ Registro archivado. Habilitado para hacer cambios.'
+      : '🔒 Registro archivado. Este ciclo de venta está cerrado. Sólo el administrador puede editarlo.';
     
     document.getElementById('modal-title').textContent = isArchivado ? '🔒 Registro Archivado' : 'Editar Registro';
     
@@ -1605,12 +1605,28 @@ async function uploadComprobante(ventaId) {
 
 async function deleteComprobante(url, ventaId) {
   if (!url || !confirm('¿Eliminar comprobante?')) return;
-  const path = url.split('/comprobantes/')[1];
-  if (path) await db.storage.from('comprobantes').remove([path]);
-  await db.from('ventas').update({ comprobante_url: null }).eq('id', ventaId);
-  toast('🗑️ Comprobante eliminado');
-  await loadVentas();
-  renderVentas();
+  try {
+    const path = url.split('/comprobantes/')[1];
+    if (path) await db.storage.from('comprobantes').remove([path]);
+    const { error } = await db.from('ventas').update({ comprobante_url: null }).eq('id', ventaId);
+    if (error) throw error;
+    // Actualizar en memoria SOLO el registro afectado
+    if (ventasIndex[ventaId]) {
+      ventasIndex[ventaId].comprobante_url = null;
+      const idx = ventas.findIndex(v => v.id === ventaId);
+      if (idx >= 0) {
+        ventas[idx].comprobante_url = null;
+      }
+    }
+    // Limpiar preview si el modal sigue abierto
+    if (document.getElementById('edit-venta-id').value == ventaId) {
+      renderComprobantePreview(null);
+    }
+    toast('🗑️ Comprobante eliminado', 'success');
+    renderVentas();
+  } catch(e) {
+    toast('❌ Error eliminando comprobante: ' + e.message, 'error');
+  }
 }
 
 function renderComprobantePreview(url, locked = false) {
