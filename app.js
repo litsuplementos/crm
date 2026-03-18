@@ -184,6 +184,7 @@ async function initApp() {
   populateProductoFilter();
   setArchivoFiltro(false);
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
+  if (currentUser.rol === 'admin') loadConfigVendidosEditables();
 }
 
 // 🎯 OPTIMIZACIÓN 6: Event Delegation
@@ -514,7 +515,7 @@ function renderDashboard() {
       <div class="stat-icon" style="background:var(--green-bg);">✅</div>
       <div class="stat-value" style="color:var(--green);">${vendidos}</div>
       <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:4px;">Bs. ${montoVendidos.toFixed(0)}</div>
-      <div class="stat-label">VENDIDOS</div>
+      <div class="stat-label">UNIDADES VENDIDAS</div>
     </div>
 
     <div class="stat-card"><div class="stat-icon" style="background:var(--blue-bg);">📦</div>
@@ -604,10 +605,12 @@ function renderDashboard() {
   if (isAdmin && showingAll && allAgents.length > 0) {
     const agStats = allAgents.filter(a => a.rol === 'agente').map(ag => {
       const av = ventas.filter(v => v.agente_id === ag.id);
+      const ventasVendidas = av.filter(v => v.estado === 'vendido');
       return {
         nombre: ag.nombre,
         total: av.length,
-        vendidos: av.filter(v => v.estado === 'vendido').length,
+        vendidos: ventasVendidas.length,
+        unidades: ventasVendidas.reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0),
         interesados: av.filter(v => v.estado === 'interesado').length,
       };
     });
@@ -615,8 +618,8 @@ function renderDashboard() {
     document.getElementById('agents-chart').innerHTML = agStats.map(a => `
       <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:13px;font-weight:600;">${a.nombre}</span>
-          <span style="font-size:12px;color:var(--text2);">${a.total} registros · ${a.vendidos} vendidos · ${a.interesados} interesados</span>
+          <span style="font-size:13px;font-weight:600;">${a.nombre}</span>          
+          <span style="font-size:12px;color:var(--text2);">${a.total} registros · ${a.vendidos} vendidos · <span style="color:var(--green);font-weight:600;">${a.unidades} uds</span> · ${a.interesados} interesados</span>
         </div>
         <div class="bar-track" style="height:10px;">
           <div class="bar-fill" style="width:${(a.total/maxT*100).toFixed(0)}%;background:linear-gradient(90deg,var(--accent),var(--accent2))"></div>
@@ -1032,9 +1035,9 @@ function _loadIntentosEditar(estado, intentos) {
 // Resetea ambos campos al crear nuevo registro
 function _resetIntentos() {
   document.getElementById('f-intentos-rellamada').value = 1;
-  document.getElementById('f-intentos-sinresp').value   = 1;
-  document.getElementById('f-intentos').value           = 1;
-  toggleIntentosField('rellamada');
+  document.getElementById('f-intentos-sinresp').value = 1;
+  document.getElementById('f-intentos').value = 1;
+  toggleIntentosField('interesado');
 }
 
 // Lee el valor correcto según el estado activo
@@ -1139,7 +1142,8 @@ async function openVentaModal(id) {
     if (!v) return;
     const isArchivado = !!v.archivado;
     const isAdmin = currentUser?.rol === 'admin';
-    const shouldLock = isArchivado && !isAdmin;
+    const vendidosEditables = localStorage.getItem('litcrm_vendidos_editables') === 'true';
+    const shouldLock = isArchivado && !isAdmin && !(v.estado === 'vendido' && vendidosEditables);
     document.getElementById('modal-title').textContent = isArchivado ? '🔒 Registro Archivado' : 'Editar Registro';
     const archivedBanner = document.getElementById('archived-banner');
     if (archivedBanner) archivedBanner.style.display = isArchivado ? '' : 'none';
@@ -1187,8 +1191,8 @@ async function openVentaModal(id) {
     });
     // ── Cargar intentos en el campo correcto ──
     _loadIntentosEditar(v.estado, v.intentos);
-    document.getElementById('f-estado').value = v.estado || 'rellamada';
-    document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');
+    document.getElementById('f-estado').value = v.estado || 'interesado';
+    document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');  
     if (currentUser.rol === 'admin' && v.agente_id)
       document.getElementById('f-agente').value = v.agente_id;
     renderComprobantePreview(v.comprobante_url || null);
@@ -1220,8 +1224,8 @@ async function openVentaModal(id) {
     });
     // ── Resetear ambos contadores ──
     _resetIntentos();
-    document.getElementById('f-estado').value = 'rellamada';
-    document.querySelector('.quick-chip[data-estado="rellamada"]')?.classList.add('active');
+    document.getElementById('f-estado').value = 'interesado';
+    document.querySelector('.quick-chip[data-estado="interesado"]')?.classList.add('active');
     if (currentUser.rol === 'admin' && allAgents.length > 0)
       document.getElementById('f-agente').value = allAgents.find(a => a.rol === 'agente')?.id || '';
     clearVentaItems();
@@ -1852,6 +1856,21 @@ function renderStatModal() {
       <button class="page-btn" onclick="statModalPage++;renderStatModal()" ${statModalPage===pages?'disabled':''}>›</button>
     </div>` : ''}
   `;
+}
+
+function loadConfigVendidosEditables() {
+  const val = localStorage.getItem('litcrm_vendidos_editables') === 'true';
+  const cb = document.getElementById('toggle-vendidos-editables');
+  const span = document.getElementById('toggle-vendidos-span');
+  if (cb) cb.checked = val;
+  if (span) span.style.background = val ? 'var(--green)' : 'var(--border)';
+}
+
+function saveConfigVendidosEditables(enabled) {
+  localStorage.setItem('litcrm_vendidos_editables', enabled);
+  const span = document.getElementById('toggle-vendidos-span');
+  if (span) span.style.background = enabled ? 'var(--green)' : 'var(--border)';
+  toast(enabled ? '✅ Agentes pueden editar vendidos' : '🔒 Vendidos bloqueados para agentes', 'success');
 }
 
 // INIT
