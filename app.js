@@ -1144,21 +1144,49 @@ async function openVentaModal(id) {
     const isArchivado = !!v.archivado;
     const isAdmin = currentUser?.rol === 'admin';
     const vendidosEditables = localStorage.getItem('litcrm_vendidos_editables') === 'true';
+
+    // LÓGICA CORRECTA: shouldLock SOLO si es archivado Y no admin Y (no es vendido o vendidosEditables está desactivado)
     const shouldLock = isArchivado && !isAdmin && !(v?.estado === 'vendido' && vendidosEditables);
+    
+    // MENSAJE: Cambiar si es vendido editable
+    const mensajeArchivado = (v?.estado === 'vendido' && vendidosEditables && !isAdmin)
+      ? '✏️ Registro vendido. Puedes hacer pequeños ajustes.'
+      : '🔒 Registro archivado. Este ciclo de venta está cerrado. Solo el administrador puede editarlo.';
+    
     document.getElementById('modal-title').textContent = isArchivado ? '🔒 Registro Archivado' : 'Editar Registro';
+    
     const archivedBanner = document.getElementById('archived-banner');
-    if (archivedBanner) archivedBanner.style.display = isArchivado ? '' : 'none';
+    if (archivedBanner) {
+      archivedBanner.style.display = isArchivado ? '' : 'none';
+      archivedBanner.textContent = mensajeArchivado;
+    }
+    
+    // DESABILITAR CAMPOS
     const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas',
                         'f-intentos-rellamada', 'f-intentos-sinresp', 'f-direccion', 'f-monto'];
-    lockFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.disabled = shouldLock; });
+    lockFields.forEach(fid => { 
+      const el = document.getElementById(fid); 
+      if (el) el.disabled = shouldLock; 
+    });
+    
+    // DESHABILITAR ARCHIVO TAMBIÉN
+    const fileInput = document.getElementById('f-comprobante');
+    if (fileInput) fileInput.disabled = shouldLock;
+    
+    // DESHABILITAR BOTONES DE ESTADO (quick-chip)
     document.querySelectorAll('.quick-chip').forEach(ch => {
       ch.style.pointerEvents = shouldLock ? 'none' : '';
       ch.style.opacity = shouldLock ? '0.4' : '';
     });
+    
+    // DESHABILITAR BOTÓN "AÑADIR PRODUCTO"
     const addItemBtn = document.getElementById('btn-add-item');
     if (addItemBtn) addItemBtn.style.display = shouldLock ? 'none' : '';
+    
+    // DESHABILITAR BOTÓN "GUARDAR"
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) saveBtn.style.display = shouldLock ? 'none' : '';
+
     document.getElementById('edit-venta-id').value = id;
     document.getElementById('f-fecha').value = v.fecha || '';
     document.getElementById('f-celular').value = v.cliente?.celular || '';
