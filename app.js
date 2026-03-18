@@ -1229,7 +1229,10 @@ async function openVentaModal(id) {
     document.getElementById('modal-title').textContent = 'Nuevo Registro';
     document.getElementById('edit-venta-id').value = '';
     const archivedBanner = document.getElementById('archived-banner');
-    if (archivedBanner) archivedBanner.style.display = 'none';
+    if (archivedBanner) {
+      archivedBanner.style.display = isArchivado ? '' : 'none';
+      archivedBanner.innerHTML = mensajeArchivado;  // ← IMPORTANTE: usa innerHTML, no textContent
+    }
     const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas',
                         'f-intentos-rellamada', 'f-intentos-sinresp', 'f-direccion', 'f-monto'];
     lockFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.disabled = false; });
