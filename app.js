@@ -447,6 +447,7 @@ function showView(name) {
   if (name === 'dashboard') renderDashboard();
   if (name === 'usuarios')  renderUsers();
   if (name === 'productos') renderProductos();
+  if (name === 'config' && currentUser.rol === 'admin') loadConfigVendidosEditables();
 }
 function showViewDirect(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -1143,7 +1144,7 @@ async function openVentaModal(id) {
     const isArchivado = !!v.archivado;
     const isAdmin = currentUser?.rol === 'admin';
     const vendidosEditables = localStorage.getItem('litcrm_vendidos_editables') === 'true';
-    const shouldLock = isArchivado && !isAdmin && !(v.estado === 'vendido' && vendidosEditables);
+    const shouldLock = isArchivado && !isAdmin && !(v?.estado === 'vendido' && vendidosEditables);
     document.getElementById('modal-title').textContent = isArchivado ? '🔒 Registro Archivado' : 'Editar Registro';
     const archivedBanner = document.getElementById('archived-banner');
     if (archivedBanner) archivedBanner.style.display = isArchivado ? '' : 'none';
@@ -1869,7 +1870,11 @@ function loadConfigVendidosEditables() {
 function saveConfigVendidosEditables(enabled) {
   localStorage.setItem('litcrm_vendidos_editables', enabled);
   const span = document.getElementById('toggle-vendidos-span');
-  if (span) span.style.background = enabled ? 'var(--green)' : 'var(--border)';
+  const checkbox = document.getElementById('toggle-vendidos-editables');
+  if (span) {
+    span.style.background = enabled ? 'var(--green)' : 'var(--border)';
+  }
+  if (checkbox) checkbox.checked = enabled;
   toast(enabled ? '✅ Agentes pueden editar vendidos' : '🔒 Vendidos bloqueados para agentes', 'success');
 }
 
