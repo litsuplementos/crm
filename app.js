@@ -449,6 +449,7 @@ function showView(name) {
   if (name === 'productos') renderProductos();
   if (name === 'config' && currentUser.rol === 'admin') loadConfigVendidosEditables();
 }
+
 function showViewDirect(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
@@ -1138,27 +1139,30 @@ async function openVentaModal(id) {
         allAgents.filter(a => a.rol === 'agente').map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
     }
   }
+
   if (id) {
+    // EDITAR REGISTRO EXISTENTE
     const v = ventasIndex[id];
     if (!v) return;
     const isArchivado = !!v.archivado;
     const isAdmin = currentUser?.rol === 'admin';
-    const vendidosEditables = localStorage.getItem('litcrm_vendidos_editables') === 'true';
+    const vendidosEditables = await getVendidosEditables();
 
-    // LÓGICA CORRECTA: shouldLock SOLO si es archivado Y no admin Y (no es vendido o vendidosEditables está desactivado)
+    // LÓGICA CORRECTA
     const shouldLock = isArchivado && !isAdmin && !(v?.estado === 'vendido' && vendidosEditables);
     
-    // MENSAJE: Cambiar si es vendido editable
+    // MENSAJE DINÁMICO
     const mensajeArchivado = (v?.estado === 'vendido' && vendidosEditables && !isAdmin)
       ? '✏️ Registro vendido. Puedes hacer pequeños ajustes.'
       : '🔒 Registro archivado. Este ciclo de venta está cerrado. Solo el administrador puede editarlo.';
     
     document.getElementById('modal-title').textContent = isArchivado ? '🔒 Registro Archivado' : 'Editar Registro';
     
+    // ACTUALIZAR BANNER
     const archivedBanner = document.getElementById('archived-banner');
     if (archivedBanner) {
       archivedBanner.style.display = isArchivado ? '' : 'none';
-      archivedBanner.textContent = mensajeArchivado;
+      archivedBanner.innerHTML = `<b style="color:var(--text);">${mensajeArchivado}</b>`;
     }
     
     // DESABILITAR CAMPOS
@@ -1169,11 +1173,11 @@ async function openVentaModal(id) {
       if (el) el.disabled = shouldLock; 
     });
     
-    // DESHABILITAR ARCHIVO TAMBIÉN
+    // DESHABILITAR FILE INPUT
     const fileInput = document.getElementById('f-comprobante');
     if (fileInput) fileInput.disabled = shouldLock;
     
-    // DESHABILITAR BOTONES DE ESTADO (quick-chip)
+    // DESHABILITAR QUICK-CHIPS (ESTADOS)
     document.querySelectorAll('.quick-chip').forEach(ch => {
       ch.style.pointerEvents = shouldLock ? 'none' : '';
       ch.style.opacity = shouldLock ? '0.4' : '';
@@ -1187,6 +1191,7 @@ async function openVentaModal(id) {
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) saveBtn.style.display = shouldLock ? 'none' : '';
 
+    // CARGAR DATOS DEL REGISTRO
     document.getElementById('edit-venta-id').value = id;
     document.getElementById('f-fecha').value = v.fecha || '';
     document.getElementById('f-celular').value = v.cliente?.celular || '';
@@ -1197,6 +1202,7 @@ async function openVentaModal(id) {
     document.getElementById('f-direccion').value = v.cliente?.direccion_residencial || '';
     document.getElementById('f-monto').value = v.monto_total || '';
     document.getElementById('monto-tag').textContent = '';
+    
     clearVentaItems();
     const itemsExistentes = v.venta_items || [];
     if (itemsExistentes.length > 0) {
@@ -1208,39 +1214,58 @@ async function openVentaModal(id) {
     } else {
       addVentaItem();
     }
+    
     if (shouldLock) {
       document.querySelectorAll('#venta-items-wrap select, #venta-items-wrap input, #venta-items-wrap button').forEach(el => el.disabled = true);
     }
+    
     const mp = document.getElementById('maps-preview');
     if (mp) mp.innerHTML = '';
     if (v.cliente?.direccion_residencial) onDireccionKeydown({ key: 'Enter', preventDefault: () => {} });
+    
     ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
       const el = document.getElementById(sid);
       if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
     });
-    // ── Cargar intentos en el campo correcto ──
+    
     _loadIntentosEditar(v.estado, v.intentos);
     document.getElementById('f-estado').value = v.estado || 'interesado';
     document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');  
+    
     if (currentUser.rol === 'admin' && v.agente_id)
       document.getElementById('f-agente').value = v.agente_id;
+    
     renderComprobantePreview(v.comprobante_url || null);
+    
   } else {
+    // NUEVO REGISTRO
     document.getElementById('modal-title').textContent = 'Nuevo Registro';
     document.getElementById('edit-venta-id').value = '';
+    
     const archivedBanner = document.getElementById('archived-banner');
-    if (archivedBanner) {
-      archivedBanner.style.display = isArchivado ? '' : 'none';
-      archivedBanner.innerHTML = mensajeArchivado;  // ← IMPORTANTE: usa innerHTML, no textContent
-    }
+    if (archivedBanner) archivedBanner.style.display = 'none';
+    
     const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas',
                         'f-intentos-rellamada', 'f-intentos-sinresp', 'f-direccion', 'f-monto'];
-    lockFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.disabled = false; });
-    document.querySelectorAll('.quick-chip').forEach(ch => { ch.style.pointerEvents = ''; ch.style.opacity = ''; });
+    lockFields.forEach(fid => { 
+      const el = document.getElementById(fid); 
+      if (el) el.disabled = false; 
+    });
+    
+    const fileInput = document.getElementById('f-comprobante');
+    if (fileInput) fileInput.disabled = false;
+    
+    document.querySelectorAll('.quick-chip').forEach(ch => { 
+      ch.style.pointerEvents = ''; 
+      ch.style.opacity = ''; 
+    });
+    
     const addItemBtn = document.getElementById('btn-add-item');
     if (addItemBtn) addItemBtn.style.display = '';
+    
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) saveBtn.style.display = '';
+    
     document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
     document.getElementById('f-celular').value = '';
     document.getElementById('f-nombre').value = '';
@@ -1248,18 +1273,22 @@ async function openVentaModal(id) {
     document.getElementById('f-ubicacion').value = '';
     document.getElementById('f-notas').value = '';
     document.getElementById('f-direccion').value = '';
+    
     const mpNew = document.getElementById('maps-preview');
     if (mpNew) mpNew.innerHTML = '';
+    
     ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
       const el = document.getElementById(sid);
       if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
     });
-    // ── Resetear ambos contadores ──
+    
     _resetIntentos();
     document.getElementById('f-estado').value = 'interesado';
     document.querySelector('.quick-chip[data-estado="interesado"]')?.classList.add('active');
+    
     if (currentUser.rol === 'admin' && allAgents.length > 0)
       document.getElementById('f-agente').value = allAgents.find(a => a.rol === 'agente')?.id || '';
+    
     clearVentaItems();
     addVentaItem();
   }
@@ -1890,23 +1919,61 @@ function renderStatModal() {
   `;
 }
 
-function loadConfigVendidosEditables() {
-  const val = localStorage.getItem('litcrm_vendidos_editables') === 'true';
-  const cb = document.getElementById('toggle-vendidos-editables');
-  const span = document.getElementById('toggle-vendidos-span');
-  if (cb) cb.checked = val;
-  if (span) span.style.background = val ? 'var(--green)' : 'var(--border)';
+// ✅ Cargar desde Supabase
+async function loadConfigVendidosEditables() {
+  try {
+    const { data, error } = await db.from('config')
+      .select('valor')
+      .eq('clave', 'vendidos_editables')
+      .single();
+    
+    if (error) throw error;
+    
+    const val = data?.valor === 'true';
+    const cb = document.getElementById('toggle-vendidos-editables');
+    const span = document.getElementById('toggle-vendidos-span');
+    
+    if (cb) cb.checked = val;
+    if (span) span.style.background = val ? 'var(--green)' : 'var(--border)';
+  } catch(e) {
+    console.error('Error cargando config:', e);
+  }
 }
 
-function saveConfigVendidosEditables(enabled) {
-  localStorage.setItem('litcrm_vendidos_editables', enabled);
-  const span = document.getElementById('toggle-vendidos-span');
-  const checkbox = document.getElementById('toggle-vendidos-editables');
-  if (span) {
-    span.style.background = enabled ? 'var(--green)' : 'var(--border)';
+// Guardar en Supabase
+async function saveConfigVendidosEditables(enabled) {
+  try {
+    const { error } = await db.from('config')
+      .update({ valor: enabled ? 'true' : 'false' })
+      .eq('clave', 'vendidos_editables');
+    
+    if (error) throw error;
+    
+    // Actualizar UI
+    const span = document.getElementById('toggle-vendidos-span');
+    if (span) span.style.background = enabled ? 'var(--green)' : 'var(--border)';
+    
+    toast(enabled ? '✅ Agentes pueden editar vendidos' : '🔒 Vendidos bloqueados para agentes', 'success');
+  } catch(e) {
+    console.error('Error guardando config:', e);
+    toast('❌ Error guardando configuración', 'error');
   }
-  if (checkbox) checkbox.checked = enabled;
-  toast(enabled ? '✅ Agentes pueden editar vendidos' : '🔒 Vendidos bloqueados para agentes', 'success');
+}
+
+// Leer la configuración cuando abres un registro
+async function getVendidosEditables() {
+  try {
+    const { data, error } = await db.from('config')
+      .select('valor')
+      .eq('clave', 'vendidos_editables')
+      .single();
+    
+    if (error) throw error;
+    return data?.valor === 'true';
+  } catch(e) {
+    console.error('Error leyendo config:', e);
+    return false;
+  }
 }
 
 // INIT
