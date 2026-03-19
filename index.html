@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LIT CRM — Gestión de Clientes</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -59,10 +60,11 @@
 
   <div class="nav-tabs">
     <div class="nav-tab active" data-view="dashboard" onclick="showView('dashboard')">📊 Dashboard</div>
-    <div class="nav-tab" data-view="ventas"    onclick="showView('ventas')">📋 Registros</div>
+    <div class="nav-tab" data-view="ventas" onclick="showView('ventas')">📋 Registros</div>
     <div class="nav-tab" id="tab-productos" data-view="productos" onclick="showView('productos')" style="display:none;">📦 Productos</div>
-    <div class="nav-tab" id="tab-config"    data-view="config"    onclick="showView('config')"    style="display:none;">⚙️ Config</div>
-    <div class="nav-tab" id="tab-usuarios"  data-view="usuarios"  onclick="showView('usuarios')"  style="display:none;">🔐 Usuarios</div>
+    <div class="nav-tab" data-view="guia" onclick="showView('guia')">📚 Guía AC</div>
+    <div class="nav-tab" id="tab-config" data-view="config" onclick="showView('config')" style="display:none;">⚙️ Ajustes</div>
+    <div class="nav-tab" id="tab-usuarios" data-view="usuarios" onclick="showView('usuarios')" style="display:none;">🔐 Usuarios</div>
   </div>
 
   <div class="main">
@@ -149,6 +151,14 @@
         <button class="add-btn" onclick="openProductoModal()">+ Nuevo Producto</button>
       </div>
       <div id="productos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;"></div>
+    </div></div>
+
+    <!-- GUÍA DE ATENCIÓN -->
+    <div class="view" id="view-guia"><div class="view-scroll-wrap">
+      <div class="section-header">
+        <div><div class="section-title">Guía de Atención al Cliente</div><div class="section-sub">Contenido por producto</div></div>
+      </div>
+      <div id="guia-productos-wrap" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;"></div>
     </div></div>
 
     <!-- CONFIG -->
@@ -327,7 +337,8 @@
       <div class="field">
         <label>Comprobante <span style="color:var(--text3);font-weight:400;font-size:11px;">(imagen o PDF, máx 5MB)</span></label>
         <input type="file" id="f-comprobante" accept="image/jpeg,image/png,image/webp,application/pdf"
-          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 14px;color:var(--text2);font-size:13px;cursor:pointer;">
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 14px;color:var(--text2);font-size:13px;cursor:pointer;"
+          onchange="const f=this.files[0],w=document.getElementById('comprobante-preview');if(!f)return;if(f.type==='application/pdf'){w.innerHTML='<div style=\'margin-top:8px;font-size:13px;color:var(--accent2)\'>📄 '+f.name+'</div>';return;}const r=new FileReader();r.onload=e=>{const img=document.createElement('img');img.src=e.target.result;img.style.cssText='max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);margin-top:8px';w.innerHTML='';w.appendChild(img)};r.readAsDataURL(f)">
         <div id="comprobante-preview"></div>
       </div>
 
@@ -463,6 +474,13 @@
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:15px;font-weight:700;color:var(--accent2);" id="delete-user-nombre"></div>
       <input class="smart-input" id="delete-user-confirm-input" placeholder="Escribe el nombre aquí..." autocomplete="off">
       <div id="delete-user-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;">⚠️ El nombre no coincide</div>
+      <div id="delete-user-warning"
+        style="display:none;color:var(--yellow);font-size:12px;margin-top:6px;
+              background:var(--yellow-bg);border:1px solid var(--yellow);
+              border-radius:6px;padding:8px 12px;">
+        ⚠️ Este agente tiene ventas registradas y no puede eliminarse.
+        Puedes desactivarlo en su lugar.
+      </div>
       <div class="modal-actions" style="margin-top:20px;">
         <button class="btn-secondary" onclick="closeDeleteUserModal()">Cancelar</button>
         <button id="delete-user-confirm-btn" style="background:var(--red);border:none;border-radius:var(--radius-sm);padding:11px 24px;color:white;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">Eliminar</button>
@@ -508,7 +526,46 @@
   </div>
 </div>
 
+<!-- MODAL GUÍA -->
+<div class="modal-overlay" id="guia-modal">
+  <div class="modal" style="max-width:1100px;">
+    <div class="modal-header">
+      <div class="modal-title" id="guia-modal-title"></div>
+      <div style="display:flex;gap:6px;">
+        <button class="icon-btn" id="guia-edit-btn" style="display:none;">✏️ Editar</button>
+        <button class="modal-close" onclick="closeGuiaModal()">×</button>
+      </div>
+    </div>
+    <div class="modal-body" id="guia-modal-body" style="max-height:calc(90vh - 90px);padding:0;">
+  </div>
+</div>
+
+<!-- Modal toggle producto activo/inactivo -->
+<div class="modal-overlay" id="toggle-producto-modal">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title" id="toggle-producto-modal-title">¿Desactivar producto?</div>
+      <button class="modal-close" onclick="closeToggleProductoModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:14px;color:var(--text2);margin-bottom:12px;line-height:1.6;">
+        El producto <b id="toggle-producto-nombre" style="color:var(--text);"></b>
+        <span id="toggle-producto-accion-desc"></span>
+      </p>
+      <div id="toggle-producto-warning"
+        style="display:none;background:var(--yellow-bg);border:1px solid var(--yellow);
+               border-radius:8px;padding:10px 14px;font-size:13px;color:var(--yellow);">
+        ⚠️ Los registros existentes que usan este producto no se verán afectados.
+      </div>
+      <div class="modal-actions" style="margin-top:20px;">
+        <button class="btn-secondary" onclick="closeToggleProductoModal()">Cancelar</button>
+        <button class="btn-save" id="toggle-producto-confirm-btn" style="min-width:120px;">Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
 <script src="app.js"></script>
+<script src="guia.js"></script>
 <script>
   initTheme();
   initializeSession();

@@ -205,13 +205,10 @@ function setupEventDelegation() {
 }
 
 // PRODUCTOS — catálogo
-async function loadProductos() {
-  const { data, error } = await db.from('productos')
-    .select('*').eq('activo', true).order('nombre');
-  if (!error) allProductos = data || [];
-}
-async function loadProductosAll() {
-  const { data, error } = await db.from('productos').select('*').order('nombre');
+async function loadProductos(soloActivos = true) {
+  let query = db.from('productos').select('*').order('nombre');
+  if (soloActivos) query = query.eq('activo', true);
+  const { data, error } = await query;
   if (!error) allProductos = data || [];
 }
 
@@ -228,7 +225,7 @@ function populateProductoFilter() {
 
 // PRODUCTOS — vista admin CRUD
 async function renderProductos() {
-  await loadProductosAll();
+  await loadProductos(false);
   const grid = document.getElementById('productos-grid');
   if (!grid) return;
   grid.innerHTML = allProductos.map(p => {
@@ -332,21 +329,87 @@ async function saveProducto() {
       toast('✅ Producto creado', 'success');
     }
     closeProductoModal();
-    await loadProductos();
-    await loadProductosAll();
+    await loadProductos(false); 
     renderProductos();
     populateProductoFilter();
   } catch(e) { toast('❌ ' + e.message, 'error'); }
 }
 
-async function toggleProductoActivo(id, activo) {
+function toggleProductoActivo(id, activo) {
+  const prod = allProductos.find(p => p.id === id);
+  if (!prod) return;
+
   const accion = activo ? 'desactivar' : 'activar';
-  if (!confirm(`¿${accion} este producto?`)) return;
-  const { error } = await db.from('productos').update({ activo: !activo }).eq('id', id);
-  if (error) { toast('❌ ' + error.message, 'error'); return; }
-  toast(`✅ Producto ${activo ? 'desactivado' : 'activado'}`);
-  await loadProductosAll();
-  renderProductos();
+  const titulo = activo ? '¿Desactivar producto?' : '¿Activar producto?';
+  const desc = activo
+    ? 'quedará inactivo y no aparecerá al crear nuevos registros.'
+    : 'volverá a estar disponible para nuevos registros.';
+
+  document.getElementById('toggle-producto-modal-title').textContent = titulo;
+  document.getElementById('toggle-producto-nombre').textContent = prod.nombre;
+  document.getElementById('toggle-producto-accion-desc').textContent = ' ' + desc;
+  document.getElementById('toggle-producto-warning').style.display = activo ? '' : 'none';
+
+  const btn = document.getElementById('toggle-producto-confirm-btn');
+  btn.textContent = activo ? '🚫 Desactivar' : '✅ Activar';
+  btn.style.background = activo ? 'var(--red)' : 'var(--green)';
+
+  document.getElementById('toggle-producto-modal').classList.add('open');
+
+  btn.onclick = async () => {
+    closeToggleProductoModal();
+
+    const { error } = await db.from('productos')
+      .update({ activo: !activo }).eq('id', id);
+
+    if (error) { toast('❌ ' + error.message, 'error'); return; }
+
+    // Actualizar en memoria (microoptimización del Bug 4)
+    prod.activo = !activo;
+
+    // Actualizar la card visualmente sin recargar toda la grilla
+    _actualizarCardProducto(id, !activo);
+
+    toast(`✅ Producto ${activo ? 'desactivado' : 'activado'}`, 'success');
+  };
+}
+
+function closeToggleProductoModal() {
+  document.getElementById('toggle-producto-modal').classList.remove('open');
+}
+
+function _actualizarCardProducto(id, nuevoActivo) {
+  // Busca la card por el botón que tiene el onclick con ese id
+  const btns = document.querySelectorAll('#productos-grid .icon-btn.danger');
+  for (const btn of btns) {
+    if (btn.getAttribute('onclick')?.includes(`toggleProductoActivo(${id},`)) {
+      const card = btn.closest('.user-card');
+      if (!card) break;
+
+      // Opacidad instantánea
+      card.style.transition = 'opacity 0.3s ease';
+      card.style.opacity = nuevoActivo ? '1' : '0.55';
+
+      // Actualizar el badge de estado dentro de la card
+      const badgeInactivo = card.querySelector('span[style*="color:var(--red)"]');
+      if (nuevoActivo && badgeInactivo) {
+        badgeInactivo.remove();
+      } else if (!nuevoActivo && !badgeInactivo) {
+        const precioDiv = card.querySelector('div[style*="color:var(--green)"]')?.parentElement;
+        if (precioDiv) {
+          const span = document.createElement('span');
+          span.style.cssText = 'color:var(--red);margin-left:8px;font-size:11px;';
+          span.textContent = '● Inactivo';
+          precioDiv.appendChild(span);
+        }
+      }
+
+      // Actualizar el ícono del botón toggle
+      btn.textContent = nuevoActivo ? '🚫' : '✅';
+      btn.setAttribute('onclick', `toggleProductoActivo(${id}, ${nuevoActivo})`);
+      break;
+    }
+  }
 }
 
 // 🎯 OPTIMIZACIÓN 5: Cargar ventas CON ÍNDICE
@@ -446,10 +509,11 @@ function showView(name) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
   event.target.classList.add('active');
-  if (name === 'ventas')    renderVentas();
+  if (name === 'ventas') renderVentas();
   if (name === 'dashboard') renderDashboard();
-  if (name === 'usuarios')  renderUsers();
+  if (name === 'usuarios') renderUsers();
   if (name === 'productos') renderProductos();
+  if (name === 'guia') renderGuia();
   if (name === 'config' && currentUser.rol === 'admin') loadConfigVendidosEditables();
 }
 
@@ -624,7 +688,7 @@ function renderDashboard() {
       <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
           <span style="font-size:13px;font-weight:600;">${a.nombre}</span>          
-          <span style="font-size:12px;color:var(--text2);">${a.total} registros · ${a.vendidos} vendidos · <span style="color:var(--green);font-weight:600;">${a.unidades} uds</span> · ${a.interesados} interesados</span>
+          <span style="font-size:12px;color:var(--text2);">${a.total} registros · ${a.vendidos} vendidos · <span style="color:var(--green);font-weight:600;">${a.unidades} unidad(es)</span> · ${a.interesados} interesados</span>
         </div>
         <div class="bar-track" style="height:10px;">
           <div class="bar-fill" style="width:${(a.total/maxT*100).toFixed(0)}%;background:linear-gradient(90deg,var(--accent),var(--accent2))"></div>
@@ -1313,6 +1377,7 @@ function setEstado(value, el) {
 
 function closeVentaModal() {
   clearTimeout(celularTimer);
+  celularTimer = null;   
   document.getElementById('venta-modal').classList.remove('open');
 }
 
@@ -1486,6 +1551,20 @@ function deleteUser(id) {
         document.getElementById('delete-user-error').style.display = '';
         return;
       }
+
+      const { count, error: countError } = await db.from('ventas')
+        .select('*', { count: 'exact', head: true })
+        .eq('agente_id', u.id);
+
+      console.log('agente id:', u.id, 'count:', count, 'error:', countError);
+
+      if (count > 0) {
+        document.getElementById('delete-user-confirm-input').style.borderColor = 'var(--yellow)';
+        document.getElementById('delete-user-error').style.display = 'none';
+        document.getElementById('delete-user-warning').style.display = '';
+        return;
+      }
+
       document.getElementById('delete-user-modal').classList.remove('open');
       try {
         const { error } = await db.from('usuarios').delete().eq('id', id);
@@ -1521,10 +1600,12 @@ function deleteProducto(id) {
       document.getElementById('delete-producto-error').style.display = '';
       return;
     }
-    const { count } = await db.from('venta_items')
+    const { count, error: countError } = await db.from('venta_items')
       .select('*', { count: 'exact', head: true })
       .eq('producto_id', id);
+
     if (count > 0) {
+      document.getElementById('delete-producto-confirm-input').style.borderColor = 'var(--yellow)';
       document.getElementById('delete-producto-warning').style.display = '';
       return;
     }
@@ -1533,7 +1614,7 @@ function deleteProducto(id) {
       const { error } = await db.from('productos').delete().eq('id', id);
       if (error) throw error;
       toast('🗑️ Producto eliminado');
-      await loadProductosAll();
+      await loadProductos(false);
       renderProductos();
     } catch(e) { toast('❌ ' + e.message, 'error'); }
   };
@@ -1777,6 +1858,8 @@ function initGeoSelectors() {
   const selProv = document.getElementById('sel-provincia');
   const selMun = document.getElementById('sel-municipio');
   if (!selDep) return;
+  if (selDep._initialized) return; 
+  selDep._initialized = true;
   selDep.innerHTML = '<option value="">— Departamento —</option>';
   Object.keys(BOLIVIA_GEO).sort().forEach(dep => {
     const o = document.createElement('option');
@@ -1848,13 +1931,15 @@ function toast(msg, type = '') {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const modals = [
-      { id: 'venta-modal',          closeFunc: closeVentaModal },
-      { id: 'user-modal',           closeFunc: closeUserModal },
-      { id: 'delete-user-modal',    closeFunc: closeDeleteUserModal },      
-      { id: 'delete-modal',         closeFunc: closeDeleteModal },
-      { id: 'producto-modal',       closeFunc: closeProductoModal },
+      { id: 'venta-modal', closeFunc: closeVentaModal },
+      { id: 'user-modal', closeFunc: closeUserModal },
+      { id: 'delete-user-modal', closeFunc: closeDeleteUserModal },      
+      { id: 'delete-modal', closeFunc: closeDeleteModal },
+      { id: 'producto-modal', closeFunc: closeProductoModal },
       { id: 'delete-producto-modal',closeFunc: closeDeleteProductoModal },
-      { id: 'stat-modal',           closeFunc: closeStatModal }
+      { id: 'stat-modal', closeFunc: closeStatModal },
+      { id: 'toggle-producto-modal', closeFunc: closeToggleProductoModal },
+      { id: 'guia-modal', closeFunc: closeGuiaModal },
     ];
     for (const { id, closeFunc } of modals) {
       const modal = document.getElementById(id);
