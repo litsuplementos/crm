@@ -263,7 +263,7 @@ body {
 }
 
 @media (max-width: 768px) {
-  .view-scroll-wrap               { min-width: 760px; padding: 16px 18px 24px; }
+  .view-scroll-wrap { min-width: 760px; padding: 16px 18px 24px; }
   #view-config .view-scroll-wrap,
   #view-usuarios .view-scroll-wrap { min-width: 480px; }
 }
