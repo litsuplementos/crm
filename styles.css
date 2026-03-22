@@ -115,6 +115,11 @@ body {
 }
 #theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
 
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
 /* ── LOGIN ── */
 #login-screen {
   min-height: 100vh;

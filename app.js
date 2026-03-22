@@ -188,6 +188,7 @@ async function initApp() {
   setArchivoFiltro(false);
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
   if (currentUser.rol === 'admin') loadConfigVendidosEditables();
+  iniciarChequeoRecordatorios();
 }
 
 // 🎯 OPTIMIZACIÓN 6: Event Delegation
@@ -418,7 +419,7 @@ async function loadVentas() {
     let query = db.from('ventas')
       .select(`
         id, cliente_id, agente_id, fecha, estado, intentos,
-        notas, comprobante_url, archivado, monto_total,
+        notas, comprobante_url, archivado, monto_total, descuento_pct, recordatorio,
         cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
                              producto_interes, notas, faltas, flag ),
         agente:agente_id   ( id, nombre ),
@@ -546,7 +547,7 @@ function prodChip(nombre) {
 }
 function montoChip(monto) {
   if (!monto && monto !== 0) return '';
-  return `<span style="background:var(--green-bg);border:1px solid var(--green);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;">Bs.${parseFloat(monto).toFixed(0)}</span>`;
+  return `<span style="background:var(--green-bg);border:1px solid var(--green);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;">Bs.${parseFloat(monto).toFixed(2)}</span>`;
 }
 
 // 🎯 OPTIMIZACIÓN 1: Dashboard con Caché
@@ -683,17 +684,46 @@ function renderDashboard() {
         interesados: av.filter(v => v.estado === 'interesado').length,
       };
     });
-    const maxT = Math.max(...agStats.map(a => a.total), 1);
-    document.getElementById('agents-chart').innerHTML = agStats.map(a => `
-      <div style="margin-bottom:14px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:13px;font-weight:600;">${a.nombre}</span>          
-          <span style="font-size:12px;color:var(--text2);">${a.total} registros · ${a.vendidos} vendidos · <span style="color:var(--green);font-weight:600;">${a.unidades} unidad(es)</span> · ${a.interesados} interesados</span>
-        </div>
-        <div class="bar-track" style="height:10px;">
-          <div class="bar-fill" style="width:${(a.total/maxT*100).toFixed(0)}%;background:linear-gradient(90deg,var(--accent),var(--accent2))"></div>
-        </div>
-      </div>`).join('');
+    // Determinar métrica activa (guardada en window para persistencia)
+    if (!window._agentMetric) window._agentMetric = 'unidades';
+
+    const metricConfig = {
+      registros: { key: 'total', label: 'Registros', color: 'var(--accent)' },
+      vendidos: { key: 'vendidos', label: 'Vendidos', color: 'var(--green)' },
+      unidades: { key: 'unidades', label: 'Unidades', color: 'var(--blue)' },
+      interesados: { key: 'interesados', label: 'Interesados', color: 'var(--yellow)' },
+    };
+
+    const metric = metricConfig[window._agentMetric];
+    const maxT = Math.max(...agStats.map(a => a[metric.key]), 1);
+
+    const btns = Object.entries(metricConfig).map(([k, m]) => {
+      const active = k === window._agentMetric;
+      return `<button onclick="window._agentMetric='${k}';renderDashboard()"
+        style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
+              border:1px solid ${active ? m.color : 'var(--border)'};
+              background:${active ? m.color : 'var(--surface2)'};
+              color:${active ? (k==='interesados'?'#1a1a00':'white') : 'var(--text2)'};
+              transition:all 0.2s;">
+        ${m.label}
+      </button>`;
+    }).join('');
+
+    document.getElementById('agents-chart').innerHTML = `
+      <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+        ${btns}
+      </div>
+      ${agStats.map(a => `
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;align-items:center;">
+            <span style="font-size:13px;font-weight:600;">${a.nombre}</span>
+            <span style="font-size:12px;color:${metric.color};font-weight:700;">${a[metric.key]} ${metric.label}</span>
+          </div>
+          <div class="bar-track" style="height:10px;">
+            <div class="bar-fill" style="width:${(a[metric.key]/maxT*100).toFixed(0)}%;background:${metric.color};transition:width 0.4s ease;"></div>
+          </div>
+        </div>`).join('')}
+    `;
     document.getElementById('agents-card').style.display = '';
   } else {
     document.getElementById('agents-card').style.display = 'none';
@@ -762,7 +792,7 @@ function renderVentas() {
       </td>
       <td>${prodCell}</td>
       <td>${v.monto_total ? montoChip(v.monto_total) : ''}</td>
-      <td class="td-ubicacion">${ubicacion}</td>
+      <td style="max-width:160px;white-space:normal;word-break:break-word;font-size:13px;color:var(--text2);">${ubicacion}</td>
 
       <td>${statusBadge(v.estado)}${v.estado === 'rellamada' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}${v.estado === 'sin_respuesta' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}</td>
 
@@ -1005,11 +1035,38 @@ function recalcMonto() {
   const count = document.querySelectorAll('#venta-items-wrap [data-idx]').length;
   if (total > 0) {
     document.getElementById('f-monto').value = total.toFixed(2);
-    document.getElementById('monto-tag').textContent = `${count} producto${count !== 1 ? 's' : ''}`;
+    document.getElementById('f-monto')._baseValue = total;
+    const pct = parseFloat(document.getElementById('f-descuento')?.value) || 0;
+    if (pct > 0) {
+      const descuento = total * pct / 100;
+      document.getElementById('f-monto').value = (total - descuento).toFixed(2);
+      document.getElementById('descuento-tag').textContent = `− Bs. ${descuento.toFixed(2)}`;
+    }
+    const totalUnits = Array.from(document.querySelectorAll('#venta-items-wrap [data-idx]'))
+      .reduce((sum, row) => sum + (parseInt(row.querySelector('.item-cantidad')?.value) || 1), 0);
+    document.getElementById('monto-tag').textContent = `${count} producto${count !== 1 ? 's' : ''} · ${totalUnits} und.`;
   } else {
     document.getElementById('f-monto').value = '';
     document.getElementById('monto-tag').textContent = '';
   }
+}
+
+function aplicarDescuento() {
+  const pct = parseFloat(document.getElementById('f-descuento').value) || 0;
+  const montoInput = document.getElementById('f-monto');
+  const base = parseFloat(montoInput._baseValue) || 0;
+  if (base <= 0) return;
+  const descuento = base * pct / 100;
+  const final = base - descuento;
+  montoInput.value = final.toFixed(2);
+  document.getElementById('descuento-tag').textContent = pct > 0 ? `− Bs. ${descuento.toFixed(2)}` : '';
+}
+
+function recalcDescuento() {
+  const montoInput = document.getElementById('f-monto');
+  montoInput._baseValue = parseFloat(montoInput.value) || 0;
+  document.getElementById('f-descuento').value = '';
+  document.getElementById('descuento-tag').textContent = '';
 }
 
 function getVentaItemsData() {
@@ -1026,10 +1083,11 @@ function getVentaItemsData() {
 function clearVentaItems() {
   document.getElementById('venta-items-wrap').innerHTML = '';
   document.getElementById('f-monto').value = '';
+  document.getElementById('f-monto')._baseValue = 0;    
+  document.getElementById('f-descuento').value = '0';        
+  document.getElementById('descuento-tag').textContent = '';  
   document.getElementById('monto-tag').textContent = '';
 }
-
-// ─── INTENTOS: helpers separados ────────────────────────────────────────────
 
 // Muestra solo el campo correspondiente al estado activo
 function toggleIntentosField(estado) {
@@ -1197,7 +1255,7 @@ async function openVentaModal(id) {
     ch.title = '';
   });
   document.getElementById('celular-suggestion').style.display = 'none';
-  document.getElementById('cliente-info-box').style.display = 'none';
+  document.getElementById('cliente-info-box').style.display = 'none';  
   document.getElementById('f-comprobante').value = '';
   renderComprobantePreview(null);
   if (allProductos.length === 0) await loadProductos();
@@ -1237,7 +1295,7 @@ async function openVentaModal(id) {
     
     // DESABILITAR CAMPOS
     const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas',
-                        'f-intentos-rellamada', 'f-intentos-sinresp', 'f-direccion', 'f-monto'];
+                        'f-intentos-rellamada', 'f-intentos-sinresp', 'f-direccion', 'f-monto', 'f-recordatorio'];
     lockFields.forEach(fid => { 
       const el = document.getElementById(fid); 
       if (el) el.disabled = shouldLock; 
@@ -1269,11 +1327,19 @@ async function openVentaModal(id) {
     document.getElementById('f-cliente-id').value = v.cliente_id || '';
     document.getElementById('f-ubicacion').value = v.cliente?.ubicacion || '';
     document.getElementById('f-notas').value = v.notas || '';
+    document.getElementById('f-recordatorio').value = v.recordatorio
+      ? v.recordatorio.slice(0, 16)
+      : '';
     document.getElementById('f-direccion').value = v.cliente?.direccion_residencial || '';
     document.getElementById('f-monto').value = v.monto_total || '';
     document.getElementById('monto-tag').textContent = '';
     
+    const descuentoGuardado = v.descuento_pct || 0;
     clearVentaItems();
+    // Restaurar descuento DESPUÉS del clear
+    document.getElementById('f-descuento').value = descuentoGuardado;
+    document.getElementById('f-monto')._baseValue = parseFloat(v.monto_total) || 0;
+
     const itemsExistentes = v.venta_items || [];
     if (itemsExistentes.length > 0) {
       itemsExistentes.forEach(it => addVentaItem({
@@ -1343,6 +1409,7 @@ async function openVentaModal(id) {
     document.getElementById('f-ubicacion').value = '';
     document.getElementById('f-notas').value = '';
     document.getElementById('f-direccion').value = '';
+    document.getElementById('f-recordatorio').value = '';
     
     const mpNew = document.getElementById('maps-preview');
     if (mpNew) mpNew.innerHTML = '';
@@ -1391,6 +1458,8 @@ async function saveVenta() {
   const notas = document.getElementById('f-notas').value.trim();
   const fecha = document.getElementById('f-fecha').value;
   const monto = parseFloat(document.getElementById('f-monto').value) || null;
+  const descuentoPct = parseInt(document.getElementById('f-descuento')?.value) || 0;
+  const recordatorio = document.getElementById('f-recordatorio')?.value || null;
   const direccion = document.getElementById('f-direccion')?.value?.trim() || null;
   const agenteId = currentUser.rol === 'admin'
     ? document.getElementById('f-agente')?.value || currentUser.id
@@ -1466,6 +1535,8 @@ async function saveVenta() {
       fecha,
       notas,
       monto_total: monto,
+      descuento_pct: descuentoPct,
+      recordatorio: recordatorio || null,
       estado: estadoFinal,
       intentos: ['rellamada', 'sin_respuesta'].includes(estado) ? intentos : 1,
       archivado: debeArchivar,
@@ -1505,7 +1576,7 @@ async function saveVenta() {
 
     const { data: ventaActualizada } = await db.from('ventas')
       .select(`id, cliente_id, agente_id, fecha, estado, intentos,
-        notas, comprobante_url, archivado, monto_total,
+        notas, comprobante_url, archivado, monto_total, descuento_pct, recordatorio,
         cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
                              producto_interes, notas, faltas, flag ),
         agente:agente_id ( id, nombre ),
@@ -2082,6 +2153,151 @@ async function getVendidosEditables() {
   } catch(e) {
     console.error('Error leyendo config:', e);
     return false;
+  }
+}
+
+// ─── SISTEMA DE RECORDATORIOS ────────────────────────────────────────────────
+let _recordatorioTimer = null;
+let _bipInterval = null;
+let _audioCtx = null;
+
+function _getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _audioCtx;
+}
+
+function _bip() {
+  try {
+    const ctx = _getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch(e) {}
+}
+
+function _mostrarNotificacionRecordatorio(venta) {
+  // Detener bips anteriores
+  clearInterval(_bipInterval);
+
+  // Crear banner si no existe
+  let banner = document.getElementById('recordatorio-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'recordatorio-banner';
+    banner.style.cssText = `
+      position:fixed;top:0;left:0;right:0;z-index:9999;
+      background:linear-gradient(135deg,var(--accent),var(--accent2));
+      color:white;padding:14px 20px;
+      display:flex;align-items:center;justify-content:space-between;
+      box-shadow:0 4px 20px rgba(0,0,0,0.3);
+      font-family:'DM Sans',sans-serif;font-size:14px;
+      animation: slideDown 0.3s ease;
+    `;
+    document.body.appendChild(banner);
+  }
+
+  const nombre = venta.cliente?.nombre || 'Cliente';
+  const celular = venta.cliente?.celular || '';
+  const notas = venta.notas || '';
+
+  banner.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:22px;">⏰</span>
+      <div>
+        <div style="font-weight:700;font-size:15px;">Recordatorio — ${nombre}</div>
+        <div style="font-size:12px;opacity:0.9;">${celular}${notas ? ' · ' + notas.slice(0,60) : ''}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button onclick="openVentaModal(${venta.id});_dismissRecordatorio()"
+        style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);
+               border-radius:6px;padding:6px 12px;color:white;cursor:pointer;font-size:13px;font-weight:600;">
+        Ver registro
+      </button>
+      <button onclick="_dismissRecordatorio()"
+        style="background:white;border:none;border-radius:6px;padding:6px 16px;
+               color:var(--accent);cursor:pointer;font-size:13px;font-weight:700;">
+        ✓ VISTO
+      </button>
+    </div>
+  `;
+  banner.style.display = 'flex';
+
+  // Bip cada 2 segundos sin parar
+  _bip();
+  _bipInterval = setInterval(_bip, 2000);
+}
+
+function _dismissRecordatorio() {
+  clearInterval(_bipInterval);
+  _bipInterval = null;
+  const banner = document.getElementById('recordatorio-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+function iniciarChequeoRecordatorios() {
+  // Chequea cada 30 segundos
+  clearInterval(_recordatorioTimer);
+  _recordatorioTimer = setInterval(_chequearRecordatorios, 30000);
+  _chequearRecordatorios(); // ejecutar inmediatamente también
+}
+
+function _chequearRecordatorios() {
+  if (!ventas || !ventas.length) return;
+  // Hora local como string comparable YYYY-MM-DDTHH:MM
+  const ahoraLocal = new Date().toLocaleString('sv-SE').replace(' ', 'T').slice(0, 16);
+  const ahoraMs = new Date(ahoraLocal).getTime();
+  const enCincoMin = ahoraMs + 5 * 60 * 1000;
+  const unHoraAntes = ahoraMs - 60 * 60 * 1000;
+
+  for (const v of ventas) {
+    if (!v.recordatorio) continue;
+    // Tomar solo los primeros 16 chars, ignorar timezone
+    const recLocal = v.recordatorio.slice(0, 16); // "2026-03-22T04:47"
+    const recMs = new Date(recLocal).getTime();
+    if (recMs >= unHoraAntes && recMs <= enCincoMin) {
+      if (window._recordatoriosVistos?.has(v.id)) continue;
+      if (!window._recordatoriosVistos) window._recordatoriosVistos = new Set();
+      window._recordatoriosVistos.add(v.id);
+      _mostrarNotificacionRecordatorio(v);
+      break;
+    }
+  }
+}
+
+function _activarSonido(btn) {
+  try {
+    if (!_audioCtx) {
+      _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (_audioCtx.state === 'suspended') _audioCtx.resume();
+    // Reproducir un bip de confirmación
+    _bip();
+    btn.style.background = 'var(--green-bg)';
+    btn.style.borderColor = 'var(--green)';
+    btn.style.color = 'var(--green)';
+    btn.textContent = '✅ Sonido activado';
+    btn.disabled = true;
+    const status = document.getElementById('sonido-status');
+    if (status) {
+      status.textContent = 'El navegador permitirá las alertas de recordatorio.';
+      status.style.display = '';
+      status.style.color = 'var(--green)';
+    }
+  } catch(e) {
+    const status = document.getElementById('sonido-status');
+    if (status) {
+      status.textContent = '⚠️ No se pudo activar el sonido en este navegador.';
+      status.style.display = '';
+      status.style.color = 'var(--red)';
+    }
   }
 }
 
