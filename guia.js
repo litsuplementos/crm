@@ -656,8 +656,8 @@ function _doInsertTable() {
   if (!_guiaActiveEditor) return;
   _guiaActiveEditor.focus();
 
-  const cellStyle = 'border:1px solid var(--border);padding:6px 10px;min-width:60px;vertical-align:top;';
-  const thStyle   = cellStyle + 'background:var(--surface2);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;';
+  const cellStyle = 'border:1px solid var(--border);padding:6px 10px;min-width:60px;height:32px;vertical-align:top;';
+  const thStyle = cellStyle + 'background:var(--surface2);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;';
 
   let tableHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;margin:8px 0;">`;
 
@@ -673,7 +673,7 @@ function _doInsertTable() {
   for (let r = 0; r < dataRows; r++) {
     tableHtml += '<tr>';
     for (let c = 0; c < cols; c++)
-      tableHtml += `<td style="${cellStyle}">&nbsp;</td>`;
+      tableHtml += `<td style="${cellStyle}"><br></td>`;
     tableHtml += '</tr>';
   }
   tableHtml += '</tbody></table><p><br></p>';
@@ -742,7 +742,7 @@ function addGuiaItemRow(col, data) {
   if (html && !/<[a-z]/i.test(html)) {
     html = html.split('\n').map(l => l.trim() ? `<p>${l}</p>` : '').join('');
   }
-  editor.innerHTML = html || '<p><br></p>';
+  editor.innerHTML = html || '';
 
   wrapper.appendChild(editor);
   container.appendChild(wrapper);
