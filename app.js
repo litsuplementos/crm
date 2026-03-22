@@ -419,7 +419,7 @@ async function loadVentas() {
     let query = db.from('ventas')
       .select(`
         id, cliente_id, agente_id, fecha, estado, intentos,
-        notas, comprobante_url, archivado, monto_total, descuento_pct, recordatorio,
+        notas, comprobante_url, archivado, monto_total, descuento_pct, recordatorio, recordatorio_visto,
         cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
                              producto_interes, notas, faltas, flag ),
         agente:agente_id   ( id, nombre ),
@@ -2221,9 +2221,9 @@ function _mostrarNotificacionRecordatorio(venta) {
                border-radius:6px;padding:6px 12px;color:white;cursor:pointer;font-size:13px;font-weight:600;">
         Ver registro
       </button>
-      <button onclick="_dismissRecordatorio()"
+      <button onclick="_marcarRecordatorioVisto(${venta.id});_dismissRecordatorio()"
         style="background:white;border:none;border-radius:6px;padding:6px 16px;
-               color:var(--accent);cursor:pointer;font-size:13px;font-weight:700;">
+              color:var(--accent);cursor:pointer;font-size:13px;font-weight:700;">
         ✓ VISTO
       </button>
     </div>
@@ -2242,6 +2242,17 @@ function _dismissRecordatorio() {
   if (banner) banner.style.display = 'none';
 }
 
+async function _marcarRecordatorioVisto(ventaId) {
+  if (!window._recordatoriosVistos) window._recordatoriosVistos = new Set();
+  window._recordatoriosVistos.add(ventaId);
+  // Actualizar en memoria
+  if (ventasIndex[ventaId]) ventasIndex[ventaId].recordatorio_visto = true;
+  const idx = ventas.findIndex(v => v.id === ventaId);
+  if (idx >= 0) ventas[idx].recordatorio_visto = true;
+  // Persistir en BD
+  await db.from('ventas').update({ recordatorio_visto: true }).eq('id', ventaId);
+}
+
 function iniciarChequeoRecordatorios() {
   // Chequea cada 30 segundos
   clearInterval(_recordatorioTimer);
@@ -2251,7 +2262,7 @@ function iniciarChequeoRecordatorios() {
 
 function _chequearRecordatorios() {
   if (!ventas || !ventas.length) return;
-  // Hora local como string comparable YYYY-MM-DDTHH:MM
+  if (!window._recordatoriosVistos) window._recordatoriosVistos = new Set();
   const ahoraLocal = new Date().toLocaleString('sv-SE').replace(' ', 'T').slice(0, 16);
   const ahoraMs = new Date(ahoraLocal).getTime();
   const enCincoMin = ahoraMs + 5 * 60 * 1000;
@@ -2259,12 +2270,10 @@ function _chequearRecordatorios() {
 
   for (const v of ventas) {
     if (!v.recordatorio) continue;
-    // Tomar solo los primeros 16 chars, ignorar timezone
-    const recLocal = v.recordatorio.slice(0, 16); // "2026-03-22T04:47"
-    const recMs = new Date(recLocal).getTime();
+    if (v.recordatorio_visto) continue; // ← ya fue visto
+    const recMs = new Date(v.recordatorio.slice(0, 16)).getTime();
     if (recMs >= unHoraAntes && recMs <= enCincoMin) {
-      if (window._recordatoriosVistos?.has(v.id)) continue;
-      if (!window._recordatoriosVistos) window._recordatoriosVistos = new Set();
+      if (window._recordatoriosVistos.has(v.id)) continue;
       window._recordatoriosVistos.add(v.id);
       _mostrarNotificacionRecordatorio(v);
       break;
