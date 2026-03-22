@@ -453,12 +453,20 @@ function _buildRichToolbar(_uid) {
   tb.appendChild(mkBlock('¶',  'Párrafo',         'p'));
   tb.appendChild(Sep());
 
-  // Alineación
-  tb.appendChild(B('⬛', 'Izquierda',  'justifyLeft'));
-  tb.appendChild(B('⬜', 'Centro',     'justifyCenter'));
-  tb.appendChild(B('▪',  'Derecha',    'justifyRight'));
-  tb.appendChild(B('▫',  'Justificar', 'justifyFull'));
-  tb.appendChild(Sep());
+ // Alineación
+const alignB = (title, cmd, svg) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'gtb-btn'; b.title = title;
+  b.innerHTML = svg;
+  b.onmousedown = e => { e.preventDefault(); exec(cmd); };
+  return b;
+};
+
+tb.appendChild(alignB('Izquierda', 'justifyLeft',   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>`));
+tb.appendChild(alignB('Centro', 'justifyCenter', `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>`));
+tb.appendChild(alignB('Derecha', 'justifyRight', `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>`));
+tb.appendChild(alignB('Justificar', 'justifyFull', `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`));
+tb.appendChild(Sep());
 
   // Listas
   tb.appendChild(B('•≡', 'Viñetas',  'insertUnorderedList'));
