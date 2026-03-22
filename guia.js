@@ -51,13 +51,11 @@ function _injectGuiaEditorCSS() {
       word-wrap: break-word;
     }
     .guia-view-content ul {
-      margin: 4px 0 4px 20px;
-      padding: 0;
+      margin: 4px 0 4px 20px;    
       list-style: disc;
     }
     .guia-view-content ol {
       margin: 4px 0 4px 20px;
-      padding: 0;
       list-style: decimal;
     }
     .guia-view-content li { margin-bottom: 3px; }
@@ -75,7 +73,6 @@ function _injectGuiaEditorCSS() {
       line-height: 1.7;
       color: var(--text);
       background: var(--surface);
-      border: 1px solid var(--border);
       border-radius: 0 0 8px 8px;
       outline: none;
       word-wrap: break-word;
@@ -288,14 +285,14 @@ function openGuiaProductoModal(prodId, prodNombre) {
       };
 
       document.getElementById('guia-modal-body').innerHTML = `
-        <div style="display:grid;grid-template-columns:60% 40%;min-height:200px;">
-          <div style="border-right:1px solid var(--border);overflow-y:auto;max-height:calc(90vh - 140px);">
+        <div style="display:grid;grid-template-columns:60% 40%;">
+          <div style="overflow-y:auto;max-height:calc(80vh - 140px);">
             <div style="padding:10px 16px;font-size:10px;font-weight:700;color:var(--text3);
                         text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);
                         background:var(--surface2);">Información Principal</div>
             ${_renderColumna(norm.col1) || emptyMsg}
           </div>
-          <div style="overflow-y:auto;max-height:calc(90vh - 140px);">
+          <div style="border-left:1px solid var(--border);overflow-y:auto;max-height:calc(80vh - 140px);">
             <div style="padding:10px 16px;font-size:10px;font-weight:700;color:var(--text3);
                         text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);
                         background:var(--surface2);">Información Complementaria</div>
@@ -352,7 +349,7 @@ async function openGuiaEditor(prodId, prodNombre) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay open';
   modal.innerHTML = `
-    <div class="modal" style="max-width:1100px;max-height:95vh;display:flex;flex-direction:column;">
+    <div class="modal" style="width:90vw; max-width:none; height:90vh; max-height:90vh; display:flex; flex-direction:column;">
       <div class="modal-header" style="flex-shrink:0;">
         <div class="modal-title">Editar: ${prodNombre}</div>
         <button class="modal-close" onclick="_closeGuiaEditorAndReturn()">×</button>
