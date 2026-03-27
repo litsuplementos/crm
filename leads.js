@@ -1,7 +1,5 @@
-// ═══════════════════════════════════════════════
-//  LIT CRM — leads.js
+//  leads.js
 //  Pestaña "Leads" — webhook vía Supabase tabla leads
-// ═══════════════════════════════════════════════
 
 const KOMMO_PROXY_URL = 'https://txjgdglfzskirujqctra.supabase.co/functions/v1/kommo-proxy';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4amdkZ2xmenNraXJ1anFjdHJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2NzYzNzYsImV4cCI6MjA4OTI1MjM3Nn0.b3o9KHVaspzyRnMhmB6uX2jLjadWgAFJM-iYHKHjXr0';
@@ -9,7 +7,7 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 let _leads = [];
 let _leadsLoading = false;
 
-// ── Cargar leads pendientes desde Supabase ───────────────────
+// Cargar leads pendientes desde Supabase
 async function _cargarLeadsPendientes() {
   const { data, error } = await db.from('leads')
     .select('*')
@@ -20,9 +18,10 @@ async function _cargarLeadsPendientes() {
   _leads = data || [];
   _renderLeads();
   _actualizarBadgeLeads();
+  iniciarRealtimeLeads();
 }
 
-// ── Sincronizar desde Kommo y guardar nuevos en Supabase ─────
+// Sincronizar desde Kommo y guardar nuevos en Supabase
 async function cargarLeads() {
   if (_leadsLoading) return;
   _leadsLoading = true;
@@ -75,7 +74,7 @@ async function cargarLeads() {
   }
 }
 
-// ── Badge en la pestaña ──────────────────────────────────────
+// Badge en la pestaña
 function _actualizarBadgeLeads() {
   const tab = document.getElementById('tab-leads');
   if (!tab) return;
@@ -99,7 +98,7 @@ function _actualizarBadgeLeads() {
   }
 }
 
-// ── Render principal de la vista Leads ──────────────────────
+// Render principal de la vista Leads
 function _renderLeads() {
   const wrap = document.getElementById('leads-list-wrap');
   if (!wrap) return;
@@ -192,7 +191,7 @@ function _renderLeads() {
   }).join('');
 }
 
-// ── Registrar: abrir modal pre-cargado ──────────────────────
+// Registrar: abrir modal pre-cargado
 async function registrarLead(idx) {
   const lead = _leads[idx];
   if (!lead) return;
@@ -230,7 +229,7 @@ async function registrarLead(idx) {
   toast(`📋 Lead cargado: ${lead.celular}`, 'success');
 }
 
-// ── Hook: al guardar una venta, marcar lead como procesado ──
+// Hook: al guardar una venta, marcar lead como procesado
 async function onVentaGuardadaDesdeLeads() {
   const modal = document.getElementById('venta-modal');
   const leadDbId = modal?.dataset.leadDbId ? parseInt(modal.dataset.leadDbId) : null;
@@ -266,7 +265,7 @@ async function _reactivarLeadSiArchivado(celular) {
   // con procesado=false cuando llegue el próximo mensaje
 }
 
-// ── Agregar lead manualmente ─────────────────────────────────
+// Agregar lead manualmente
 async function agregarLeadManual() {
   const celular = document.getElementById('lead-manual-celular')?.value.trim();
   const nombre  = document.getElementById('lead-manual-nombre')?.value.trim() || null;
@@ -287,13 +286,55 @@ async function agregarLeadManual() {
   toast('✅ Lead agregado', 'success');
 }
 
-// ── Render vista (llamado desde showView) ────────────────────
+// Render vista (llamado desde showView)
 function renderLeads() {
   _cargarLeadsPendientes();
 }
 
-// ── Helper ───────────────────────────────────────────────────
+// Helper
 function _escapeHtml(str) {
   if (!str) return '';
   return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Realtime: escuchar nuevos leads del webhook
+let _realtimeChannel = null;
+
+function iniciarRealtimeLeads() {
+  // No iniciar si ya está activo
+  if (_realtimeChannel) return;
+
+  _realtimeChannel = db
+    .channel('leads-entrantes')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'leads',
+        filter: 'procesado=eq.false',
+      },
+      (payload) => {
+        const nuevo = payload.new;
+        
+        // Evitar duplicados en memoria
+        if (_leads.some(l => l.id === nuevo.id)) return;
+
+        // Agregar al inicio de la lista
+        _leads.unshift(nuevo);
+        _renderLeads();
+        _actualizarBadgeLeads();
+
+        // Notificación sutil
+        toast(`🎯 Nuevo lead: ${nuevo.nombre || nuevo.celular}`, '');
+      }
+    )
+    .subscribe();
+}
+
+function detenerRealtimeLeads() {
+  if (_realtimeChannel) {
+    db.removeChannel(_realtimeChannel);
+    _realtimeChannel = null;
+  }
 }
