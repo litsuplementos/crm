@@ -1,14 +1,28 @@
 // ═══════════════════════════════════════════════
 //  LIT CRM — leads.js
-//  Pestaña "Leads" — consume Edge Function kommo-proxy
+//  Pestaña "Leads" — webhook vía Supabase tabla leads
 // ═══════════════════════════════════════════════
 
 const KOMMO_PROXY_URL = 'https://txjgdglfzskirujqctra.supabase.co/functions/v1/kommo-proxy';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4amdkZ2xmenNraXJ1anFjdHJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2NzYzNzYsImV4cCI6MjA4OTI1MjM3Nn0.b3o9KHVaspzyRnMhmB6uX2jLjadWgAFJM-iYHKHjXr0';
 
 let _leads = [];
 let _leadsLoading = false;
 
-// ── Cargar leads desde Kommo vía Edge Function ───────────────
+// ── Cargar leads pendientes desde Supabase ───────────────────
+async function _cargarLeadsPendientes() {
+  const { data, error } = await db.from('leads')
+    .select('*')
+    .eq('procesado', false)
+    .order('created_at', { ascending: false });
+
+  if (error) { console.error('Error cargando leads:', error); return; }
+  _leads = data || [];
+  _renderLeads();
+  _actualizarBadgeLeads();
+}
+
+// ── Sincronizar desde Kommo y guardar nuevos en Supabase ─────
 async function cargarLeads() {
   if (_leadsLoading) return;
   _leadsLoading = true;
@@ -19,7 +33,10 @@ async function cargarLeads() {
   try {
     const res = await fetch(KOMMO_PROXY_URL, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON}`,
+      },
     });
 
     if (!res.ok) {
@@ -28,10 +45,26 @@ async function cargarLeads() {
     }
 
     const data = await res.json();
-    _leads = data.leads || [];
-    _renderLeads();
-    _actualizarBadgeLeads();
-    toast(`🎯 ${_leads.length} lead${_leads.length !== 1 ? 's' : ''} encontrado${_leads.length !== 1 ? 's' : ''} en Kommo`, '');
+    const leadsKommo = data.leads || [];
+
+    // Upsert: insertar solo nuevos, ignorar duplicados por kommo_lead_id
+    if (leadsKommo.length > 0) {
+      const { error } = await db.from('leads').upsert(
+        leadsKommo.map(l => ({
+          celular: l.celular,
+          nombre: l.nombre || null,
+          fuente: 'kommo',
+          kommo_lead_id: l.kommo_lead_id,
+          procesado: false,
+        })),
+        { onConflict: 'kommo_lead_id', ignoreDuplicates: true }
+      );
+      if (error) console.error('Error guardando leads:', error);
+    }
+
+    // Recargar desde Supabase (solo pendientes)
+    await _cargarLeadsPendientes();
+    toast(`🎯 ${_leads.length} lead${_leads.length !== 1 ? 's' : ''} pendiente${_leads.length !== 1 ? 's' : ''}`, '');
 
   } catch (e) {
     console.error('Error cargando leads de Kommo:', e);
@@ -72,15 +105,15 @@ function _renderLeads() {
   if (!wrap) return;
 
   const countEl = document.getElementById('leads-count');
-  if (countEl) countEl.textContent = `${_leads.length} lead${_leads.length !== 1 ? 's' : ''} en Kommo`;
+  if (countEl) countEl.textContent = `${_leads.length} lead${_leads.length !== 1 ? 's' : ''} pendiente${_leads.length !== 1 ? 's' : ''}`;
 
   if (_leads.length === 0) {
     wrap.innerHTML = `
       <div class="empty-state" style="padding:60px 20px;">
         <div class="emoji" style="font-size:48px;margin-bottom:12px;">📭</div>
-        <p style="color:var(--text2);font-size:14px;">Sin leads en Kommo</p>
+        <p style="color:var(--text2);font-size:14px;">Sin leads pendientes</p>
         <p style="color:var(--text3);font-size:12px;margin-top:4px;">
-          Usa el botón <b style="color:var(--accent2);">Recuperar Leads</b> en la barra superior para sincronizar
+          Los leads llegan automáticamente desde <b style="color:var(--accent2);">Kommo</b> vía webhook
         </p>
       </div>`;
     return;
@@ -88,30 +121,17 @@ function _renderLeads() {
 
   wrap.innerHTML = _leads.map((lead, i) => {
     const iniciales = (lead.nombre || lead.celular || '?')[0].toUpperCase();
-    const nombreDisplay = lead.nombre
+    const nombreDisplay = lead.nombre && lead.nombre.trim()
       ? `<span style="font-weight:600;font-size:14px;color:var(--text);">${_escapeHtml(lead.nombre)}</span>`
       : `<span style="color:var(--text3);font-size:13px;font-style:italic;">Sin nombre</span>`;
-
-    // Bloque del mensaje (si existe)
-    const mensajeBlock = lead.mensaje ? `
-      <div style="
-        margin-top:8px;
-        background:var(--surface2);
-        border-left:3px solid var(--accent);
-        border-radius:0 6px 6px 0;
-        padding:7px 10px;
-        font-size:12px;
-        color:var(--text2);
-        line-height:1.5;
-        max-width:480px;
-      ">
-        <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;
-                     letter-spacing:0.5px;display:block;margin-bottom:3px;">💬 Mensaje</span>
-        ${_escapeHtml(lead.mensaje)}
-      </div>` : `
-      <div style="margin-top:6px;font-size:11px;color:var(--text3);font-style:italic;">
-        Sin mensaje registrado
-      </div>`;
+    const mensajeDisplay = lead.mensaje
+      ? `<div style="font-size:12px;color:var(--text3);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px;" title="${_escapeHtml(lead.mensaje)}">
+           💬 ${_escapeHtml(lead.mensaje)}
+         </div>`
+      : '';
+    const fechaDisplay = lead.created_at
+      ? `<span style="font-size:10px;color:var(--text3);margin-left:6px;">${new Date(lead.created_at).toLocaleString('es-BO', { hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit' })}</span>`
+      : '';
 
     return `
     <div class="lead-card" id="lead-card-${i}" style="
@@ -120,7 +140,7 @@ function _renderLeads() {
       border-radius:var(--radius);
       padding:16px 18px;
       display:flex;
-      align-items:flex-start;
+      align-items:center;
       gap:14px;
       transition:border-color 0.2s, background 0.2s;
       animation: leadSlideIn 0.3s ease;
@@ -128,16 +148,13 @@ function _renderLeads() {
     onmouseover="this.style.borderColor='var(--accent)';this.style.background='var(--surface2)'"
     onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface)'"
     >
-      <!-- Avatar -->
       <div style="
         width:44px;height:44px;border-radius:50%;flex-shrink:0;
         background:linear-gradient(135deg,var(--accent),var(--accent2));
         display:flex;align-items:center;justify-content:center;
         font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:white;
-        margin-top:2px;
       ">${iniciales}</div>
 
-      <!-- Info -->
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
           ${nombreDisplay}
@@ -145,17 +162,17 @@ function _renderLeads() {
                        font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;letter-spacing:0.3px;">
             KOMMO
           </span>
+          ${fechaDisplay}
         </div>
         <a href="tel:${lead.celular}" onclick="event.stopPropagation()"
           style="color:var(--accent2);font-size:14px;font-weight:600;
                  font-family:monospace;text-decoration:none;letter-spacing:0.5px;">
           📱 ${lead.celular}
         </a>
-        ${mensajeBlock}
+        ${mensajeDisplay}
       </div>
 
-      <!-- Acción -->
-      <div style="flex-shrink:0;margin-top:2px;">
+      <div style="flex-shrink:0;">
         <button
           onclick="registrarLead(${i})"
           style="
@@ -163,12 +180,12 @@ function _renderLeads() {
             padding:9px 16px;color:white;font-family:'Syne',sans-serif;
             font-weight:700;font-size:12px;cursor:pointer;
             transition:transform 0.15s, box-shadow 0.15s;white-space:nowrap;
-            box-shadow:0 2px 8px rgba(125,211,252,0.3);
+            box-shadow:0 2px 8px var(--accent-glow);
           "
-          onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(125,211,252,0.5)'"
-          onmouseout="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(125,211,252,0.3)'"
+          onmouseover="this.style.transform='translateY(-1px)'"
+          onmouseout="this.style.transform=''"
         >
-          ✚ Registrar cliente
+          ✚ Registrar
         </button>
       </div>
     </div>`;
@@ -196,37 +213,83 @@ async function registrarLead(idx) {
     await onCelularInput();
   }
 
-  // Esperar búsqueda async de cliente existente
-  await new Promise(r => setTimeout(r, 400));
-
-  if (nombreInput && lead.nombre && !nombreInput.value) {
-    nombreInput.value = lead.nombre;
+  if (nombreInput && lead.nombre) {
+    await new Promise(r => setTimeout(r, 400));
+    if (!nombreInput.value) nombreInput.value = lead.nombre;
   }
 
-  // Pre-cargar el mensaje como nota inicial
+  // Poner el mensaje en notas si existe
   if (notasInput && lead.mensaje && !notasInput.value) {
     notasInput.value = lead.mensaje;
   }
 
+  // Guardar ID del lead en la BD para marcarlo procesado al guardar
+  document.getElementById('venta-modal').dataset.leadDbId = lead.id;
   document.getElementById('venta-modal').dataset.leadIdx = idx;
 
   toast(`📋 Lead cargado: ${lead.celular}`, 'success');
 }
 
-// ── Hook: al guardar una venta, quitar lead de la lista ─────
+// ── Hook: al guardar una venta, marcar lead como procesado ──
 async function onVentaGuardadaDesdeLeads() {
   const modal = document.getElementById('venta-modal');
+  const leadDbId = modal?.dataset.leadDbId ? parseInt(modal.dataset.leadDbId) : null;
   const idx = modal?.dataset.leadIdx !== undefined ? parseInt(modal.dataset.leadIdx) : null;
-  if (idx === null || isNaN(idx)) return;
+
+  delete modal.dataset.leadDbId;
   delete modal.dataset.leadIdx;
-  _leads.splice(idx, 1);
+
+  if (!leadDbId || isNaN(leadDbId)) return;
+
+  // Marcar como procesado en Supabase
+  const { error } = await db.from('leads').update({ procesado: true }).eq('id', leadDbId);
+  if (error) console.error('Error marcando lead procesado:', error);
+
+  // Quitar de la lista en memoria
+  if (idx !== null && !isNaN(idx)) {
+    _leads.splice(idx, 1);
+  } else {
+    _leads = _leads.filter(l => l.id !== leadDbId);
+  }
+
   _renderLeads();
   _actualizarBadgeLeads();
 }
 
+// ── Checar si hay que re-mostrar lead cuando se archiva venta ─
+// Se llama desde saveVenta() en app.js cuando el estado es de cierre
+async function _reactivarLeadSiArchivado(celular) {
+  // Los estados de cierre son: vendido, no_interesado, spam, cancelado
+  // Si el registro queda archivado, el lead puede volver a aparecer
+  // solo si hay un nuevo mensaje (webhook lo manejará automáticamente)
+  // No hacemos nada aquí — el webhook creará un nuevo registro en leads
+  // con procesado=false cuando llegue el próximo mensaje
+}
+
+// ── Agregar lead manualmente ─────────────────────────────────
+async function agregarLeadManual() {
+  const celular = document.getElementById('lead-manual-celular')?.value.trim();
+  const nombre  = document.getElementById('lead-manual-nombre')?.value.trim() || null;
+  if (!celular) { toast('⚠️ El celular es obligatorio', 'error'); return; }
+
+  const { error } = await db.from('leads').upsert(
+    [{ celular, nombre, fuente: 'manual', procesado: false }],
+    { onConflict: 'celular', ignoreDuplicates: false }
+  );
+
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
+
+  document.getElementById('lead-manual-celular').value = '';
+  document.getElementById('lead-manual-nombre').value = '';
+  document.getElementById('leads-manual-panel').style.display = 'none';
+
+  await _cargarLeadsPendientes();
+  toast('✅ Lead agregado', 'success');
+}
+
 // ── Render vista (llamado desde showView) ────────────────────
 function renderLeads() {
-  _renderLeads();
+  _cargarLeadsPendientes();
 }
 
 // ── Helper ───────────────────────────────────────────────────

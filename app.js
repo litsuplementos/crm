@@ -1,3 +1,4 @@
+// app.js
 const SUPABASE_URL = 'https://txjgdglfzskirujqctra.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4amdkZ2xmenNraXJ1anFjdHJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2NzYzNzYsImV4cCI6MjA4OTI1MjM3Nn0.b3o9KHVaspzyRnMhmB6uX2jLjadWgAFJM-iYHKHjXr0';
 
@@ -189,7 +190,7 @@ async function initApp() {
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
   if (currentUser.rol === 'admin') loadConfigVendidosEditables();
   iniciarChequeoRecordatorios();
-  cargarLeads();
+  _cargarLeadsPendientes();
 }
 
 // 🎯 OPTIMIZACIÓN 6: Event Delegation
