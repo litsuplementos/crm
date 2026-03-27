@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════
 //  LIT CRM — leads.js
 //  Pestaña "Leads" — consume Edge Function kommo-proxy
-//  Sin tabla leads, sin polling, carga 100% manual
 // ═══════════════════════════════════════════════
 
 const KOMMO_PROXY_URL = 'https://txjgdglfzskirujqctra.supabase.co/functions/v1/kommo-proxy';
@@ -20,10 +19,7 @@ async function cargarLeads() {
   try {
     const res = await fetch(KOMMO_PROXY_URL, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4amdkZ2xmenNraXJ1anFjdHJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2NzYzNzYsImV4cCI6MjA4OTI1MjM3Nn0.b3o9KHVaspzyRnMhmB6uX2jLjadWgAFJM-iYHKHjXr0',
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
 
     if (!res.ok) {
@@ -96,6 +92,27 @@ function _renderLeads() {
       ? `<span style="font-weight:600;font-size:14px;color:var(--text);">${_escapeHtml(lead.nombre)}</span>`
       : `<span style="color:var(--text3);font-size:13px;font-style:italic;">Sin nombre</span>`;
 
+    // Bloque del mensaje (si existe)
+    const mensajeBlock = lead.mensaje ? `
+      <div style="
+        margin-top:8px;
+        background:var(--surface2);
+        border-left:3px solid var(--accent);
+        border-radius:0 6px 6px 0;
+        padding:7px 10px;
+        font-size:12px;
+        color:var(--text2);
+        line-height:1.5;
+        max-width:480px;
+      ">
+        <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;
+                     letter-spacing:0.5px;display:block;margin-bottom:3px;">💬 Mensaje</span>
+        ${_escapeHtml(lead.mensaje)}
+      </div>` : `
+      <div style="margin-top:6px;font-size:11px;color:var(--text3);font-style:italic;">
+        Sin mensaje registrado
+      </div>`;
+
     return `
     <div class="lead-card" id="lead-card-${i}" style="
       background:var(--surface);
@@ -103,7 +120,7 @@ function _renderLeads() {
       border-radius:var(--radius);
       padding:16px 18px;
       display:flex;
-      align-items:center;
+      align-items:flex-start;
       gap:14px;
       transition:border-color 0.2s, background 0.2s;
       animation: leadSlideIn 0.3s ease;
@@ -117,6 +134,7 @@ function _renderLeads() {
         background:linear-gradient(135deg,var(--accent),var(--accent2));
         display:flex;align-items:center;justify-content:center;
         font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:white;
+        margin-top:2px;
       ">${iniciales}</div>
 
       <!-- Info -->
@@ -133,10 +151,11 @@ function _renderLeads() {
                  font-family:monospace;text-decoration:none;letter-spacing:0.5px;">
           📱 ${lead.celular}
         </a>
+        ${mensajeBlock}
       </div>
 
       <!-- Acción -->
-      <div style="flex-shrink:0;">
+      <div style="flex-shrink:0;margin-top:2px;">
         <button
           onclick="registrarLead(${i})"
           style="
@@ -161,41 +180,45 @@ async function registrarLead(idx) {
   const lead = _leads[idx];
   if (!lead) return;
 
-  // Cambiar a vista de ventas
   showViewDirect('ventas');
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.querySelector('[data-view="ventas"]')?.classList.add('active');
 
-  // Abrir modal nuevo registro
   await openVentaModal();
   await new Promise(r => setTimeout(r, 80));
 
   const celularInput = document.getElementById('f-celular');
   const nombreInput  = document.getElementById('f-nombre');
+  const notasInput   = document.getElementById('f-notas');
 
   if (celularInput) {
     celularInput.value = lead.celular;
     await onCelularInput();
   }
 
-  if (nombreInput && lead.nombre) {
-    await new Promise(r => setTimeout(r, 400));
-    if (!nombreInput.value) nombreInput.value = lead.nombre;
+  // Esperar búsqueda async de cliente existente
+  await new Promise(r => setTimeout(r, 400));
+
+  if (nombreInput && lead.nombre && !nombreInput.value) {
+    nombreInput.value = lead.nombre;
   }
 
-  // Guardar índice en el modal para quitar el lead de la lista al guardar
+  // Pre-cargar el mensaje como nota inicial
+  if (notasInput && lead.mensaje && !notasInput.value) {
+    notasInput.value = lead.mensaje;
+  }
+
   document.getElementById('venta-modal').dataset.leadIdx = idx;
 
   toast(`📋 Lead cargado: ${lead.celular}`, 'success');
 }
 
-// ── Hook: al guardar una venta, quitar el lead de la lista ──
+// ── Hook: al guardar una venta, quitar lead de la lista ─────
 async function onVentaGuardadaDesdeLeads() {
   const modal = document.getElementById('venta-modal');
   const idx = modal?.dataset.leadIdx !== undefined ? parseInt(modal.dataset.leadIdx) : null;
   if (idx === null || isNaN(idx)) return;
   delete modal.dataset.leadIdx;
-  // Quitar de la lista en memoria (no hay nada que borrar en BD)
   _leads.splice(idx, 1);
   _renderLeads();
   _actualizarBadgeLeads();
@@ -208,5 +231,6 @@ function renderLeads() {
 
 // ── Helper ───────────────────────────────────────────────────
 function _escapeHtml(str) {
+  if (!str) return '';
   return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
