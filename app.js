@@ -189,6 +189,7 @@ async function initApp() {
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
   if (currentUser.rol === 'admin') loadConfigVendidosEditables();
   iniciarChequeoRecordatorios();
+  cargarLeads();
 }
 
 // 🎯 OPTIMIZACIÓN 6: Event Delegation
@@ -493,7 +494,7 @@ async function syncData() {
   const btn = document.getElementById('sync-btn');
   btn.classList.add('syncing');
   try {
-    await Promise.all([loadProductos(), loadVentas()]);
+    await Promise.all([loadProductos(), loadVentas(), cargarLeads()]);
     renderDashboard();
     renderVentas();
     populateProductoFilter();
@@ -512,6 +513,7 @@ function showView(name) {
   event.target.classList.add('active');
   if (name === 'ventas') renderVentas();
   if (name === 'dashboard') renderDashboard();
+  if (name === 'leads') renderLeads();
   if (name === 'usuarios') renderUsers();
   if (name === 'productos') renderProductos();
   if (name === 'guia') renderGuia();
@@ -1595,6 +1597,7 @@ async function saveVenta() {
     }
 
     dashboardCache.invalidate();
+    await onVentaGuardadaDesdeLeads();
     closeVentaModal();
     renderVentas();
     renderDashboard();

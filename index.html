@@ -46,6 +46,10 @@
     </div>
     <div class="topbar-right">
       <button id="theme-toggle" onclick="toggleTheme()" title="Cambiar tema">⚪ Blanco</button>
+      <button class="sync-btn" id="recover-leads-btn" onclick="cargarLeads()" title="Recuperar leads de Kommo">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span>Recuperar Leads</span>
+      </button>
       <button class="sync-btn" id="sync-btn" onclick="syncData()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
         <span>Sincronizar</span>
@@ -60,6 +64,7 @@
 
   <div class="nav-tabs">
     <div class="nav-tab active" data-view="dashboard" onclick="showView('dashboard')">📊 Dashboard</div>
+    <div class="nav-tab" id="tab-leads" data-view="leads" onclick="showView('leads')">🎯 Leads</div>
     <div class="nav-tab" data-view="ventas" onclick="showView('ventas')">📋 Registros</div>
     <div class="nav-tab" id="tab-productos" data-view="productos" onclick="showView('productos')" style="display:none;">📦 Productos</div>
     <div class="nav-tab" data-view="guia" onclick="showView('guia')">📚 Guía AC</div>
@@ -94,6 +99,42 @@
           <div id="agents-chart"></div>
         </div>
       </div>
+    </div></div>
+
+    <!-- LEADS (Kommo inbox) -->
+    <div class="view" id="view-leads"><div class="view-scroll-wrap">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Leads entrantes</div>
+          <div class="section-sub" id="leads-count">0 pendientes</div>
+        </div>
+        <button class="icon-btn"
+          onclick="const p=document.getElementById('leads-manual-panel');p.style.display=p.style.display==='none'?'':'none';">
+          ＋ Manual
+        </button>
+      </div>
+
+      <div id="leads-manual-panel" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:20px;">
+        <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:12px;">➕ Agregar lead manualmente</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;">
+          <div>
+            <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">Celular</label>
+            <input class="smart-input" type="tel" id="lead-manual-celular" placeholder="70000000">
+          </div>
+          <div>
+            <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">Nombre (opcional)</label>
+            <input class="smart-input" id="lead-manual-nombre" placeholder="Nombre del cliente">
+          </div>
+          <button class="btn-save" onclick="agregarLeadManual()" style="white-space:nowrap;">✚ Agregar</button>
+        </div>
+      </div>
+
+      <div style="background:rgba(125,211,252,0.06);border:1px solid rgba(125,211,252,0.2);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--text3);display:flex;align-items:center;gap:8px;">
+        <span style="font-size:16px;">🔗</span>
+        <span>Los leads llegan automáticamente desde <b style="color:var(--accent2);">Kommo</b> vía webhook · Usa <b style="color:var(--accent2);">Recuperar Leads</b> para cargarlos</span>
+      </div>
+
+      <div id="leads-list-wrap" style="display:flex;flex-direction:column;gap:10px;"></div>
     </div></div>
 
     <!-- REGISTROS / VENTAS -->
@@ -588,6 +629,7 @@
 </div>
 <script src="app.js"></script>
 <script src="guia.js"></script>
+<script src="leads.js"></script>
 <script>
   initTheme();
   initializeSession();
