@@ -301,11 +301,11 @@ function _escapeHtml(str) {
 let _realtimeChannel = null;
 
 function iniciarRealtimeLeads() {
-  // No iniciar si ya está activo
   if (_realtimeChannel) return;
 
   _realtimeChannel = db
     .channel('leads-entrantes')
+    // PRIMER EVENTO: INSERT
     .on(
       'postgres_changes',
       {
@@ -315,21 +315,33 @@ function iniciarRealtimeLeads() {
         filter: 'procesado=eq.false',
       },
       (payload) => {
-        const nuevo = payload.new;
-        
-        // Evitar duplicados en memoria
-        if (_leads.some(l => l.id === nuevo.id)) return;
-
-        // Agregar al inicio de la lista
-        _leads.unshift(nuevo);
-        _renderLeads();
-        _actualizarBadgeLeads();
-
-        // Notificación sutil
-        toast(`🎯 Nuevo lead: ${nuevo.nombre || nuevo.celular}`, '');
+        procesarNuevoLead(payload.new);
+      }
+    ) // <--- AQUÍ SE CIERRA EL PRIMER .on()
+    // SEGUNDO EVENTO: UPDATE
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'leads',
+        filter: 'procesado=eq.false',
+      },
+      (payload) => {
+        procesarNuevoLead(payload.new);
       }
     )
     .subscribe();
+}
+
+// Mejora: Extraer la lógica a una función para no repetir código
+function procesarNuevoLead(nuevo) {
+  if (_leads.some(l => l.id === nuevo.id)) return;
+
+  _leads.unshift(nuevo);
+  _renderLeads();
+  _actualizarBadgeLeads();
+  toast(`🎯 Nuevo lead: ${nuevo.nombre || nuevo.celular}`, '');
 }
 
 function detenerRealtimeLeads() {
