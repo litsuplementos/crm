@@ -2099,7 +2099,7 @@ function renderStatModal() {
   `;
 }
 
-// ✅ Cargar desde Supabase
+// Cargar desde Supabase
 async function loadConfigVendidosEditables() {
   try {
     const { data, error } = await db.from('config')
@@ -2156,7 +2156,7 @@ async function getVendidosEditables() {
   }
 }
 
-// ─── SISTEMA DE RECORDATORIOS ────────────────────────────────────────────────
+// SISTEMA DE RECORDATORIOS
 let _recordatorioTimer = null;
 let _bipInterval = null;
 let _audioCtx = null;
@@ -2270,7 +2270,7 @@ function _chequearRecordatorios() {
 
   for (const v of ventas) {
     if (!v.recordatorio) continue;
-    if (v.recordatorio_visto) continue; // ← ya fue visto
+    if (v.recordatorio_visto) continue; 
     const recMs = new Date(v.recordatorio.slice(0, 16)).getTime();
     if (recMs >= unHoraAntes && recMs <= enCincoMin) {
       if (window._recordatoriosVistos.has(v.id)) continue;
