@@ -205,7 +205,7 @@ async function registrarLead(idx) {
 
   const celularInput = document.getElementById('f-celular');
   const nombreInput  = document.getElementById('f-nombre');
-  const notasInput   = document.getElementById('f-notas');
+  /*const notasInput   = document.getElementById('f-notas');*/
 
   if (celularInput) {
     celularInput.value = lead.celular;
@@ -218,9 +218,9 @@ async function registrarLead(idx) {
   }
 
   // Poner el mensaje en notas si existe
-  if (notasInput && lead.mensaje && !notasInput.value) {
+  /*if (notasInput && lead.mensaje && !notasInput.value) {
     notasInput.value = lead.mensaje;
-  }
+  }*/
 
   // Guardar ID del lead en la BD para marcarlo procesado al guardar
   document.getElementById('venta-modal').dataset.leadDbId = lead.id;
