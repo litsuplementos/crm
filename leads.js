@@ -6,6 +6,8 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 
 let _leads = [];
 let _leadsLoading = false;
+let _leadsPage = 1;
+const LEADS_PAGE_SIZE = 15;
 
 // Cargar leads pendientes desde Supabase
 async function _cargarLeadsPendientes() {
@@ -16,6 +18,7 @@ async function _cargarLeadsPendientes() {
 
   if (error) { console.error('Error cargando leads:', error); return; }
   _leads = data || [];
+  _leadsPage = 1;
   _renderLeads();
   _actualizarBadgeLeads();
   iniciarRealtimeLeads();
@@ -74,6 +77,16 @@ async function cargarLeads() {
   }
 }
 
+function leadEnFiltroTiempo(lead) {
+  if (filtroTiempo === 'todos') return true;
+  if (!lead.created_at) return true;
+  const limite = getFechaLimite(filtroTiempo);
+  if (!limite) return true;
+  const fechaLead = new Date(lead.created_at);
+  fechaLead.setHours(0, 0, 0, 0);
+  return fechaLead >= limite;
+}
+
 // Badge en la pestaña
 function _actualizarBadgeLeads() {
   const tab = document.getElementById('tab-leads');
@@ -103,14 +116,23 @@ function _renderLeads() {
   const wrap = document.getElementById('leads-list-wrap');
   if (!wrap) return;
 
-  const countEl = document.getElementById('leads-count');
-  if (countEl) countEl.textContent = `${_leads.length} lead${_leads.length !== 1 ? 's' : ''} pendiente${_leads.length !== 1 ? 's' : ''}`;
+  const leadsDelPeriodo = _leads.filter(leadEnFiltroTiempo);
+  const total = leadsDelPeriodo.length;
+  const totalPages = Math.ceil(total / LEADS_PAGE_SIZE) || 1;
+  if (_leadsPage > totalPages) _leadsPage = 1;
+  const page = leadsDelPeriodo.slice((_leadsPage - 1) * LEADS_PAGE_SIZE, _leadsPage * LEADS_PAGE_SIZE);
 
-  if (_leads.length === 0) {
+  const countEl = document.getElementById('leads-count');
+  if (countEl) {
+    const periodoLabel = describeFiltroTiempo ? describeFiltroTiempo() : '';
+    countEl.textContent = `${total} lead${total !== 1 ? 's' : ''} pendiente${total !== 1 ? 's' : ''} · ${periodoLabel}`;
+  }
+
+  if (total === 0) {
     wrap.innerHTML = `
       <div class="empty-state" style="padding:60px 20px;">
         <div class="emoji" style="font-size:48px;margin-bottom:12px;">📭</div>
-        <p style="color:var(--text2);font-size:14px;">Sin leads pendientes</p>
+        <p style="color:var(--text2);font-size:14px;">Sin leads pendientes en este período</p>
         <p style="color:var(--text3);font-size:12px;margin-top:4px;">
           Los leads llegan automáticamente desde <b style="color:var(--accent2);">Kommo</b> vía webhook
         </p>
@@ -118,7 +140,8 @@ function _renderLeads() {
     return;
   }
 
-  wrap.innerHTML = _leads.map((lead, i) => {
+  const cardsHtml = page.map((lead, i) => {
+    const idxReal = _leads.indexOf(lead);
     const iniciales = (lead.nombre || lead.celular || '?')[0].toUpperCase();
     const nombreDisplay = lead.nombre && lead.nombre.trim()
       ? `<span style="font-weight:600;font-size:14px;color:var(--text);">${_escapeHtml(lead.nombre)}</span>`
@@ -133,7 +156,7 @@ function _renderLeads() {
       : '';
 
     return `
-    <div class="lead-card" id="lead-card-${i}" style="
+    <div class="lead-card" style="
       background:var(--surface);
       border:1px solid var(--border);
       border-radius:var(--radius);
@@ -173,7 +196,7 @@ function _renderLeads() {
 
       <div style="flex-shrink:0;">
         <button
-          onclick="registrarLead(${i})"
+          onclick="registrarLead(${idxReal})"
           style="
             background:var(--accent);border:none;border-radius:8px;
             padding:9px 16px;color:white;font-family:'Syne',sans-serif;
@@ -189,6 +212,24 @@ function _renderLeads() {
       </div>
     </div>`;
   }).join('');
+
+  // Paginación
+  let paginacionHtml = '';
+  if (totalPages > 1) {
+    paginacionHtml = `
+    <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:16px;padding-bottom:8px;">
+      <button class="page-btn" onclick="_leadsPage--;_renderLeads()" ${_leadsPage===1?'disabled':''}>‹</button>
+      ${Array.from({length:totalPages},(_,i)=>`<button class="page-btn ${i+1===_leadsPage?'active':''}" onclick="_leadsPage=${i+1};_renderLeads()">${i+1}</button>`).join('')}
+      <button class="page-btn" onclick="_leadsPage++;_renderLeads()" ${_leadsPage===totalPages?'disabled':''}>›</button>
+    </div>`;
+  }
+
+  wrap.innerHTML = `
+    <div style="max-height:calc(100vh - 260px);overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:4px;">
+      ${cardsHtml}
+    </div>
+    ${paginacionHtml}
+  `;
 }
 
 // Registrar: abrir modal pre-cargado
@@ -337,8 +378,8 @@ function iniciarRealtimeLeads() {
 // Mejora: Extraer la lógica a una función para no repetir código
 function procesarNuevoLead(nuevo) {
   if (_leads.some(l => l.id === nuevo.id)) return;
-
   _leads.unshift(nuevo);
+  _leadsPage = 1;
   _renderLeads();
   _actualizarBadgeLeads();
   toast(`🎯 Nuevo lead: ${nuevo.nombre || nuevo.celular}`, '');

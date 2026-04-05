@@ -70,6 +70,7 @@
     <div class="nav-tab" data-view="guia" onclick="showView('guia')">📚 Guía AC</div>
     <div class="nav-tab" id="tab-config" data-view="config" onclick="showView('config')" style="display:none;">⚙️ Ajustes</div>
     <div class="nav-tab" id="tab-usuarios" data-view="usuarios" onclick="showView('usuarios')" style="display:none;">🔐 Usuarios</div>
+    <div class="nav-tab" id="tab-memorias" data-view="memorias" onclick="showView('memorias')" style="display:none;">🗄️ Memorias</div>
   </div>
 
   <div class="main">
@@ -81,8 +82,25 @@
           <div class="section-title">Dashboard</div>
           <div class="section-sub" id="dash-date"></div>
           <div style="font-size:12px;color:var(--accent2);margin-top:2px;" id="dash-subtitle"></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;font-style:italic;" id="dash-periodo"></div>
         </div>
-        <button class="add-btn" onclick="exportCSV()">📥 Exportar CSV</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span id="mes-actual-label" style="font-size:13px;color:var(--accent2);font-weight:700;display:none;"></span>
+            <select class="filter-select" id="filtro-tiempo-dash" onchange="onFiltroTiempoChange(this.value)"
+              style="font-size:13px;">
+              <option value="todos">🗓 Todos</option>
+              <option value="dia">📅 Hoy</option>
+              <option value="semana">📆 Semana</option>
+              <option value="mes">🗃 Mes</option>
+              <option value="año">📊 Año</option>
+            </select>
+            <select class="filter-select" id="filtro-mes-especifico" onchange="onFiltroMesChange(this.value)"
+              style="font-size:13px;display:none;">
+            </select>
+          </div>
+          <button class="add-btn" onclick="exportCSV()">📥 Exportar CSV</button>
+        </div>
       </div>
       <div id="dashboard-agent-row" style="display:none;align-items:center;gap:12px;margin-bottom:20px;">
         <span style="font-size:13px;color:var(--text2);">Ver datos de:</span>
@@ -108,10 +126,19 @@
           <div class="section-title">Leads entrantes</div>
           <div class="section-sub" id="leads-count">0 pendientes</div>
         </div>
-        <button class="icon-btn"
-          onclick="const p=document.getElementById('leads-manual-panel');p.style.display=p.style.display==='none'?'':'none';">
-          ＋ Manual
-        </button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select class="filter-select" id="filtro-tiempo-leads" onchange="onFiltroTiempoChange(this.value)" style="font-size:13px;">
+            <option value="todos">🗓 Todos</option>
+            <option value="dia">📅 Hoy</option>
+            <option value="semana">📆 Semana</option>
+            <option value="mes" selected>🗃 Mes</option>
+            <option value="año">📊 Año</option>
+          </select>
+          <button class="icon-btn"
+            onclick="const p=document.getElementById('leads-manual-panel');p.style.display=p.style.display==='none'?'':'none';">
+            ＋ Manual
+          </button>
+        </div>
       </div>
 
       <div id="leads-manual-panel" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:20px;">
@@ -163,6 +190,13 @@
         </select>
         <select class="filter-select" id="filter-agente" onchange="renderVentas()" style="display:none;">
           <option value="">👥 Todos los agentes</option>
+        </select>
+        <select class="filter-select" id="filtro-tiempo-ventas" onchange="onFiltroTiempoChange(this.value)">
+          <option value="todos">🗓 Todos los tiempos</option>
+          <option value="dia">📅 Hoy</option>
+          <option value="semana">📆 Esta semana</option>
+          <option value="mes">🗃 Este mes</option>
+          <option value="año">📊 Este año</option>
         </select>
       </div>
       <div class="table-wrap desktop-table">
@@ -220,6 +254,24 @@
         </div>
       </div>
       <div class="config-card">
+        <div class="config-card-title">🗓 Filtro de tiempo por defecto</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">
+          Define qué período se muestra por defecto al abrir el dashboard y registros.
+        </div>
+        <select class="filter-select" id="filtro-tiempo-global"
+          onchange="onFiltroTiempoChange(this.value)"
+          style="min-width:200px;">
+          <option value="todos">🗓 Todos los tiempos</option>
+          <option value="dia">📅 Hoy</option>
+          <option value="semana">📆 Esta semana</option>
+          <option value="mes">🗃 Este mes</option>
+          <option value="año">📊 Este año</option>
+        </select>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px;">
+          Se guarda en base de datos y aplica a todos los agentes como valor inicial.
+        </div>
+      </div>
+      <div class="config-card">
         <div class="config-card-title">📋 Reglas automáticas</div>
         <div style="font-size:13px;color:var(--text2);line-height:2.2;">
           🔁 <b style="color:var(--text);">3× Rellamada</b> → Se archiva automáticamente como <b>No interesado</b><br>
@@ -241,6 +293,17 @@
         <button class="add-btn" onclick="openUserModal(null)">+ Nuevo Agente</button>
       </div>
       <div class="users-grid" id="users-grid"></div>
+    </div></div>
+
+    <!-- MEMORIAS -->
+    <div class="view" id="view-memorias"><div class="view-scroll-wrap">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Memorias</div>
+          <div class="section-sub">Respaldo y limpieza mensual de registros</div>
+        </div>
+      </div>
+      <div id="memorias-wrap"></div>
     </div></div>
 
   </div>
@@ -630,6 +693,7 @@
 <script src="app.js"></script>
 <script src="guia.js"></script>
 <script src="leads.js"></script>
+<script src="memorias.js"></script>
 <script>
   initTheme();
   initializeSession();

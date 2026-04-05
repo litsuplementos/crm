@@ -67,6 +67,7 @@ let selectedAgentId  = 'all';
 let currentPage = 1;
 const PAGE_SIZE = 15;
 let mostrarArchivados = false;
+let filtroTiempo = 'mes'; // día | semana | mes | todos
 
 // Debounce mejorado
 let _searchTimer;
@@ -107,10 +108,78 @@ function initializeSession() {
     document.getElementById('user-avatar-top').textContent = savedSession.nombre[0].toUpperCase();
     const isAdmin = savedSession.rol === 'admin';
     document.getElementById('tab-productos').style.display = isAdmin ? '' : 'none';
-    document.getElementById('tab-config').style.display    = isAdmin ? '' : 'none';
-    document.getElementById('tab-usuarios').style.display  = isAdmin ? '' : 'none';
+    document.getElementById('tab-config').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-usuarios').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-memorias').style.display = isAdmin ? '' : 'none';
     initApp().catch(e => console.error('Error inicializando app:', e));
   }
+}
+
+// Describir tiempo
+function describeFiltroTiempo() {
+  const hoy = new Date();
+  const opts = { day: 'numeric', month: 'long' };
+  const optsYear = { day: 'numeric', month: 'long', year: 'numeric' };
+
+  if (filtroTiempo === 'todos') return 'Todos los registros';
+  if (filtroTiempo === 'dia') {
+    return `Hoy — ${hoy.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`;
+  }
+  if (filtroTiempo === 'semana') {
+    const diaSemana = hoy.getDay();
+    const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
+    const lunes = new Date(hoy); lunes.setDate(hoy.getDate() + diffLunes);
+    const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 6);
+    return `Esta semana — del ${lunes.toLocaleDateString('es-BO', opts)} al ${domingo.toLocaleDateString('es-BO', opts)}`;
+  }
+  if (filtroTiempo === 'mes') {
+    const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+    return `Este mes — del ${primerDia.toLocaleDateString('es-BO', opts)} al ${ultimoDia.toLocaleDateString('es-BO', opts)}`;
+  }
+  if (filtroTiempo === 'año') {
+    return `Este año — del 1 de enero al 31 de diciembre de ${hoy.getFullYear()}`;
+  }
+  return '';
+}
+
+// Filtro tiempo
+function getFechaLimite(filtro) {
+  if (filtro === 'todos') return null;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  if (filtro === 'dia') return hoy;
+  if (filtro === 'semana') {
+    // Lunes de la semana actual
+    const d = new Date(hoy);
+    const diaSemana = hoy.getDay(); // 0=dom,1=lun,...,6=sab
+    const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
+    d.setDate(hoy.getDate() + diffLunes);
+    return d;
+  }
+  if (filtro === 'mes') {
+    return new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  }
+  if (filtro === 'año') {
+    return new Date(hoy.getFullYear(), 0, 1);
+  }
+  return null;
+}
+
+function ventasEnFiltroTiempo(venta) {
+  if (filtroTiempo === 'todos') return true;
+
+  // Filtro por mes específico seleccionado
+  if (filtroTiempo === 'mes' && window._filtroMesCustom) {
+    const [year, month] = window._filtroMesCustom.split('-').map(Number);
+    const fechaVenta = new Date(venta.fecha + 'T00:00:00');
+    return fechaVenta.getFullYear() === year && fechaVenta.getMonth() === month - 1;
+  }
+
+  const limite = getFechaLimite(filtroTiempo);
+  if (!limite) return true;
+  const fechaVenta = new Date(venta.fecha + 'T00:00:00');
+  return fechaVenta >= limite;
 }
 
 // AUTH
@@ -132,6 +201,7 @@ async function doLogin() {
     document.getElementById('tab-productos').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-config').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-usuarios').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-memorias').style.display = isAdmin ? '' : 'none';
     await initApp();
     SessionManager.saveSession(data); 
   } catch(e) {
@@ -191,6 +261,35 @@ async function initApp() {
   if (currentUser.rol === 'admin') loadConfigVendidosEditables();
   iniciarChequeoRecordatorios();
   _cargarLeadsPendientes();
+}
+
+function onFiltroMesChange(valor) {
+  // valor es "2026-04" por ejemplo
+  // Actualizar filtroTiempo con rango custom
+  window._filtroMesCustom = valor;
+  dashboardCache.invalidate();
+  renderDashboard();
+  renderVentas();
+}
+
+function _buildFiltroMesSelector() {
+  const sel = document.getElementById('filtro-mes-especifico');
+  if (!sel) return;
+  sel.innerHTML = '';
+  const hoy = new Date();
+  const year = hoy.getFullYear();
+  const meses = [
+    'Enero','Febrero','Marzo','Abril','Mayo','Junio',
+    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'
+  ];
+  meses.forEach((nombre, i) => {
+    const valor = `${year}-${String(i+1).padStart(2,'0')}`;
+    const o = document.createElement('option');
+    o.value = valor;
+    o.textContent = nombre;
+    if (i === hoy.getMonth()) o.selected = true;
+    sel.appendChild(o);
+  });
 }
 
 // 🎯 OPTIMIZACIÓN 6: Event Delegation
@@ -488,6 +587,42 @@ async function onAgentFilterChange() {
   renderVentas();
 }
 
+async function onFiltroTiempoChange(valor) {
+  filtroTiempo = valor;
+  const mesLabel = document.getElementById('mes-actual-label');
+  const mesSel = document.getElementById('filtro-mes-especifico');
+
+  if (valor === 'mes') {
+    const hoy = new Date();
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    if (mesLabel) {
+      mesLabel.textContent = meses[hoy.getMonth()];
+      mesLabel.style.display = '';
+    }
+    if (mesSel) {
+      _buildFiltroMesSelector();
+      mesSel.style.display = '';
+    }
+  } else {
+    if (mesLabel) mesLabel.style.display = 'none';
+    if (mesSel) mesSel.style.display = 'none';
+    window._filtroMesCustom = null;
+  }
+
+  dashboardCache.invalidate();
+  ['filtro-tiempo-global', 'filtro-tiempo-ventas', 'filtro-tiempo-dash', 'filtro-tiempo-leads'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.value !== valor) el.value = valor;
+  });
+  if (currentUser?.rol === 'admin') {
+    await db.from('config').update({ valor }).eq('clave', 'filtro_tiempo_default');
+  }
+  renderDashboard();
+  renderVentas();
+  _renderLeads(); // también actualizar leads
+}
+
 let _syncing = false;
 async function syncData() {
   if (_syncing) return;
@@ -516,6 +651,7 @@ function showView(name) {
   if (name === 'dashboard') renderDashboard();
   if (name === 'leads') renderLeads();
   if (name === 'usuarios') renderUsers();
+  if (name === 'memorias') renderMemorias();
   if (name === 'productos') renderProductos();
   if (name === 'guia') renderGuia();
   if (name === 'config' && currentUser.rol === 'admin') loadConfigVendidosEditables();
@@ -566,19 +702,21 @@ function renderDashboard() {
     ? (showingAll ? 'Vista general — todos los agentes' : `Filtrando: ${allAgents.find(a => a.id === selectedAgentId)?.nombre || ''}`)
     : `Tu actividad — ${currentUser.nombre}`;
   document.getElementById('dash-subtitle').textContent = subtitle;
+  document.getElementById('dash-periodo').textContent = describeFiltroTiempo();
   document.getElementById('dashboard-agent-row').style.display = isAdmin ? 'flex' : 'none';
 
-  const total = ventas.length;
-  const vendidos = ventas
+  const ventasFiltradas = ventas.filter(ventasEnFiltroTiempo);
+  const total = ventasFiltradas.length;
+  const vendidos = ventasFiltradas
     .filter(v => v.estado === 'vendido')
     .reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0);
-  const montoVendidos = ventas
+  const montoVendidos = ventasFiltradas
     .filter(v => v.estado === 'vendido')
     .reduce((sum, v) => sum + (parseFloat(v.monto_total) || 0), 0);
-  const enviados  = ventas.filter(v => v.estado === 'enviado').length;
-  const interesados = ventas.filter(v => v.estado === 'interesado').length;
-  const seguimiento = ventas.filter(v => ['seguimiento', 'rellamada', 'agendar'].includes(v.estado)).length;
-  const sinResp = ventas.filter(v => v.estado === 'sin_respuesta').length;
+  const enviados  = ventasFiltradas.filter(v => v.estado === 'enviado').length;
+  const interesados = ventasFiltradas.filter(v => v.estado === 'interesado').length;
+  const seguimiento = ventasFiltradas.filter(v => ['seguimiento', 'rellamada', 'agendar'].includes(v.estado)).length;
+  const sinResp = ventasFiltradas.filter(v => v.estado === 'sin_respuesta').length;
 
   document.getElementById('stats-grid').innerHTML = `
     <div class="stat-card"><div class="stat-icon" style="background:var(--accent-glow);">📋</div>
@@ -608,28 +746,28 @@ function renderDashboard() {
     </div>
   `;
 
-  if (!dashboardCache.isValid(ventas.length, selectedAgentId)) {
+  if (!dashboardCache.isValid(ventasFiltradas.length, selectedAgentId) || dashboardCache.isDirty) {
     dashboardCache.prods = {};
     dashboardCache.cities = {};
     dashboardCache.sCounts = {};
     
-    ventas.forEach(v => {
+    ventasFiltradas.forEach(v => {
       (v.venta_items || []).forEach(it => {
         const nombre = it.productos?.nombre || 'Sin producto'
         dashboardCache.prods[nombre] = (dashboardCache.prods[nombre] || 0) + 1;
       });
     });
     
-    ventas.forEach(v => {
+    ventasFiltradas.forEach(v => {
       const c = v.cliente?.ubicacion;
       if (c && c !== 's/c' && c !== '') dashboardCache.cities[c] = (dashboardCache.cities[c] || 0) + 1;
     });
     
     Object.keys(ESTADOS).forEach(k => {
-      dashboardCache.sCounts[k] = ventas.filter(v => v.estado === k).length;
+      dashboardCache.sCounts[k] = ventasFiltradas.filter(v => v.estado === k).length;
     });
     
-    dashboardCache.lastVentasCount = ventas.length;
+    dashboardCache.lastVentasCount = ventasFiltradas.length;
     dashboardCache.lastAgentId = selectedAgentId;
     dashboardCache.isDirty = false;
   }
@@ -659,7 +797,7 @@ function renderDashboard() {
     <div class="bar-count">${v}</div></div>`).join('')
     || '<p style="color:var(--text3);font-size:13px;">Sin datos</p>';
 
-  const pending = ventas.filter(v => ['seguimiento', 'rellamada', 'interesado', 'agendar'].includes(v.estado)).slice(0, 10);
+  const pending = ventasFiltradas.filter(v => ['seguimiento', 'rellamada', 'interesado', 'agendar'].includes(v.estado)).slice(0, 10);
   document.getElementById('today-list').innerHTML = pending.length === 0
     ? '<div class="empty-state"><div class="emoji">🎉</div><p>Sin pendientes</p></div>'
     : pending.map(v => `
@@ -677,7 +815,7 @@ function renderDashboard() {
 
   if (isAdmin && showingAll && allAgents.length > 0) {
     const agStats = allAgents.filter(a => a.rol === 'agente').map(ag => {
-      const av = ventas.filter(v => v.agente_id === ag.id);
+      const av = ventasFiltradas.filter(v => v.agente_id === ag.id);
       const ventasVendidas = av.filter(v => v.estado === 'vendido');
       return {
         nombre: ag.nombre,
@@ -752,6 +890,7 @@ function getFiltered() {
   
   return ventas.filter(v => {
     if (!!v.archivado !== mostrarArchivados) return false;
+    if (!ventasEnFiltroTiempo(v)) return false;
     if (status && v.estado !== status) return false;
     if (prodId && !(v.venta_items || []).some(it => it.producto_id == prodId)) return false;
     if (ubicacion && !(v.cliente?.ubicacion || '').toLowerCase().includes(ubicacion.toLowerCase())) return false;
@@ -1223,11 +1362,14 @@ async function onCelularInput() {
         ? (cicloAbierto.venta_items || []).map(it => it.productos?.nombre).filter(Boolean).join(', ')
         : '';
       const cicloWarning = cicloAbierto ? `
-        <div style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:6px;padding:8px 12px;margin-bottom:8px;">
-          <div style="color:var(--yellow);font-size:12px;font-weight:600;margin-bottom:4px;">⚠️ Ya tienes un ciclo abierto con este cliente</div>
-          <div style="color:var(--text2);font-size:11px;">${cicloProds || '—'} · ${ESTADOS[cicloAbierto.estado]?.label || cicloAbierto.estado} · ${cicloAbierto.fecha || ''}</div>
+        <div style="background:rgba(251,191,36,0.15);border:2px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-bottom:8px;">
+          <div style="color:var(--yellow);font-size:13px;font-weight:700;margin-bottom:6px;">⚠️ Ya tienes un registro activo con este cliente</div>
+          <div style="color:var(--text2);font-size:12px;margin-bottom:8px;">${cicloProds || '—'} · ${ESTADOS[cicloAbierto.estado]?.label || cicloAbierto.estado} · ${cicloAbierto.fecha || ''}</div>
+          <div style="color:var(--text3);font-size:11px;margin-bottom:8px;">No puedes crear un registro nuevo. Actualiza el existente.</div>
           <button onclick="closeVentaModal();setTimeout(()=>openVentaModal(${cicloAbierto.id}),50)"
-            style="margin-top:6px;background:var(--yellow);border:none;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;color:#0a0a0f;cursor:pointer;">→ Ir al registro existente</button>
+            style="background:var(--yellow);border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;color:#0a0a0f;cursor:pointer;width:100%;">
+            → Ir al registro existente
+          </button>
         </div>` : '';
       const spamBanner = data.flag === 'spam' ? `
         <div style="background:rgba(248,113,113,0.15);border:2px solid var(--red);border-radius:8px;padding:12px 16px;margin-bottom:8px;">
@@ -1240,6 +1382,22 @@ async function onCelularInput() {
           ${data.faltas > 0 && data.flag !== 'spam' ? `<div style="color:var(--orange);font-size:11px;">❌ ${data.faltas} cancelación(es)</div>` : ''}
           ${data.notas ? `<div style="color:var(--text2);margin-top:4px;">${data.notas}</div>` : ''}
         </div>`;
+
+      // Bloquear/desbloquear guardar según si hay ciclo abierto
+      const saveBtn = document.querySelector('#venta-modal .btn-save');
+      if (saveBtn) {
+        if (cicloAbierto) {
+          saveBtn.disabled = true;
+          saveBtn.style.opacity = '0.4';
+          saveBtn.style.cursor = 'not-allowed';
+          saveBtn.title = 'Debes ir al registro existente antes de crear uno nuevo';
+        } else {
+          saveBtn.disabled = false;
+          saveBtn.style.opacity = '';
+          saveBtn.style.cursor = '';
+          saveBtn.title = '';
+        }
+      }
     } else {
       document.getElementById('f-cliente-id').value = '';
       sugg.textContent = '✨ Registro nuevo: Se creará el perfil al guardar';
@@ -1247,6 +1405,15 @@ async function onCelularInput() {
       sugg.style.borderColor = 'rgba(34,211,164,0.3)';
       sugg.style.color = 'var(--green)';
       sugg.style.display = 'block';
+
+      // Restaurar botón guardar — cliente nuevo, no hay ciclo
+      const saveBtn = document.querySelector('#venta-modal .btn-save');
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.style.opacity = '';
+        saveBtn.style.cursor = '';
+        saveBtn.title = '';
+      }
     }
   }, 350);
 }
@@ -1403,8 +1570,14 @@ async function openVentaModal(id) {
     if (addItemBtn) addItemBtn.style.display = '';
     
     const saveBtn = document.querySelector('#venta-modal .btn-save');
-    if (saveBtn) saveBtn.style.display = '';
-    
+    if (saveBtn) {
+      saveBtn.style.display = '';
+      saveBtn.disabled = false;
+      saveBtn.style.opacity = '';
+      saveBtn.style.cursor = '';
+      saveBtn.title = '';
+    }
+        
     document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
     document.getElementById('f-celular').value = '';
     document.getElementById('f-nombre').value = '';
@@ -1652,6 +1825,7 @@ function deleteUser(id) {
     };
   });
 }
+
 function closeDeleteUserModal() {
   document.getElementById('delete-user-modal').classList.remove('open');
 }
@@ -2048,11 +2222,25 @@ function renderStatModal() {
   const labels = { vendido: '✅ Vendidos', interesado: '🌟 Interesados', sin_respuesta: '📵 Sin respuesta' };
   document.getElementById('stat-modal-title').textContent = labels[estado] || estado;
 
-  const filtered = ventas.filter(v => v.estado === estado);
+  // Aplicar filtro de tiempo igual que el dashboard
+  const filtered = ventas.filter(v => v.estado === estado && ventasEnFiltroTiempo(v));
   const total = filtered.length;
-  const totalUnidades = estado === 'vendido'
-    ? filtered.reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0)
-    : null;
+
+  // Texto descriptivo según el estado
+  let resumenTexto = '';
+  if (estado === 'vendido') {
+    const totalUnidades = filtered.reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0);
+    const totalMonto = filtered.reduce((sum, v) => sum + (parseFloat(v.monto_total) || 0), 0);
+    resumenTexto = `${total} venta${total !== 1 ? 's' : ''} · ${totalUnidades} unidad${totalUnidades !== 1 ? 'es' : ''} · Bs. ${totalMonto.toFixed(0)}`;
+  } else if (estado === 'interesado') {
+    resumenTexto = `${total} registro${total !== 1 ? 's' : ''} con estado Interesado`;
+  } else if (estado === 'sin_respuesta') {
+    resumenTexto = `${total} registro${total !== 1 ? 's' : ''} con estado Sin respuesta`;
+  }
+
+  // Texto del período
+  const periodoTexto = describeFiltroTiempo();
+
   const pages = Math.ceil(total / STAT_PAGE_SIZE) || 1;
   if (statModalPage > pages) statModalPage = 1;
   const page = filtered.slice((statModalPage - 1) * STAT_PAGE_SIZE, statModalPage * STAT_PAGE_SIZE);
@@ -2060,9 +2248,8 @@ function renderStatModal() {
   const isAdmin = currentUser?.rol === 'admin';
 
   document.getElementById('stat-modal-body').innerHTML = `
-    <div style="font-size:12px;color:var(--text3);margin-bottom:12px;">
-      ${total} ventas${totalUnidades !== null ? ` · ${totalUnidades} unidades` : ''}
-    </div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:4px;">${resumenTexto}</div>
+    <div style="font-size:11px;color:var(--accent2);margin-bottom:14px;font-style:italic;">📅 ${periodoTexto}</div>
     <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;">
         <thead>
@@ -2119,6 +2306,18 @@ async function loadConfigVendidosEditables() {
     
     if (cb) cb.checked = val;
     if (span) span.style.background = val ? 'var(--green)' : 'var(--border)';
+    const { data: dataFiltro } = await db.from('config')
+      .select('valor').eq('clave', 'filtro_tiempo_default').single();
+    if (dataFiltro?.valor) {
+      filtroTiempo = dataFiltro.valor;
+      const selFiltro = document.getElementById('filtro-tiempo-global');
+      if (selFiltro) selFiltro.value = filtroTiempo;
+      // Actualizar también el selector de ventas y dashboard
+      ['filtro-tiempo-ventas', 'filtro-tiempo-dash', 'filtro-tiempo-leads'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = filtroTiempo;
+      });
+    }
   } catch(e) {
     console.error('Error cargando config:', e);
   }
