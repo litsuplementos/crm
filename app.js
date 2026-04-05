@@ -1415,10 +1415,12 @@ async function onCelularInput() {
       }
       sugg.style.display = 'none';
       const infoBox = document.getElementById('cliente-info-box');
+      const ventaIdActual = document.getElementById('edit-venta-id').value;
       infoBox.style.display = '';
       const { data: cicloAbierto } = await db.from('ventas')
         .select('id, estado, fecha, venta_items( productos:producto_id(nombre) )')
         .eq('cliente_id', data.id).eq('agente_id', currentUser.id).eq('archivado', false)
+        .neq('id', ventaIdActual ? parseInt(ventaIdActual) : 0)
         .order('id', { ascending: false }).limit(1).maybeSingle();
       const cicloProds = cicloAbierto
         ? (cicloAbierto.venta_items || []).map(it => it.productos?.nombre).filter(Boolean).join(', ')
