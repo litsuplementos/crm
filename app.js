@@ -4,7 +4,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// SessionManager 
+// SessionManager
 const SessionManager = {
   STORAGE_KEY: 'litcrm_session_user',
   saveSession(userData) {
@@ -29,16 +29,25 @@ const dashboardCache = {
   isDirty: true,
   lastIsAdmin: null,
   lastShowingAll: null,
-  
+
   invalidate() {
     this.isDirty = true;
   },
-  
+
   isValid(ventasLength, agentId) {
-    return !this.isDirty && 
-           this.lastVentasCount === ventasLength && 
+    return !this.isDirty &&
+           this.lastVentasCount === ventasLength &&
            this.lastAgentId === agentId;
   }
+};
+
+// FIX #6 — caché de getFiltered para evitar re-filtrado en renders consecutivos
+const filteredCache = {
+  result: null,
+  _search: null, _status: null, _prodId: null,
+  _ubicacion: null, _agente: null, _tiempo: null,
+  _archivado: null, _mesCustom: null,
+  invalidate() { this.result = null; }
 };
 
 const ESTADOS = {
@@ -67,7 +76,11 @@ let selectedAgentId  = 'all';
 let currentPage = 1;
 const PAGE_SIZE = 15;
 let mostrarArchivados = false;
-let filtroTiempo = 'mes'; // día | semana | mes | todos
+let _vendidosEditablesCache = null;
+let filtroTiempo = 'mes';
+
+// FIX #14 — flag de geo como variable de módulo, no propiedad del elemento DOM
+let _geoSelectorsInitialized = false;
 
 // Debounce mejorado
 let _searchTimer;
@@ -119,7 +132,6 @@ function initializeSession() {
 function describeFiltroTiempo() {
   const hoy = new Date();
   const opts = { day: 'numeric', month: 'long' };
-  const optsYear = { day: 'numeric', month: 'long', year: 'numeric' };
 
   if (filtroTiempo === 'todos') return 'Todos los registros';
   if (filtroTiempo === 'dia') {
@@ -150,9 +162,8 @@ function getFechaLimite(filtro) {
   hoy.setHours(0, 0, 0, 0);
   if (filtro === 'dia') return hoy;
   if (filtro === 'semana') {
-    // Lunes de la semana actual
     const d = new Date(hoy);
-    const diaSemana = hoy.getDay(); // 0=dom,1=lun,...,6=sab
+    const diaSemana = hoy.getDay();
     const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
     d.setDate(hoy.getDate() + diffLunes);
     return d;
@@ -169,7 +180,6 @@ function getFechaLimite(filtro) {
 function ventasEnFiltroTiempo(venta) {
   if (filtroTiempo === 'todos') return true;
 
-  // Filtro por mes específico seleccionado
   if (filtroTiempo === 'mes' && window._filtroMesCustom) {
     const [year, month] = window._filtroMesCustom.split('-').map(Number);
     const fechaVenta = new Date(venta.fecha + 'T00:00:00');
@@ -183,7 +193,7 @@ function ventasEnFiltroTiempo(venta) {
 }
 
 // AUTH
-async function doLogin() {  
+async function doLogin() {
   const u = document.getElementById('login-user').value.trim();
   const p = document.getElementById('login-pass').value;
   const errEl = document.getElementById('login-error');
@@ -203,7 +213,7 @@ async function doLogin() {
     document.getElementById('tab-usuarios').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-memorias').style.display = isAdmin ? '' : 'none';
     await initApp();
-    SessionManager.saveSession(data); 
+    SessionManager.saveSession(data);
   } catch(e) {
     errEl.textContent   = 'Error: ' + e.message;
     errEl.style.display = 'block';
@@ -214,13 +224,33 @@ document.addEventListener('keydown', e => {
 });
 
 function doLogout() {
-  currentUser = null; 
-  ventas = []; 
+  // FIX #1 — limpiar intervalos y timers antes de resetear estado
+  clearInterval(_recordatorioTimer);
+  clearInterval(_bipInterval);
+  clearTimeout(celularTimer);
+  _recordatorioTimer = null;
+  _bipInterval = null;
+  _vendidosEditablesCache = null;
+  celularTimer = null;
+
+  // FIX #3 — suspender AudioContext en lugar de crear uno nuevo en la próxima sesión
+  if (_audioCtx && _audioCtx.state !== 'closed') {
+    _audioCtx.suspend().catch(() => {});
+  }
+
+  // FIX #14 — resetear flag de geo para la próxima sesión
+  _geoSelectorsInitialized = false;
+
+  currentUser = null;
+  ventas = [];
   ventasIndex = {};
-  allAgents = []; 
+  allAgents = [];
   allProductos = [];
   selectedAgentId = 'all';
   dashboardCache.invalidate();
+  filteredCache.invalidate();
+  _usersCache = null; // FIX #9
+
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('login-user').value = '';
@@ -229,14 +259,12 @@ function doLogout() {
   document.getElementById('filter-status').value = '';
   document.getElementById('filter-producto').value = '';
   document.getElementById('filter-ubicacion').value = '';
-  document.getElementById('search-input').value = '';
   showViewDirect('dashboard');
   SessionManager.clearSession();
 }
 
 // INIT
 async function initApp() {
-  // Ocultar filtros de agente por defecto, buildAgentSelector los mostrará si es admin
   const wrap = document.getElementById('agent-selector-wrap');
   if (wrap) wrap.innerHTML = '';
   const filterAgente = document.getElementById('filter-agente');
@@ -245,15 +273,24 @@ async function initApp() {
 
   document.getElementById('dash-date').textContent =
     new Date().toLocaleDateString('es-BO', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+  // FIX #10 — cargar siempre con soloActivos=false para unificar caché
   if (currentUser.rol === 'admin') {
-    await Promise.all([loadProductos(), loadAgents(), loadVentas()]);
+    await Promise.all([loadProductos(false), loadAgents(), loadVentas()]);
     buildAgentSelector();
   } else {
-    await Promise.all([loadProductos(), loadVentas()]);
+    await Promise.all([loadProductos(false), loadVentas()]);
   }
-  setupEventDelegation();
+
+  // FIX #13 — registrar event delegation una sola vez por sesión
+  _setupEventDelegationOnce();
+
   renderDashboard();
+
+  // FIX #14 — usar variable de módulo en lugar de propiedad del elemento
+  _geoSelectorsInitialized = false;
   initGeoSelectors();
+
   renderVentas();
   populateProductoFilter();
   setArchivoFiltro(false);
@@ -263,11 +300,26 @@ async function initApp() {
   _cargarLeadsPendientes();
 }
 
+// FIX #13 — flag para registrar el listener una sola vez por sesión completa de la app
+let _eventDelegationRegistered = false;
+function _setupEventDelegationOnce() {
+  if (_eventDelegationRegistered) return;
+  const tbody = document.getElementById('ventas-tbody');
+  if (!tbody) return;
+  tbody.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) {
+      const row = e.target.closest('tr[data-venta-id]');
+      if (row) openVentaModal(parseInt(row.dataset.ventaId));
+    }
+  }, { passive: true });
+  _eventDelegationRegistered = true;
+}
+
 function onFiltroMesChange(valor) {
-  // valor es "2026-04" por ejemplo
-  // Actualizar filtroTiempo con rango custom
   window._filtroMesCustom = valor;
   dashboardCache.invalidate();
+  filteredCache.invalidate(); // FIX #6
   renderDashboard();
   renderVentas();
 }
@@ -290,37 +342,37 @@ function _buildFiltroMesSelector() {
     if (i === hoy.getMonth()) o.selected = true;
     sel.appendChild(o);
   });
-  // Inicializar el filtro con el mes actual automáticamente
   window._filtroMesCustom = `${year}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
 }
 
-// 🎯 OPTIMIZACIÓN 6: Event Delegation
-function setupEventDelegation() {
-  const tbody = document.getElementById('ventas-tbody');
-  if (tbody) {
-    tbody.addEventListener('click', (e) => {
-      const btn = e.target.closest('button');
-      if (!btn) {
-        const row = e.target.closest('tr[data-venta-id]');
-        if (row) openVentaModal(parseInt(row.dataset.ventaId));
-      }
-    }, { passive: true });
-  }
-}
-
 // PRODUCTOS — catálogo
-async function loadProductos(soloActivos = true) {
+// FIX #10 — siempre cargamos con soloActivos=false; filtramos en memoria donde haga falta
+async function loadProductos(soloActivos = false) {
   let query = db.from('productos').select('*').order('nombre');
   if (soloActivos) query = query.eq('activo', true);
   const { data, error } = await query;
   if (!error) allProductos = data || [];
 }
 
+// FIX #5 — bandera para evitar reconstruir el filtro de ciudad si los datos no cambiaron
+let _cityFilterDirty = true;
+function populateCityFilter() {
+  if (!_cityFilterDirty) return;
+  const sel = document.getElementById('filter-ubicacion');
+  const current = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  const cities = [...new Set(ventas.map(v => v.cliente?.ubicacion).filter(c => c && c !== 's/c' && c !== ''))].sort();
+  cities.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+  sel.value = current;
+  _cityFilterDirty = false;
+}
+
 function populateProductoFilter() {
   const sel = document.getElementById('filter-producto');
   if (!sel) return;
   while (sel.options.length > 1) sel.remove(1);
-  allProductos.forEach(p => {
+  // FIX #10 — allProductos ahora tiene todos (activos e inactivos); mostrar solo activos en el filtro
+  allProductos.filter(p => p.activo).forEach(p => {
     const o = document.createElement('option');
     o.value = p.id; o.textContent = p.nombre;
     sel.appendChild(o);
@@ -329,7 +381,8 @@ function populateProductoFilter() {
 
 // PRODUCTOS — vista admin CRUD
 async function renderProductos() {
-  await loadProductos(false);
+  // FIX #10 — allProductos ya tiene todos los productos (cargados con soloActivos=false en initApp)
+  // No necesitamos hacer otro SELECT aquí
   const grid = document.getElementById('productos-grid');
   if (!grid) return;
   grid.innerHTML = allProductos.map(p => {
@@ -433,7 +486,8 @@ async function saveProducto() {
       toast('✅ Producto creado', 'success');
     }
     closeProductoModal();
-    await loadProductos(false); 
+    // FIX #10 — recargar con soloActivos=false para mantener caché unificado
+    await loadProductos(false);
     renderProductos();
     populateProductoFilter();
   } catch(e) { toast('❌ ' + e.message, 'error'); }
@@ -443,7 +497,6 @@ function toggleProductoActivo(id, activo) {
   const prod = allProductos.find(p => p.id === id);
   if (!prod) return;
 
-  const accion = activo ? 'desactivar' : 'activar';
   const titulo = activo ? '¿Desactivar producto?' : '¿Activar producto?';
   const desc = activo
     ? 'quedará inactivo y no aparecerá al crear nuevos registros.'
@@ -462,18 +515,13 @@ function toggleProductoActivo(id, activo) {
 
   btn.onclick = async () => {
     closeToggleProductoModal();
-
-    const { error } = await db.from('productos')
-      .update({ activo: !activo }).eq('id', id);
-
+    const { error } = await db.from('productos').update({ activo: !activo }).eq('id', id);
     if (error) { toast('❌ ' + error.message, 'error'); return; }
-
-    // Actualizar en memoria (microoptimización del Bug 4)
     prod.activo = !activo;
-
-    // Actualizar la card visualmente sin recargar toda la grilla
     _actualizarCardProducto(id, !activo);
-
+    // FIX #5 — marcar filtro de ciudad como dirty no aplica aquí, pero
+    // sí invalidar el filtro de productos del modal
+    populateProductoFilter();
     toast(`✅ Producto ${activo ? 'desactivado' : 'activado'}`, 'success');
   };
 }
@@ -483,18 +531,13 @@ function closeToggleProductoModal() {
 }
 
 function _actualizarCardProducto(id, nuevoActivo) {
-  // Busca la card por el botón que tiene el onclick con ese id
   const btns = document.querySelectorAll('#productos-grid .icon-btn.danger');
   for (const btn of btns) {
     if (btn.getAttribute('onclick')?.includes(`toggleProductoActivo(${id},`)) {
       const card = btn.closest('.user-card');
       if (!card) break;
-
-      // Opacidad instantánea
       card.style.transition = 'opacity 0.3s ease';
       card.style.opacity = nuevoActivo ? '1' : '0.55';
-
-      // Actualizar el badge de estado dentro de la card
       const badgeInactivo = card.querySelector('span[style*="color:var(--red)"]');
       if (nuevoActivo && badgeInactivo) {
         badgeInactivo.remove();
@@ -507,8 +550,6 @@ function _actualizarCardProducto(id, nuevoActivo) {
           precioDiv.appendChild(span);
         }
       }
-
-      // Actualizar el ícono del botón toggle
       btn.textContent = nuevoActivo ? '🚫' : '✅';
       btn.setAttribute('onclick', `toggleProductoActivo(${id}, ${nuevoActivo})`);
       break;
@@ -516,7 +557,6 @@ function _actualizarCardProducto(id, nuevoActivo) {
   }
 }
 
-// 🎯 OPTIMIZACIÓN 5: Cargar ventas CON ÍNDICE
 async function loadVentas() {
   try {
     let query = db.from('ventas')
@@ -540,11 +580,13 @@ async function loadVentas() {
     const { data, error } = await query;
     if (error) throw error;
     ventas = data || [];
-    
+
     ventasIndex = {};
     ventas.forEach(v => ventasIndex[v.id] = v);
     dashboardCache.invalidate();
-    
+    filteredCache.invalidate(); // FIX #6
+    _cityFilterDirty = true;   // FIX #5 — nuevos datos, reconstruir filtro de ciudad
+
   } catch(e) {
     toast('❌ Error: ' + e.message, 'error');
     ventas = [];
@@ -585,7 +627,6 @@ async function onAgentFilterChange() {
   selectedAgentId = document.getElementById('agent-selector').value;
   await loadVentas();
   renderDashboard();
-  initGeoSelectors();
   renderVentas();
 }
 
@@ -613,6 +654,7 @@ async function onFiltroTiempoChange(valor) {
   }
 
   dashboardCache.invalidate();
+  filteredCache.invalidate(); // FIX #6
   ['filtro-tiempo-global', 'filtro-tiempo-ventas', 'filtro-tiempo-dash', 'filtro-tiempo-leads'].forEach(id => {
     const el = document.getElementById(id);
     if (el && el.value !== valor) el.value = valor;
@@ -622,7 +664,7 @@ async function onFiltroTiempoChange(valor) {
   }
   renderDashboard();
   renderVentas();
-  _renderLeads(); // también actualizar leads
+  _renderLeads();
 }
 
 let _syncing = false;
@@ -632,10 +674,12 @@ async function syncData() {
   const btn = document.getElementById('sync-btn');
   btn.classList.add('syncing');
   try {
-    await Promise.all([loadProductos(), loadVentas(), cargarLeads()]);
+    // FIX #10 — mantener carga unificada con soloActivos=false
+    await Promise.all([loadProductos(false), loadVentas(), cargarLeads()]);
     renderDashboard();
     renderVentas();
     populateProductoFilter();
+    _usersCache = null; // FIX #9 — invalidar caché de usuarios al sincronizar
     toast('✅ Datos actualizados', 'success');
   } finally {
     btn.classList.remove('syncing');
@@ -691,7 +735,6 @@ function montoChip(monto) {
   return `<span style="background:var(--green-bg);border:1px solid var(--green);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;">Bs.${parseFloat(monto).toFixed(2)}</span>`;
 }
 
-// 🎯 OPTIMIZACIÓN 1: Dashboard con Caché
 function renderDashboard() {
   const isAdmin = currentUser.rol === 'admin';
   const showingAll = selectedAgentId === 'all';
@@ -752,23 +795,23 @@ function renderDashboard() {
     dashboardCache.prods = {};
     dashboardCache.cities = {};
     dashboardCache.sCounts = {};
-    
+
     ventasFiltradas.forEach(v => {
       (v.venta_items || []).forEach(it => {
-        const nombre = it.productos?.nombre || 'Sin producto'
+        const nombre = it.productos?.nombre || 'Sin producto';
         dashboardCache.prods[nombre] = (dashboardCache.prods[nombre] || 0) + 1;
       });
     });
-    
+
     ventasFiltradas.forEach(v => {
       const c = v.cliente?.ubicacion;
       if (c && c !== 's/c' && c !== '') dashboardCache.cities[c] = (dashboardCache.cities[c] || 0) + 1;
     });
-    
+
     Object.keys(ESTADOS).forEach(k => {
       dashboardCache.sCounts[k] = ventasFiltradas.filter(v => v.estado === k).length;
     });
-    
+
     dashboardCache.lastVentasCount = ventasFiltradas.length;
     dashboardCache.lastAgentId = selectedAgentId;
     dashboardCache.isDirty = false;
@@ -827,7 +870,6 @@ function renderDashboard() {
         interesados: av.filter(v => v.estado === 'interesado').length,
       };
     });
-    // Determinar métrica activa (guardada en window para persistencia)
     if (!window._agentMetric) window._agentMetric = 'unidades';
 
     const metricConfig = {
@@ -874,23 +916,32 @@ function renderDashboard() {
 }
 
 // VENTAS — lista + filtros
-function populateCityFilter() {
-  const sel = document.getElementById('filter-ubicacion');
-  const current = sel.value; // guardar antes
-  while (sel.options.length > 1) sel.remove(1);
-  const cities = [...new Set(ventas.map(v => v.cliente?.ubicacion).filter(c => c && c !== 's/c' && c !== ''))].sort();
-  cities.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
-  sel.value = current; // restaurar después
-}
 
+// FIX #6 — getFiltered con memoización por inputs
 function getFiltered() {
-  const search = document.getElementById('search-input').value.toLowerCase();
-  const status = document.getElementById('filter-status').value;
-  const prodId = document.getElementById('filter-producto').value;
+  const search    = document.getElementById('search-input').value.toLowerCase();
+  const status    = document.getElementById('filter-status').value;
+  const prodId    = document.getElementById('filter-producto').value;
   const ubicacion = document.getElementById('filter-ubicacion').value;
-  const agente = currentUser.rol === 'admin' ? (document.getElementById('filter-agente')?.value || '') : '';
-  
-  return ventas.filter(v => {
+  const agente    = currentUser.rol === 'admin' ? (document.getElementById('filter-agente')?.value || '') : '';
+  const mesCustom = window._filtroMesCustom || null;
+
+  // Comparar con valores cacheados
+  if (
+    filteredCache.result !== null &&
+    filteredCache._search    === search &&
+    filteredCache._status    === status &&
+    filteredCache._prodId    === prodId &&
+    filteredCache._ubicacion === ubicacion &&
+    filteredCache._agente    === agente &&
+    filteredCache._tiempo    === filtroTiempo &&
+    filteredCache._archivado === mostrarArchivados &&
+    filteredCache._mesCustom === mesCustom
+  ) {
+    return filteredCache.result;
+  }
+
+  const result = ventas.filter(v => {
     if (!!v.archivado !== mostrarArchivados) return false;
     if (!ventasEnFiltroTiempo(v)) return false;
     if (status && v.estado !== status) return false;
@@ -898,17 +949,31 @@ function getFiltered() {
     if (ubicacion && !(v.cliente?.ubicacion || '').toLowerCase().includes(ubicacion.toLowerCase())) return false;
     if (agente && v.agente_id !== agente) return false;
     if (search) {
-      const nombre = v.cliente?.nombre || '';
-      const cel = v.cliente?.celular || '';
+      const nombre    = v.cliente?.nombre || '';
+      const cel       = v.cliente?.celular || '';
       const prodNames = (v.venta_items || []).map(it => it.productos?.nombre || '').join(' ');
-      const haystack = `${nombre} ${cel} ${prodNames} ${v.cliente?.ubicacion || ''} ${v.notas || ''}`.toLowerCase();
+      const haystack  = `${nombre} ${cel} ${prodNames} ${v.cliente?.ubicacion || ''} ${v.notas || ''}`.toLowerCase();
       if (!haystack.includes(search)) return false;
     }
     return true;
   });
+
+  // Guardar en caché
+  filteredCache.result    = result;
+  filteredCache._search    = search;
+  filteredCache._status    = status;
+  filteredCache._prodId    = prodId;
+  filteredCache._ubicacion = ubicacion;
+  filteredCache._agente    = agente;
+  filteredCache._tiempo    = filtroTiempo;
+  filteredCache._archivado = mostrarArchivados;
+  filteredCache._mesCustom = mesCustom;
+
+  return result;
 }
 
 function renderVentas() {
+  // FIX #5 — populateCityFilter solo reconstruye si los datos cambiaron
   populateCityFilter();
   const filtered = getFiltered();
   const total = filtered.length;
@@ -937,9 +1002,7 @@ function renderVentas() {
       <td>${prodCell}</td>
       <td>${v.monto_total ? montoChip(v.monto_total) : ''}</td>
       <td style="max-width:160px;white-space:normal;word-break:break-word;font-size:13px;color:var(--text2);">${ubicacion}</td>
-
       <td>${statusBadge(v.estado)}${v.estado === 'rellamada' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}${v.estado === 'sin_respuesta' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}</td>
-
       <td style="min-width:280px;max-width:260px;overflow:hidden;white-space:normal;color:var(--text2);font-size:12px;" title="${v.notas || ''}">${v.notas || ''}${v.comprobante_url ? ` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>` : ''}</td>
       ${isAdmin ? `<td style="font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>` : ''}
       <td class="td-actions" onclick="event.stopPropagation()">
@@ -970,6 +1033,7 @@ function goPage(p) { currentPage = p; renderVentas(); window.scrollTo(0, 200); }
 function setArchivoFiltro(archivado) {
   mostrarArchivados = archivado;
   currentPage = 1;
+  filteredCache.invalidate(); // FIX #6
   document.getElementById('tab-activos').classList.toggle('archivo-tab-active', !archivado);
   document.getElementById('tab-archivados').classList.toggle('archivo-tab-active', archivado);
 
@@ -1003,13 +1067,15 @@ function addVentaItem(data) {
   const row = document.createElement('div');
   row.dataset.idx = idx;
   row.style.cssText = 'background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;position:relative;';
+  // FIX #10 — filtrar solo activos al construir el select del modal
+  const productosActivos = allProductos.filter(p => p.activo);
   row.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 90px auto;gap:8px;align-items:end;margin-bottom:8px;">
       <div>
         <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px;">Producto</div>
         <select class="smart-input item-producto" onchange="onItemProductoChange(this)" style="width:100%;">
           <option value="">— Seleccionar —</option>
-          ${allProductos.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
+          ${productosActivos.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
         </select>
       </div>
       <div>
@@ -1227,19 +1293,17 @@ function getVentaItemsData() {
 function clearVentaItems() {
   document.getElementById('venta-items-wrap').innerHTML = '';
   document.getElementById('f-monto').value = '';
-  document.getElementById('f-monto')._baseValue = 0;    
-  document.getElementById('f-descuento').value = '0';        
-  document.getElementById('descuento-tag').textContent = '';  
+  document.getElementById('f-monto')._baseValue = 0;
+  document.getElementById('f-descuento').value = '0';
+  document.getElementById('descuento-tag').textContent = '';
   document.getElementById('monto-tag').textContent = '';
 }
 
-// Muestra solo el campo correspondiente al estado activo
 function toggleIntentosField(estado) {
   const rellamadaWrap = document.getElementById('intentos-rellamada-field');
   const sinrespWrap   = document.getElementById('intentos-sinresp-field');
   if (rellamadaWrap) rellamadaWrap.style.display = (estado === 'rellamada')     ? '' : 'none';
   if (sinrespWrap)   sinrespWrap.style.display   = (estado === 'sin_respuesta') ? '' : 'none';
-  // Sincronizar campo oculto
   if (estado === 'rellamada') {
     document.getElementById('f-intentos').value =
       document.getElementById('f-intentos-rellamada').value || 1;
@@ -1251,7 +1315,6 @@ function toggleIntentosField(estado) {
   }
 }
 
-// Aviso de límite diferenciado
 function onIntentosChange() {
   const estado = document.getElementById('f-estado').value;
 
@@ -1287,7 +1350,6 @@ function onIntentosChange() {
   }
 }
 
-// Carga los intentos en el campo correcto al abrir modal (editar)
 function _loadIntentosEditar(estado, intentos) {
   const val = intentos || 1;
   if (estado === 'rellamada') {
@@ -1305,7 +1367,6 @@ function _loadIntentosEditar(estado, intentos) {
   onIntentosChange();
 }
 
-// Resetea ambos campos al crear nuevo registro
 function _resetIntentos() {
   document.getElementById('f-intentos-rellamada').value = 1;
   document.getElementById('f-intentos-sinresp').value = 1;
@@ -1313,26 +1374,25 @@ function _resetIntentos() {
   toggleIntentosField('interesado');
 }
 
-// Lee el valor correcto según el estado activo
 function _leerIntentos(estado) {
   if (estado === 'rellamada')    return parseInt(document.getElementById('f-intentos-rellamada').value) || 1;
   if (estado === 'sin_respuesta') return parseInt(document.getElementById('f-intentos-sinresp').value) || 1;
   return 1;
 }
 
-// ─── FIN INTENTOS ────────────────────────────────────────────────────────────
-
 // MODAL VENTA
 let celularTimer = null;
 
 async function onCelularInput() {
   clearTimeout(celularTimer);
+  celularTimer = null; // FIX #2 — resetear a null después de limpiar
   const cel = document.getElementById('f-celular').value.trim();
   const sugg = document.getElementById('celular-suggestion');
   sugg.style.display = 'none';
   document.getElementById('cliente-info-box').style.display = 'none';
   if (cel.length < 6) return;
   celularTimer = setTimeout(async () => {
+    celularTimer = null; // FIX #2 — resetear al ejecutarse para que no quede referencia muerta
     const { data } = await db.from('clientes')
       .select('id, nombre, ubicacion, producto_interes, notas, faltas, flag')
       .eq('celular', cel).maybeSingle();
@@ -1385,7 +1445,6 @@ async function onCelularInput() {
           ${data.notas ? `<div style="color:var(--text2);margin-top:4px;">${data.notas}</div>` : ''}
         </div>`;
 
-      // Bloquear/desbloquear guardar según si hay ciclo abierto
       const saveBtn = document.querySelector('#venta-modal .btn-save');
       if (saveBtn) {
         if (cicloAbierto) {
@@ -1408,7 +1467,6 @@ async function onCelularInput() {
       sugg.style.color = 'var(--green)';
       sugg.style.display = 'block';
 
-      // Restaurar botón guardar — cliente nuevo, no hay ciclo
       const saveBtn = document.querySelector('#venta-modal .btn-save');
       if (saveBtn) {
         saveBtn.disabled = false;
@@ -1420,6 +1478,7 @@ async function onCelularInput() {
   }, 350);
 }
 
+// FIX #8 — openVentaModal ya no hace fetch de productos: allProductos siempre está cargado
 async function openVentaModal(id) {
   document.getElementById('venta-modal').classList.add('open');
   document.querySelectorAll('.quick-chip').forEach(ch => {
@@ -1427,10 +1486,10 @@ async function openVentaModal(id) {
     ch.title = '';
   });
   document.getElementById('celular-suggestion').style.display = 'none';
-  document.getElementById('cliente-info-box').style.display = 'none';  
+  document.getElementById('cliente-info-box').style.display = 'none';
   document.getElementById('f-comprobante').value = '';
   renderComprobantePreview(null);
-  if (allProductos.length === 0) await loadProductos();
+  // FIX #8 — eliminada la carga condicional: allProductos ya tiene datos desde initApp
   const af = document.getElementById('agente-field');
   if (af) {
     af.style.display = currentUser.rol === 'admin' ? '' : 'none';
@@ -1441,57 +1500,47 @@ async function openVentaModal(id) {
   }
 
   if (id) {
-    // EDITAR REGISTRO EXISTENTE
     const v = ventasIndex[id];
     if (!v) return;
     const isArchivado = !!v.archivado;
     const isAdmin = currentUser?.rol === 'admin';
     const vendidosEditables = await getVendidosEditables();
 
-    // LÓGICA CORRECTA
     const shouldLock = isArchivado && !isAdmin && !(v?.estado === 'vendido' && vendidosEditables);
-    
-    // MENSAJE DINÁMICO
+
     const mensajeArchivado = (v?.estado === 'vendido' && vendidosEditables && !isAdmin)
       ? '✏️ Registro archivado. Habilitado para hacer cambios.'
       : '🔒 Registro archivado. Este ciclo de venta está cerrado. Sólo el administrador puede editarlo.';
-    
+
     document.getElementById('modal-title').textContent = isArchivado ? '🔒 Registro Archivado' : 'Editar Registro';
-    
-    // ACTUALIZAR BANNER
+
     const archivedBanner = document.getElementById('archived-banner');
     if (archivedBanner) {
       archivedBanner.style.display = isArchivado ? '' : 'none';
       archivedBanner.innerHTML = `<b style="color:var(--text);">${mensajeArchivado}</b>`;
     }
-    
-    // DESABILITAR CAMPOS
+
     const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas',
                         'f-intentos-rellamada', 'f-intentos-sinresp', 'f-direccion', 'f-monto', 'f-recordatorio'];
-    lockFields.forEach(fid => { 
-      const el = document.getElementById(fid); 
-      if (el) el.disabled = shouldLock; 
+    lockFields.forEach(fid => {
+      const el = document.getElementById(fid);
+      if (el) el.disabled = shouldLock;
     });
-    
-    // DESHABILITAR FILE INPUT
+
     const fileInput = document.getElementById('f-comprobante');
     if (fileInput) fileInput.disabled = shouldLock;
-    
-    // DESHABILITAR QUICK-CHIPS (ESTADOS)
+
     document.querySelectorAll('.quick-chip').forEach(ch => {
       ch.style.pointerEvents = shouldLock ? 'none' : '';
       ch.style.opacity = shouldLock ? '0.4' : '';
     });
-    
-    // DESHABILITAR BOTÓN "AÑADIR PRODUCTO"
+
     const addItemBtn = document.getElementById('btn-add-item');
     if (addItemBtn) addItemBtn.style.display = shouldLock ? 'none' : '';
-    
-    // DESHABILITAR BOTÓN "GUARDAR"
+
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) saveBtn.style.display = shouldLock ? 'none' : '';
 
-    // CARGAR DATOS DEL REGISTRO
     document.getElementById('edit-venta-id').value = id;
     document.getElementById('f-fecha').value = v.fecha || '';
     document.getElementById('f-celular').value = v.cliente?.celular || '';
@@ -1505,10 +1554,9 @@ async function openVentaModal(id) {
     document.getElementById('f-direccion').value = v.cliente?.direccion_residencial || '';
     document.getElementById('f-monto').value = v.monto_total || '';
     document.getElementById('monto-tag').textContent = '';
-    
+
     const descuentoGuardado = v.descuento_pct || 0;
     clearVentaItems();
-    // Restaurar descuento DESPUÉS del clear
     document.getElementById('f-descuento').value = descuentoGuardado;
     document.getElementById('f-monto')._baseValue = parseFloat(v.monto_total) || 0;
 
@@ -1522,55 +1570,54 @@ async function openVentaModal(id) {
     } else {
       addVentaItem();
     }
-    
+
     if (shouldLock) {
       document.querySelectorAll('#venta-items-wrap select, #venta-items-wrap input, #venta-items-wrap button').forEach(el => el.disabled = true);
     }
-    
+
     const mp = document.getElementById('maps-preview');
     if (mp) mp.innerHTML = '';
     if (v.cliente?.direccion_residencial) onDireccionKeydown({ key: 'Enter', preventDefault: () => {} });
-    
+
     ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
       const el = document.getElementById(sid);
       if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
     });
-    
+
     _loadIntentosEditar(v.estado, v.intentos);
     document.getElementById('f-estado').value = v.estado || 'interesado';
-    document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');  
-    
+    document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');
+
     if (currentUser.rol === 'admin' && v.agente_id)
       document.getElementById('f-agente').value = v.agente_id;
-    
+
     renderComprobantePreview(v.comprobante_url || null, shouldLock);
-    
+
   } else {
-    // NUEVO REGISTRO
     document.getElementById('modal-title').textContent = 'Nuevo Registro';
     document.getElementById('edit-venta-id').value = '';
-    
+
     const archivedBanner = document.getElementById('archived-banner');
     if (archivedBanner) archivedBanner.style.display = 'none';
-    
+
     const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas',
                         'f-intentos-rellamada', 'f-intentos-sinresp', 'f-direccion', 'f-monto'];
-    lockFields.forEach(fid => { 
-      const el = document.getElementById(fid); 
-      if (el) el.disabled = false; 
+    lockFields.forEach(fid => {
+      const el = document.getElementById(fid);
+      if (el) el.disabled = false;
     });
-    
+
     const fileInput = document.getElementById('f-comprobante');
     if (fileInput) fileInput.disabled = false;
-    
-    document.querySelectorAll('.quick-chip').forEach(ch => { 
-      ch.style.pointerEvents = ''; 
-      ch.style.opacity = ''; 
+
+    document.querySelectorAll('.quick-chip').forEach(ch => {
+      ch.style.pointerEvents = '';
+      ch.style.opacity = '';
     });
-    
+
     const addItemBtn = document.getElementById('btn-add-item');
     if (addItemBtn) addItemBtn.style.display = '';
-    
+
     const saveBtn = document.querySelector('#venta-modal .btn-save');
     if (saveBtn) {
       saveBtn.style.display = '';
@@ -1579,7 +1626,7 @@ async function openVentaModal(id) {
       saveBtn.style.cursor = '';
       saveBtn.title = '';
     }
-        
+
     document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
     document.getElementById('f-celular').value = '';
     document.getElementById('f-nombre').value = '';
@@ -1588,22 +1635,22 @@ async function openVentaModal(id) {
     document.getElementById('f-notas').value = '';
     document.getElementById('f-direccion').value = '';
     document.getElementById('f-recordatorio').value = '';
-    
+
     const mpNew = document.getElementById('maps-preview');
     if (mpNew) mpNew.innerHTML = '';
-    
+
     ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
       const el = document.getElementById(sid);
       if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
     });
-    
+
     _resetIntentos();
     document.getElementById('f-estado').value = 'interesado';
     document.querySelector('.quick-chip[data-estado="interesado"]')?.classList.add('active');
-    
+
     if (currentUser.rol === 'admin' && allAgents.length > 0)
       document.getElementById('f-agente').value = allAgents.find(a => a.rol === 'agente')?.id || '';
-    
+
     clearVentaItems();
     addVentaItem();
   }
@@ -1621,8 +1668,9 @@ function setEstado(value, el) {
 }
 
 function closeVentaModal() {
+  // FIX #2 — limpiar timer y resetear a null
   clearTimeout(celularTimer);
-  celularTimer = null;   
+  celularTimer = null;
   document.getElementById('venta-modal').classList.remove('open');
 }
 
@@ -1643,7 +1691,6 @@ async function saveVenta() {
     ? document.getElementById('f-agente')?.value || currentUser.id
     : currentUser.id;
 
-  // ── Leer intentos del campo correcto según el estado ──
   const intentos = _leerIntentos(estado);
 
   if (!celular) { toast('⚠️ El celular es obligatorio', 'error'); return; }
@@ -1653,7 +1700,6 @@ async function saveVenta() {
 
   let estadoFinal = estado;
 
-  // Rellamada: límite 3
   if (estado === 'rellamada' && intentos >= MAX_RELLAMADAS) {
     const ok = confirm(
       `Este registro ya tiene ${intentos} intentos de llamada.\n` +
@@ -1666,7 +1712,6 @@ async function saveVenta() {
     toast(`⚠️ ${intentos}/${MAX_RELLAMADAS} intentos de llamada — próximo cierra el ciclo`, '');
   }
 
-  // Sin respuesta: límite 4
   if (estado === 'sin_respuesta' && intentos >= MAX_SIN_RESPUESTA) {
     const ok = confirm(
       `Este cliente ya tiene ${intentos} mensajes sin respuesta.\n` +
@@ -1773,6 +1818,8 @@ async function saveVenta() {
     }
 
     dashboardCache.invalidate();
+    filteredCache.invalidate(); // FIX #6
+    _cityFilterDirty = true;   // FIX #5
     await onVentaGuardadaDesdeLeads();
     closeVentaModal();
     renderVentas();
@@ -1806,8 +1853,6 @@ function deleteUser(id) {
         .select('*', { count: 'exact', head: true })
         .eq('agente_id', u.id);
 
-      console.log('agente id:', u.id, 'count:', count, 'error:', countError);
-
       if (count > 0) {
         document.getElementById('delete-user-confirm-input').style.borderColor = 'var(--yellow)';
         document.getElementById('delete-user-error').style.display = 'none';
@@ -1820,6 +1865,7 @@ function deleteUser(id) {
         const { error } = await db.from('usuarios').delete().eq('id', id);
         if (error) throw error;
         toast('🗑️ Usuario eliminado');
+        _usersCache = null; // FIX #9
         renderUsers();
         await loadAgents();
         buildAgentSelector();
@@ -1851,7 +1897,7 @@ function deleteProducto(id) {
       document.getElementById('delete-producto-error').style.display = '';
       return;
     }
-    const { count, error: countError } = await db.from('venta_items')
+    const { count } = await db.from('venta_items')
       .select('*', { count: 'exact', head: true })
       .eq('producto_id', id);
 
@@ -1865,8 +1911,10 @@ function deleteProducto(id) {
       const { error } = await db.from('productos').delete().eq('id', id);
       if (error) throw error;
       toast('🗑️ Producto eliminado');
+      // FIX #10 — mantener carga unificada
       await loadProductos(false);
       renderProductos();
+      populateProductoFilter();
     } catch(e) { toast('❌ ' + e.message, 'error'); }
   };
 }
@@ -1903,13 +1951,15 @@ function deleteVenta(id) {
         const { count: faltas } = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).in('estado', ['cancelado', 'spam']);
         const { count: spamCount } = await db.from('ventas').select('*', { count: 'exact', head: true }).eq('cliente_id', clienteId).eq('estado', 'spam');
         await db.from('clientes').update({
-          faltas: faltas || 0,       
+          faltas: faltas || 0,
           flag: (spamCount || 0) > 0 ? 'spam' : 'normal',
         }).eq('id', clienteId);
       }
       ventas = ventas.filter(v => v.id !== id);
       delete ventasIndex[id];
       dashboardCache.invalidate();
+      filteredCache.invalidate(); // FIX #6
+      _cityFilterDirty = true;   // FIX #5
       toast('🗑️ Registro eliminado');
       renderVentas();
       renderDashboard();
@@ -1942,15 +1992,11 @@ async function deleteComprobante(url, ventaId) {
     if (path) await db.storage.from('comprobantes').remove([path]);
     const { error } = await db.from('ventas').update({ comprobante_url: null }).eq('id', ventaId);
     if (error) throw error;
-    // Actualizar en memoria SOLO el registro afectado
     if (ventasIndex[ventaId]) {
       ventasIndex[ventaId].comprobante_url = null;
       const idx = ventas.findIndex(v => v.id === ventaId);
-      if (idx >= 0) {
-        ventas[idx].comprobante_url = null;
-      }
+      if (idx >= 0) ventas[idx].comprobante_url = null;
     }
-    // Limpiar preview si el modal sigue abierto
     if (document.getElementById('edit-venta-id').value == ventaId) {
       renderComprobantePreview(null);
     }
@@ -1973,89 +2019,7 @@ function renderComprobantePreview(url, locked = false) {
     : `<div style="margin-top:8px;position:relative;display:inline-block;"><img src="${url}" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);" onerror="this.style.display='none'">${btnEliminarImg}</div>`;
 }
 
-document.addEventListener('click', e => {
-  if (!e.target.closest('.smart-input-row'))
-    document.querySelectorAll('.dropdown-list').forEach(d => d.style.display = 'none');
-});
-
-// USUARIOS
-async function renderUsers() {
-  const { data, error } = await db.from('usuarios').select('*').order('nombre');
-  if (error) { toast('❌ Error cargando usuarios', 'error'); return; }
-  document.getElementById('users-grid').innerHTML = data.map(u => `
-    <div class="user-card" style="${!u.activo ? 'opacity:0.5;' : ''}">
-      <div class="user-card-header">
-        <div class="user-card-avatar">${u.nombre[0].toUpperCase()}</div>
-        <div>
-          <div class="user-card-name">${u.nombre}${!u.activo ? ' <span style="color:var(--red);font-size:11px;">(inactivo)</span>' : ''}</div>
-          <div class="user-card-role">@${u.usuario} · <span style="color:${u.rol === 'admin' ? 'var(--accent2)' : 'var(--green)'}">${u.rol}</span></div>
-        </div>
-      </div>
-      <div class="user-card-actions">
-        <button class="icon-btn" onclick="openUserModal('${u.id}')">✏️ Editar</button>
-        ${u.usuario !== 'admin' ? `
-          <button class="icon-btn danger" onclick="toggleUserActive('${u.id}',${u.activo})">${u.activo ? '🚫 Desactivar' : '✅ Activar'}</button>
-          <button class="icon-btn danger" onclick="deleteUser('${u.id}')">🗑️</button>
-        ` : ''}
-      </div>
-    </div>`).join('');
-}
-
-async function toggleUserActive(id, active) {
-  if (!confirm(`¿${active ? 'desactivar' : 'activar'} este usuario?`)) return;
-  const { error } = await db.from('usuarios').update({ activo: !active }).eq('id', id);
-  if (error) toast('❌ ' + error.message, 'error');
-  else {
-    toast(`✅ Usuario ${active ? 'desactivado' : 'activado'}`);
-    renderUsers();
-    await loadAgents();
-    buildAgentSelector();
-  }
-}
-
-function openUserModal(id) {
-  document.getElementById('user-modal').classList.add('open');
-  if (id) {
-    db.from('usuarios').select('*').eq('id', id).single().then(({ data }) => {
-      if (!data) return;
-      document.getElementById('user-modal-title').textContent = 'Editar Usuario';
-      document.getElementById('edit-user-id').value = data.id;
-      document.getElementById('u-nombre').value = data.nombre;
-      document.getElementById('u-user').value = data.usuario;
-      document.getElementById('u-pass').value = data.password;
-      document.getElementById('u-rol').value = data.rol;
-    });
-  } else {
-    document.getElementById('user-modal-title').textContent = 'Nuevo Agente';
-    ['edit-user-id', 'u-nombre', 'u-user', 'u-pass'].forEach(fid => document.getElementById(fid).value = '');
-    document.getElementById('u-rol').value = 'agente';
-  }
-}
-
-function closeUserModal() { document.getElementById('user-modal').classList.remove('open'); }
-
-async function saveUser() {
-  const id = document.getElementById('edit-user-id').value;
-  const data = {
-    nombre: document.getElementById('u-nombre').value.trim(),
-    usuario: document.getElementById('u-user').value.trim(),
-    password: document.getElementById('u-pass').value,
-    rol: document.getElementById('u-rol').value,
-    activo: true,
-  };
-  if (!data.nombre || !data.usuario || !data.password) { toast('⚠️ Completa todos los campos', 'error'); return; }
-  try {
-    if (id) { const { error } = await db.from('usuarios').update(data).eq('id', id); if (error) throw error; }
-    else { const { error } = await db.from('usuarios').insert(data); if (error) throw error; }
-    closeUserModal();
-    renderUsers();
-    await loadAgents();
-    buildAgentSelector();
-    toast('✅ Usuario guardado', 'success');
-  } catch(e) { toast('❌ ' + e.message, 'error'); }
-}
-
-// EXPORT CSV
+// FIX #11 — exportCSV con revoke de blob URL
 function exportCSV() {
   const isAdmin = currentUser?.rol === 'admin';
   const headers = [
@@ -2084,11 +2048,116 @@ function exportCSV() {
 
   const csv = [headers.join(','), ...rows].join('\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
   a.download = `LIT_CRM_${currentUser.nombre}_${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
+  // FIX #11 — revocar blob URL inmediatamente después del click
+  setTimeout(() => URL.revokeObjectURL(url), 100);
   toast('📥 CSV exportado', 'success');
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.smart-input-row'))
+    document.querySelectorAll('.dropdown-list').forEach(d => d.style.display = 'none');
+});
+
+// USUARIOS — FIX #9: caché para evitar SELECT en cada visita a la pestaña
+let _usersCache = null;
+
+async function renderUsers() {
+  // FIX #9 — usar caché; solo hacer SELECT si no hay datos o fueron invalidados
+  if (!_usersCache) {
+    const { data, error } = await db.from('usuarios').select('*').order('nombre');
+    if (error) { toast('❌ Error cargando usuarios', 'error'); return; }
+    _usersCache = data || [];
+  }
+  const data = _usersCache;
+  document.getElementById('users-grid').innerHTML = data.map(u => `
+    <div class="user-card" style="${!u.activo ? 'opacity:0.5;' : ''}">
+      <div class="user-card-header">
+        <div class="user-card-avatar">${u.nombre[0].toUpperCase()}</div>
+        <div>
+          <div class="user-card-name">${u.nombre}${!u.activo ? ' <span style="color:var(--red);font-size:11px;">(inactivo)</span>' : ''}</div>
+          <div class="user-card-role">@${u.usuario} · <span style="color:${u.rol === 'admin' ? 'var(--accent2)' : 'var(--green)'}">${u.rol}</span></div>
+        </div>
+      </div>
+      <div class="user-card-actions">
+        <button class="icon-btn" onclick="openUserModal('${u.id}')">✏️ Editar</button>
+        ${u.usuario !== 'admin' ? `
+          <button class="icon-btn danger" onclick="toggleUserActive('${u.id}',${u.activo})">${u.activo ? '🚫 Desactivar' : '✅ Activar'}</button>
+          <button class="icon-btn danger" onclick="deleteUser('${u.id}')">🗑️</button>
+        ` : ''}
+      </div>
+    </div>`).join('');
+}
+
+async function toggleUserActive(id, active) {
+  if (!confirm(`¿${active ? 'desactivar' : 'activar'} este usuario?`)) return;
+  const { error } = await db.from('usuarios').update({ activo: !active }).eq('id', id);
+  if (error) toast('❌ ' + error.message, 'error');
+  else {
+    toast(`✅ Usuario ${active ? 'desactivado' : 'activado'}`);
+    _usersCache = null; // FIX #9 — invalidar caché al modificar
+    renderUsers();
+    await loadAgents();
+    buildAgentSelector();
+  }
+}
+
+function openUserModal(id) {
+  document.getElementById('user-modal').classList.add('open');
+  if (id) {
+    // FIX #9 — leer del caché si está disponible
+    const fromCache = _usersCache?.find(u => u.id === id);
+    if (fromCache) {
+      document.getElementById('user-modal-title').textContent = 'Editar Usuario';
+      document.getElementById('edit-user-id').value = fromCache.id;
+      document.getElementById('u-nombre').value = fromCache.nombre;
+      document.getElementById('u-user').value = fromCache.usuario;
+      document.getElementById('u-pass').value = fromCache.password;
+      document.getElementById('u-rol').value = fromCache.rol;
+    } else {
+      db.from('usuarios').select('*').eq('id', id).single().then(({ data }) => {
+        if (!data) return;
+        document.getElementById('user-modal-title').textContent = 'Editar Usuario';
+        document.getElementById('edit-user-id').value = data.id;
+        document.getElementById('u-nombre').value = data.nombre;
+        document.getElementById('u-user').value = data.usuario;
+        document.getElementById('u-pass').value = data.password;
+        document.getElementById('u-rol').value = data.rol;
+      });
+    }
+  } else {
+    document.getElementById('user-modal-title').textContent = 'Nuevo Agente';
+    ['edit-user-id', 'u-nombre', 'u-user', 'u-pass'].forEach(fid => document.getElementById(fid).value = '');
+    document.getElementById('u-rol').value = 'agente';
+  }
+}
+
+function closeUserModal() { document.getElementById('user-modal').classList.remove('open'); }
+
+async function saveUser() {
+  const id = document.getElementById('edit-user-id').value;
+  const data = {
+    nombre: document.getElementById('u-nombre').value.trim(),
+    usuario: document.getElementById('u-user').value.trim(),
+    password: document.getElementById('u-pass').value,
+    rol: document.getElementById('u-rol').value,
+    activo: true,
+  };
+  if (!data.nombre || !data.usuario || !data.password) { toast('⚠️ Completa todos los campos', 'error'); return; }
+  try {
+    if (id) { const { error } = await db.from('usuarios').update(data).eq('id', id); if (error) throw error; }
+    else { const { error } = await db.from('usuarios').insert(data); if (error) throw error; }
+    closeUserModal();
+    _usersCache = null; // FIX #9 — invalidar caché al guardar
+    renderUsers();
+    await loadAgents();
+    buildAgentSelector();
+    toast('✅ Usuario guardado', 'success');
+  } catch(e) { toast('❌ ' + e.message, 'error'); }
 }
 
 // BOLIVIA — Datos geográficos
@@ -2104,13 +2173,14 @@ const BOLIVIA_GEO = {
   "Pando": { capital: "Cobija", provincias: { "Nicolás Suárez": { capital: "Cobija", municipios: ["Cobija","Bolpebra","Bella Flor","Porvenir","San Pedro"] }, "Manuripi": { capital: "Filadelfia", municipios: ["Filadelfia"] } } }
 };
 
+// FIX #14 — initGeoSelectors usa variable de módulo, no propiedad del elemento DOM
 function initGeoSelectors() {
+  if (_geoSelectorsInitialized) return;
   const selDep = document.getElementById('sel-departamento');
   const selProv = document.getElementById('sel-provincia');
   const selMun = document.getElementById('sel-municipio');
   if (!selDep) return;
-  if (selDep._initialized) return; 
-  selDep._initialized = true;
+  _geoSelectorsInitialized = true;
   selDep.innerHTML = '<option value="">— Departamento —</option>';
   Object.keys(BOLIVIA_GEO).sort().forEach(dep => {
     const o = document.createElement('option');
@@ -2184,7 +2254,7 @@ document.addEventListener('keydown', (e) => {
     const modals = [
       { id: 'venta-modal', closeFunc: closeVentaModal },
       { id: 'user-modal', closeFunc: closeUserModal },
-      { id: 'delete-user-modal', closeFunc: closeDeleteUserModal },      
+      { id: 'delete-user-modal', closeFunc: closeDeleteUserModal },
       { id: 'delete-modal', closeFunc: closeDeleteModal },
       { id: 'producto-modal', closeFunc: closeProductoModal },
       { id: 'delete-producto-modal',closeFunc: closeDeleteProductoModal },
@@ -2199,8 +2269,8 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-document.getElementById('delete-confirm-input').addEventListener('keydown', e => { 
-  if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click(); 
+document.getElementById('delete-confirm-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('delete-confirm-btn').click();
 });
 
 // STAT MODAL
@@ -2224,11 +2294,9 @@ function renderStatModal() {
   const labels = { vendido: '✅ Vendidos', interesado: '🌟 Interesados', sin_respuesta: '📵 Sin respuesta' };
   document.getElementById('stat-modal-title').textContent = labels[estado] || estado;
 
-  // Aplicar filtro de tiempo igual que el dashboard
   const filtered = ventas.filter(v => v.estado === estado && ventasEnFiltroTiempo(v));
   const total = filtered.length;
 
-  // Texto descriptivo según el estado
   let resumenTexto = '';
   if (estado === 'vendido') {
     const totalUnidades = filtered.reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0);
@@ -2240,13 +2308,10 @@ function renderStatModal() {
     resumenTexto = `${total} registro${total !== 1 ? 's' : ''} con estado Sin respuesta`;
   }
 
-  // Texto del período
   const periodoTexto = describeFiltroTiempo();
-
   const pages = Math.ceil(total / STAT_PAGE_SIZE) || 1;
   if (statModalPage > pages) statModalPage = 1;
   const page = filtered.slice((statModalPage - 1) * STAT_PAGE_SIZE, statModalPage * STAT_PAGE_SIZE);
-
   const isAdmin = currentUser?.rol === 'admin';
 
   document.getElementById('stat-modal-body').innerHTML = `
@@ -2292,63 +2357,69 @@ function renderStatModal() {
   `;
 }
 
-// Cargar desde Supabase
 async function loadConfigVendidosEditables() {
   try {
     const { data, error } = await db.from('config')
-      .select('valor')
-      .eq('clave', 'vendidos_editables')
-      .single();
-    
+      .select('valor').eq('clave', 'vendidos_editables').single();
     if (error) throw error;
-    
     const val = data?.valor === 'true';
     const cb = document.getElementById('toggle-vendidos-editables');
     const span = document.getElementById('toggle-vendidos-span');
-    
+    _vendidosEditablesCache = val;
     if (cb) cb.checked = val;
     if (span) span.style.background = val ? 'var(--green)' : 'var(--border)';
     const { data: dataFiltro } = await db.from('config')
       .select('valor').eq('clave', 'filtro_tiempo_default').single();
     if (dataFiltro?.valor) {
-      // Usar onFiltroTiempoChange para que active todo: label, selector de mes, cache, etc.
-      await onFiltroTiempoChange(dataFiltro.valor);
+      // Aplicar sin disparar el UPDATE a Supabase ni renders prematuros
+      filtroTiempo = dataFiltro.valor;
+      ['filtro-tiempo-global', 'filtro-tiempo-ventas', 'filtro-tiempo-dash', 'filtro-tiempo-leads'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = filtroTiempo;
+      });
+      if (filtroTiempo === 'mes') {
+        const mesLabel = document.getElementById('mes-actual-label');
+        const mesSel = document.getElementById('filtro-mes-especifico');
+        if (mesLabel) { 
+          const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                         'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+          mesLabel.textContent = meses[new Date().getMonth()];
+          mesLabel.style.display = '';
+        }
+        if (mesSel) { _buildFiltroMesSelector(); mesSel.style.display = ''; }
+      }
+      dashboardCache.invalidate();
+      filteredCache.invalidate();
     }
   } catch(e) {
     console.error('Error cargando config:', e);
   }
 }
 
-// Guardar en Supabase
 async function saveConfigVendidosEditables(enabled) {
   try {
     const { error } = await db.from('config')
       .update({ valor: enabled ? 'true' : 'false' })
       .eq('clave', 'vendidos_editables');
-    
     if (error) throw error;
-    
-    // Actualizar UI
     const span = document.getElementById('toggle-vendidos-span');
     if (span) span.style.background = enabled ? 'var(--green)' : 'var(--border)';
-    
     toast(enabled ? '✅ Agentes pueden editar vendidos' : '🔒 Vendidos bloqueados para agentes', 'success');
+    _vendidosEditablesCache = enabled;
   } catch(e) {
     console.error('Error guardando config:', e);
     toast('❌ Error guardando configuración', 'error');
   }
 }
 
-// Leer la configuración cuando abres un registro
 async function getVendidosEditables() {
+  if (_vendidosEditablesCache !== null) return _vendidosEditablesCache;
   try {
     const { data, error } = await db.from('config')
-      .select('valor')
-      .eq('clave', 'vendidos_editables')
-      .single();
-    
+      .select('valor').eq('clave', 'vendidos_editables').single();
     if (error) throw error;
-    return data?.valor === 'true';
+    _vendidosEditablesCache = data?.valor === 'true';
+    return _vendidosEditablesCache;
   } catch(e) {
     console.error('Error leyendo config:', e);
     return false;
@@ -2360,8 +2431,14 @@ let _recordatorioTimer = null;
 let _bipInterval = null;
 let _audioCtx = null;
 
+// FIX #3 — reusar AudioContext entre sesiones; solo crear uno si no existe o fue cerrado
 function _getAudioCtx() {
-  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!_audioCtx || _audioCtx.state === 'closed') {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (_audioCtx.state === 'suspended') {
+    _audioCtx.resume().catch(() => {});
+  }
   return _audioCtx;
 }
 
@@ -2382,10 +2459,7 @@ function _bip() {
 }
 
 function _mostrarNotificacionRecordatorio(venta) {
-  // Detener bips anteriores
   clearInterval(_bipInterval);
-
-  // Crear banner si no existe
   let banner = document.getElementById('recordatorio-banner');
   if (!banner) {
     banner = document.createElement('div');
@@ -2429,7 +2503,6 @@ function _mostrarNotificacionRecordatorio(venta) {
   `;
   banner.style.display = 'flex';
 
-  // Bip cada 2 segundos sin parar
   _bip();
   _bipInterval = setInterval(_bip, 2000);
 }
@@ -2444,19 +2517,17 @@ function _dismissRecordatorio() {
 async function _marcarRecordatorioVisto(ventaId) {
   if (!window._recordatoriosVistos) window._recordatoriosVistos = new Set();
   window._recordatoriosVistos.add(ventaId);
-  // Actualizar en memoria
   if (ventasIndex[ventaId]) ventasIndex[ventaId].recordatorio_visto = true;
   const idx = ventas.findIndex(v => v.id === ventaId);
   if (idx >= 0) ventas[idx].recordatorio_visto = true;
-  // Persistir en BD
   await db.from('ventas').update({ recordatorio_visto: true }).eq('id', ventaId);
 }
 
+// FIX #1 — iniciarChequeoRecordatorios limpia el intervalo anterior antes de crear uno nuevo
 function iniciarChequeoRecordatorios() {
-  // Chequea cada 30 segundos
   clearInterval(_recordatorioTimer);
   _recordatorioTimer = setInterval(_chequearRecordatorios, 30000);
-  _chequearRecordatorios(); // ejecutar inmediatamente también
+  _chequearRecordatorios();
 }
 
 function _chequearRecordatorios() {
@@ -2469,7 +2540,7 @@ function _chequearRecordatorios() {
 
   for (const v of ventas) {
     if (!v.recordatorio) continue;
-    if (v.recordatorio_visto) continue; 
+    if (v.recordatorio_visto) continue;
     const recMs = new Date(v.recordatorio.slice(0, 16)).getTime();
     if (recMs >= unHoraAntes && recMs <= enCincoMin) {
       if (window._recordatoriosVistos.has(v.id)) continue;
@@ -2482,11 +2553,8 @@ function _chequearRecordatorios() {
 
 function _activarSonido(btn) {
   try {
-    if (!_audioCtx) {
-      _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (_audioCtx.state === 'suspended') _audioCtx.resume();
-    // Reproducir un bip de confirmación
+    // FIX #3 — _getAudioCtx maneja creación/reanudación de forma centralizada
+    _getAudioCtx();
     _bip();
     btn.style.background = 'var(--green-bg)';
     btn.style.borderColor = 'var(--green)';
