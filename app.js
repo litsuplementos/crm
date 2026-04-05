@@ -290,6 +290,8 @@ function _buildFiltroMesSelector() {
     if (i === hoy.getMonth()) o.selected = true;
     sel.appendChild(o);
   });
+  // Inicializar el filtro con el mes actual automáticamente
+  window._filtroMesCustom = `${year}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
 }
 
 // 🎯 OPTIMIZACIÓN 6: Event Delegation
