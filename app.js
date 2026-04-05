@@ -2311,14 +2311,8 @@ async function loadConfigVendidosEditables() {
     const { data: dataFiltro } = await db.from('config')
       .select('valor').eq('clave', 'filtro_tiempo_default').single();
     if (dataFiltro?.valor) {
-      filtroTiempo = dataFiltro.valor;
-      const selFiltro = document.getElementById('filtro-tiempo-global');
-      if (selFiltro) selFiltro.value = filtroTiempo;
-      // Actualizar también el selector de ventas y dashboard
-      ['filtro-tiempo-ventas', 'filtro-tiempo-dash', 'filtro-tiempo-leads'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = filtroTiempo;
-      });
+      // Usar onFiltroTiempoChange para que active todo: label, selector de mes, cache, etc.
+      await onFiltroTiempoChange(dataFiltro.valor);
     }
   } catch(e) {
     console.error('Error cargando config:', e);

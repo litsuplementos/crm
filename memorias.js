@@ -10,7 +10,6 @@ async function renderMemorias() {
 }
 
 async function _ensureBucket() {
-  // Solo verificar acceso — no intentar crear el bucket
   try {
     await db.storage.from(MEMORIAS_BUCKET).list('', { limit: 1 });
   } catch(e) {
@@ -18,32 +17,72 @@ async function _ensureBucket() {
   }
 }
 
+// ── ESTADO INTERNO ────────────────────────────────────────────────────────────
+let _memoriaData = [];
+let _memoriaMes  = '';
+let _memoriaEstadosFiltro = ['todos']; // array de estados seleccionados
+
+const _ESTADOS_LABELS = {
+  todos:        { label: 'Todos',          emoji: '🗂️',  color: '#6366f1' },
+  vendido:      { label: 'Vendido',        emoji: '✅',  color: '#22d3a4' },
+  rellamada:    { label: 'Rellamada',      emoji: '🔁',  color: '#a78bfa' },
+  seguimiento:  { label: 'Seguimiento',    emoji: '🔄',  color: '#60a5fa' },
+  interesado:   { label: 'Interesado',     emoji: '🌟',  color: '#fbbf24' },
+  agendar:      { label: 'Agendar',        emoji: '📅',  color: '#fb923c' },
+  sin_respuesta:{ label: 'Sin respuesta',  emoji: '📵',  color: '#f87171' },
+  no_interesado:{ label: 'No interesado',  emoji: '👎',  color: '#94a3b8' },
+  enviado:      { label: 'Enviado',        emoji: '📦',  color: '#60a5fa' },
+  cancelado:    { label: 'Cancelado',      emoji: '❌',  color: '#f87171' },
+  spam:         { label: 'SPAM',           emoji: '🚫',  color: '#94a3b8' },
+};
+
 // ── UI PRINCIPAL ──────────────────────────────────────────────────────────────
 function _renderMemoriasUI() {
   const wrap = document.getElementById('memorias-wrap');
   if (!wrap) return;
 
-  const hoy = new Date();
+  const hoy  = new Date();
   const meses = [];
   for (let i = 0; i < 24; i++) {
     const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-    // Solo incluir desde Enero 2026
     if (d < new Date(2026, 0, 1)) break;
     meses.push({
       valor: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
       label: d.toLocaleDateString('es-BO', { month: 'long', year: 'numeric' })
-        .replace(/^\w/, c => c.toUpperCase()),
+              .replace(/^\w/, c => c.toUpperCase()),
     });
   }
+
+  // Chips de estado
+  const estadosChips = Object.entries(_ESTADOS_LABELS).map(([k, v]) => {
+    const isActive = _memoriaEstadosFiltro.includes(k);
+    return `
+      <span class="mem-estado-chip ${isActive ? 'active' : ''}"
+        data-estado="${k}"
+        onclick="_toggleEstadoFiltro('${k}')"
+        style="
+          display:inline-flex;align-items:center;gap:5px;
+          padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;
+          cursor:pointer;transition:all 0.18s;
+          border:1.5px solid ${isActive ? v.color : 'var(--border)'};
+          background:${isActive ? v.color + '22' : 'var(--surface2)'};
+          color:${isActive ? v.color : 'var(--text2)'};
+          user-select:none;
+        ">
+        ${v.emoji} ${v.label}
+      </span>`;
+  }).join('');
 
   wrap.innerHTML = `
     <!-- SECCIÓN 1: CREAR RESPALDO -->
     <div class="config-card" id="memoria-seccion-crear">
       <div class="config-card-title">📦 Crear respaldo mensual</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">
-        Selecciona el mes a respaldar. Se exportarán todos los registros creados en ese período.
+        Selecciona el mes y los estados a incluir. Puedes exportar como CSV plano o PDF con diseño.
       </div>
-      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+
+      <!-- Fila: mes + botón preview -->
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px;">
         <div>
           <label style="display:block;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Mes</label>
           <select class="filter-select" id="mem-mes-selector" style="min-width:220px;font-size:14px;" onchange="_onMemMesChange()">
@@ -55,18 +94,47 @@ function _renderMemoriasUI() {
         </button>
       </div>
 
+      <!-- Filtro por estados -->
+      <div style="margin-bottom:6px;">
+        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">
+          Filtrar por estado <span style="color:var(--text3);font-weight:400;">(selecciona uno o varios)</span>
+        </div>
+        <div id="mem-estados-chips" style="display:flex;flex-wrap:wrap;gap:7px;">
+          ${estadosChips}
+        </div>
+      </div>
+
       <!-- Preview -->
-      <div id="mem-preview-wrap" style="display:none;margin-top:20px;">
+      <div id="mem-preview-wrap" style="display:none;margin-top:22px;">
         <div id="mem-preview-stats" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn-save" onclick="_exportarCSVLocal()" id="mem-btn-local" style="background:var(--green);">
-            💾 Descargar en PC
+
+        <!-- Botones de exportar -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-right:4px;">Guardar como:</div>
+
+          <!-- CSV local -->
+          <button class="btn-save" onclick="_exportarCSVLocal()" id="mem-btn-csv-local"
+            style="background:var(--green);display:flex;align-items:center;gap:6px;">
+            💾 CSV — PC
           </button>
-          <button class="btn-save" onclick="_exportarCSVStorage()" id="mem-btn-storage">
-            ☁️ Guardar en Supabase
+          <!-- CSV Supabase -->
+          <button class="btn-save" onclick="_exportarCSVStorage()" id="mem-btn-csv-storage"
+            style="background:var(--blue);display:flex;align-items:center;gap:6px;">
+            ☁️ CSV — Supabase
+          </button>
+          <!-- PDF local -->
+          <button class="btn-save" onclick="_exportarPDFLocal()" id="mem-btn-pdf-local"
+            style="background:var(--accent2);color:#0a0a0f;display:flex;align-items:center;gap:6px;">
+            🖨️ PDF — PC
+          </button>
+          <!-- PDF Supabase -->
+          <button class="btn-save" onclick="_exportarPDFStorage()" id="mem-btn-pdf-storage"
+            style="background:var(--accent);display:flex;align-items:center;gap:6px;">
+            ☁️ PDF — Supabase
           </button>
         </div>
-        <div id="mem-preview-table-wrap" style="margin-top:16px;overflow-x:auto;max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm);">
+
+        <div id="mem-preview-table-wrap" style="margin-top:4px;overflow-x:auto;max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm);">
         </div>
       </div>
     </div>
@@ -77,7 +145,7 @@ function _renderMemoriasUI() {
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
         <button class="btn-secondary" onclick="_cargarRespaldosStorage()">🔄 Actualizar lista</button>
         <label class="btn-secondary" style="cursor:pointer;">
-          📂 Importar desde PC
+          📂 Importar CSV desde PC
           <input type="file" accept=".csv" style="display:none;" onchange="_importarCSVLocal(this)">
         </label>
       </div>
@@ -90,9 +158,9 @@ function _renderMemoriasUI() {
     <div class="config-card" id="memoria-seccion-limpiar" style="border-color:rgba(239,68,68,0.3);">
       <div class="config-card-title" style="color:var(--red);">🗑️ Limpiar registros del mes</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.7;">
-        Elimina permanentemente los registros de <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">ventas</code>, 
-        <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">venta_items</code> y 
-        <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">leads</code> del mes seleccionado arriba.<br>
+        Elimina permanentemente los registros de <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">ventas</code>,
+        <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">venta_items</code> y
+        <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">leads</code> del mes seleccionado.<br>
         <b style="color:var(--text);">La tabla de clientes nunca se toca.</b>
       </div>
       <div id="mem-limpiar-info" style="background:var(--red-bg);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:var(--text2);">
@@ -142,21 +210,62 @@ function _renderMemoriasUI() {
   `;
 }
 
-// ── ESTADO INTERNO ────────────────────────────────────────────────────────────
-let _memoriaData = []; // filas del mes actual
-let _memoriaMes = '';  // "2026-03"
+// ── TOGGLE ESTADO FILTRO ──────────────────────────────────────────────────────
+function _toggleEstadoFiltro(estado) {
+  if (estado === 'todos') {
+    _memoriaEstadosFiltro = ['todos'];
+  } else {
+    // Quitar 'todos' si estaba
+    _memoriaEstadosFiltro = _memoriaEstadosFiltro.filter(e => e !== 'todos');
+    if (_memoriaEstadosFiltro.includes(estado)) {
+      _memoriaEstadosFiltro = _memoriaEstadosFiltro.filter(e => e !== estado);
+      if (_memoriaEstadosFiltro.length === 0) _memoriaEstadosFiltro = ['todos'];
+    } else {
+      _memoriaEstadosFiltro.push(estado);
+    }
+  }
 
+  // Redibujar chips
+  const chipsWrap = document.getElementById('mem-estados-chips');
+  if (!chipsWrap) return;
+  chipsWrap.querySelectorAll('.mem-estado-chip').forEach(chip => {
+    const k = chip.dataset.estado;
+    const v = _ESTADOS_LABELS[k];
+    const isActive = _memoriaEstadosFiltro.includes(k);
+    chip.style.border = `1.5px solid ${isActive ? v.color : 'var(--border)'}`;
+    chip.style.background = isActive ? v.color + '22' : 'var(--surface2)';
+    chip.style.color = isActive ? v.color : 'var(--text2)';
+  });
+
+  // Resetear preview si ya hay datos
+  if (_memoriaData.length > 0) {
+    _actualizarPreviewConFiltro();
+  }
+}
+
+// Aplica filtro de estado a _memoriaData y redibuja stats + tabla
+function _actualizarPreviewConFiltro() {
+  const filtrados = _getDataFiltrada();
+  _renderPreviewStats(filtrados);
+  document.getElementById('mem-preview-table-wrap').innerHTML =
+    _buildPreviewTable(filtrados.slice(0, 20), filtrados.length > 20);
+}
+
+function _getDataFiltrada() {
+  if (_memoriaEstadosFiltro.includes('todos')) return _memoriaData;
+  return _memoriaData.filter(r => _memoriaEstadosFiltro.includes(r.estado));
+}
+
+// ── GENERAR PREVIEW ───────────────────────────────────────────────────────────
 function _onMemMesChange() {
-  // Al cambiar mes, limpiar preview y deshabilitar limpiar
   document.getElementById('mem-preview-wrap').style.display = 'none';
   _memoriaData = [];
   const btn = document.getElementById('mem-btn-limpiar');
   if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed'; }
-  document.getElementById('mem-limpiar-info').innerHTML =
-    'Primero previsualiza un mes para habilitar la limpieza.';
+  const info = document.getElementById('mem-limpiar-info');
+  if (info) info.innerHTML = 'Primero previsualiza un mes para habilitar la limpieza.';
 }
 
-// ── GENERAR PREVIEW ───────────────────────────────────────────────────────────
 async function _generarPreviewMemoria() {
   const mes = document.getElementById('mem-mes-selector').value;
   if (!mes) return;
@@ -168,9 +277,8 @@ async function _generarPreviewMemoria() {
 
   try {
     const [year, month] = mes.split('-').map(Number);
-    // Usar fechas locales para evitar desfase de zona horaria
     const desdeStr = `${year}-${String(month).padStart(2,'0')}-01`;
-    const hasta = new Date(year, month, 1); // primer día del mes siguiente
+    const hasta    = new Date(year, month, 1);
     const hastaStr = `${hasta.getFullYear()}-${String(hasta.getMonth()+1).padStart(2,'0')}-01`;
 
     const { data: ventasData, error } = await db.from('ventas')
@@ -178,10 +286,8 @@ async function _generarPreviewMemoria() {
         id, created_at, fecha, estado, intentos, notas,
         monto_total, descuento_pct, archivado,
         cliente:cliente_id ( celular, nombre, ubicacion ),
-        agente:agente_id ( nombre ),
-        venta_items ( id, cantidad, subtotal, producto_id,
-          productos ( nombre )
-        )
+        agente:agente_id   ( nombre ),
+        venta_items ( id, cantidad, subtotal, producto_id, productos ( nombre ) )
       `)
       .gte('fecha', desdeStr)
       .lt('fecha', hastaStr)
@@ -189,97 +295,58 @@ async function _generarPreviewMemoria() {
 
     if (error) throw error;
 
-    // Aplanar: una fila por venta_item
+    // Aplanar
     _memoriaData = [];
     for (const v of (ventasData || [])) {
       const items = v.venta_items?.length > 0 ? v.venta_items : [null];
       for (const it of items) {
         _memoriaData.push({
-          fecha_creacion:  v.created_at ? v.created_at.slice(0, 10) : '',
-          fecha_registro:  v.fecha || '',
-          cliente:         v.cliente?.nombre || 's/n',
-          celular:         v.cliente?.celular || '',
-          ubicacion:       v.cliente?.ubicacion || '',
-          producto:        it?.productos?.nombre || '—',
-          cantidad:        it?.cantidad ?? '',
-          subtotal:        it?.subtotal ?? '',
-          monto_total:     v.monto_total ?? '',
-          descuento_pct:   v.descuento_pct ?? 0,
-          estado:          v.estado || '',
-          archivado:       v.archivado ? 'Sí' : 'No',
-          notas:           v.notas || '',
-          agente:          v.agente?.nombre || '',
-          venta_id:        v.id,
+          fecha_creacion: v.created_at ? v.created_at.slice(0, 10) : '',
+          fecha_registro: v.fecha || '',
+          cliente:        v.cliente?.nombre || 's/n',
+          celular:        v.cliente?.celular || '',
+          ubicacion:      v.cliente?.ubicacion || '',
+          producto:       it?.productos?.nombre || '—',
+          cantidad:       it?.cantidad ?? '',
+          subtotal:       it?.subtotal ?? '',
+          monto_total:    v.monto_total ?? '',
+          descuento_pct:  v.descuento_pct ?? 0,
+          estado:         v.estado || '',
+          archivado:      v.archivado ? 'Sí' : 'No',
+          notas:          v.notas || '',
+          agente:         v.agente?.nombre || '',
+          venta_id:       v.id,
         });
       }
     }
 
-    if (_memoriaData.length === 0) {
-      document.getElementById('mem-preview-stats').innerHTML = `
-        <div style="color:var(--text3);font-size:13px;padding:8px 0;">
-          Sin registros en este período.
-        </div>`;
+    const filtrados = _getDataFiltrada();
+
+    if (filtrados.length === 0) {
+      document.getElementById('mem-preview-stats').innerHTML =
+        `<div style="color:var(--text3);font-size:13px;padding:8px 0;">Sin registros en este período con los estados seleccionados.</div>`;
       document.getElementById('mem-preview-table-wrap').innerHTML = '';
       document.getElementById('mem-preview-wrap').style.display = '';
-      // Deshabilitar botones de exportar
-      document.getElementById('mem-btn-local').disabled = true;
-      document.getElementById('mem-btn-storage').disabled = true;
-      document.getElementById('mem-btn-local').style.opacity = '0.4';
-      document.getElementById('mem-btn-storage').style.opacity = '0.4';
+      _deshabilitarBotonesExportar();
       return;
     }
 
-    // Habilitar botones
-    document.getElementById('mem-btn-local').disabled = false;
-    document.getElementById('mem-btn-storage').disabled = false;
-    document.getElementById('mem-btn-local').style.opacity = '';
-    document.getElementById('mem-btn-storage').style.opacity = '';
-
-    // Stats
-    const ventasUnicas = new Set(_memoriaData.map(r => r.venta_id)).size;
-    const totalUnidades = _memoriaData.reduce((s, r) => s + (parseInt(r.cantidad) || 0), 0);
-    const montoTotal = [...new Set(_memoriaData.map(r => r.venta_id))]
-      .filter(id => _memoriaData.find(r => r.venta_id === id)?.estado === 'vendido')
-      .reduce((s, id) => {
-        const row = _memoriaData.find(r => r.venta_id === id);
-        return s + (parseFloat(row?.monto_total) || 0);
-      }, 0);
-
-    document.getElementById('mem-preview-stats').innerHTML = `
-      <div class="stat-card" style="flex:1;min-width:120px;padding:12px 16px;">
-        <div class="stat-value" style="font-size:24px;color:var(--accent2);">${ventasUnicas}</div>
-        <div class="stat-label">REGISTROS</div>
-      </div>
-      <div class="stat-card" style="flex:1;min-width:120px;padding:12px 16px;">
-        <div class="stat-value" style="font-size:24px;color:var(--blue);">${totalUnidades}</div>
-        <div class="stat-label">UNIDADES</div>
-      </div>
-      <div class="stat-card" style="flex:1;min-width:120px;padding:12px 16px;">
-        <div class="stat-value" style="font-size:24px;color:var(--green);">Bs.${montoTotal.toFixed(0)}</div>
-        <div class="stat-label">MONTO TOTAL</div>
-      </div>
-      <div class="stat-card" style="flex:1;min-width:120px;padding:12px 16px;">
-        <div class="stat-value" style="font-size:24px;color:var(--text2);">${_memoriaData.length}</div>
-        <div class="stat-label">FILAS CSV</div>
-      </div>
-    `;
-
+    _habilitarBotonesExportar();
+    _renderPreviewStats(filtrados);
     document.getElementById('mem-preview-table-wrap').innerHTML =
-      _buildPreviewTable(_memoriaData.slice(0, 20), _memoriaData.length > 20);
+      _buildPreviewTable(filtrados.slice(0, 20), filtrados.length > 20);
     document.getElementById('mem-preview-wrap').style.display = '';
 
-    // Habilitar limpieza
+    // Habilitar limpieza (siempre sobre datos completos del mes)
+    const ventasUnicasTotal = new Set(_memoriaData.map(r => r.venta_id)).size;
     const [d1, d2] = _getRangoMes(mes);
     document.getElementById('mem-limpiar-info').innerHTML = `
-      <b style="color:var(--red);">Se eliminarán ${ventasUnicas} registros de ventas</b> creados entre 
-      <b>${d1.toLocaleDateString('es-BO')}</b> y 
-      <b>${new Date(d2.getTime()-1).toLocaleDateString('es-BO')}</b>.
+      <b style="color:var(--red);">Se eliminarán ${ventasUnicasTotal} registros de ventas</b> del mes completo
+      (<b>${d1.toLocaleDateString('es-BO')}</b> al <b>${new Date(d2.getTime()-1).toLocaleDateString('es-BO')}</b>).
       También se limpiarán sus items y los leads del mismo período.
     `;
     const btnL = document.getElementById('mem-btn-limpiar');
-    btnL.disabled = false;
-    btnL.style.opacity = '';
-    btnL.style.cursor = '';
+    btnL.disabled = false; btnL.style.opacity = ''; btnL.style.cursor = '';
 
   } catch(e) {
     toast('❌ Error generando preview: ' + e.message, 'error');
@@ -290,17 +357,60 @@ async function _generarPreviewMemoria() {
   }
 }
 
+function _deshabilitarBotonesExportar() {
+  ['mem-btn-csv-local','mem-btn-csv-storage','mem-btn-pdf-local','mem-btn-pdf-storage'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) { b.disabled = true; b.style.opacity = '0.4'; }
+  });
+}
+function _habilitarBotonesExportar() {
+  ['mem-btn-csv-local','mem-btn-csv-storage','mem-btn-pdf-local','mem-btn-pdf-storage'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) { b.disabled = false; b.style.opacity = ''; }
+  });
+}
+
+function _renderPreviewStats(filtrados) {
+  const ventasUnicas  = new Set(filtrados.map(r => r.venta_id)).size;
+  const totalUnidades = filtrados.reduce((s, r) => s + (parseInt(r.cantidad) || 0), 0);
+  const montoTotal    = [...new Set(filtrados.map(r => r.venta_id))]
+    .filter(id => filtrados.find(r => r.venta_id === id)?.estado === 'vendido')
+    .reduce((s, id) => {
+      const row = filtrados.find(r => r.venta_id === id);
+      return s + (parseFloat(row?.monto_total) || 0);
+    }, 0);
+  const tieneVendidos = filtrados.some(r => r.estado === 'vendido');
+
+  document.getElementById('mem-preview-stats').innerHTML = `
+    <div class="stat-card" style="flex:1;min-width:110px;padding:12px 16px;">
+      <div class="stat-value" style="font-size:22px;color:var(--accent2);">${ventasUnicas}</div>
+      <div class="stat-label">REGISTROS</div>
+    </div>
+    <div class="stat-card" style="flex:1;min-width:110px;padding:12px 16px;">
+      <div class="stat-value" style="font-size:22px;color:var(--blue);">${totalUnidades}</div>
+      <div class="stat-label">UNIDADES</div>
+    </div>
+    ${tieneVendidos ? `
+    <div class="stat-card" style="flex:1;min-width:110px;padding:12px 16px;">
+      <div class="stat-value" style="font-size:22px;color:var(--green);">Bs.${montoTotal.toFixed(0)}</div>
+      <div class="stat-label">MONTO VENDIDO</div>
+    </div>` : ''}
+    <div class="stat-card" style="flex:1;min-width:110px;padding:12px 16px;">
+      <div class="stat-value" style="font-size:22px;color:var(--text2);">${filtrados.length}</div>
+      <div class="stat-label">FILAS</div>
+    </div>
+  `;
+}
+
 function _getRangoMes(mes) {
   const [year, month] = mes.split('-').map(Number);
-  const desde = new Date(year, month - 1, 1);
-  const hasta = new Date(year, month, 1);
-  return [desde, hasta];
+  return [new Date(year, month - 1, 1), new Date(year, month, 1)];
 }
 
 function _buildPreviewTable(rows, truncated) {
-  if (rows.length === 0) return '<p style="color:var(--text3);padding:16px;font-size:13px;">Sin registros en este período.</p>';
-  const cols = ['fecha_creacion','fecha_registro','cliente','celular','ubicacion','producto','cantidad','subtotal','monto_total','descuento_pct','estado','archivado','notas','agente'];
-  const headers = ['Creado','Fecha','Cliente','Celular','Ubicación','Producto','Cant.','Subtotal','Monto','Desc.%','Estado','Archivado','Notas','Agente'];
+  if (rows.length === 0) return '<p style="color:var(--text3);padding:16px;font-size:13px;">Sin registros.</p>';
+  const cols    = ['fecha_registro','cliente','celular','ubicacion','producto','cantidad','subtotal','monto_total','descuento_pct','estado','archivado','notas','agente'];
+  const headers = ['Fecha','Cliente','Celular','Ubicación','Producto','Cant.','Subtotal','Monto','Desc.%','Estado','Arch.','Notas','Agente'];
   return `
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead>
@@ -308,53 +418,310 @@ function _buildPreviewTable(rows, truncated) {
       </thead>
       <tbody>
         ${rows.map(r => `<tr style="border-bottom:1px solid var(--border);">
-          ${cols.map(c => `<td style="padding:6px 10px;color:var(--text2);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;" title="${r[c]||''}">${r[c]??''}</td>`).join('')}
+          ${cols.map(c => `<td style="padding:6px 10px;color:var(--text2);white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis;" title="${r[c]??''}">${r[c]??''}</td>`).join('')}
         </tr>`).join('')}
-        ${truncated ? `<tr><td colspan="${cols.length}" style="padding:10px;text-align:center;color:var(--text3);font-size:12px;">… mostrando primeras 20 filas. El CSV tendrá todas.</td></tr>` : ''}
+        ${truncated ? `<tr><td colspan="${cols.length}" style="padding:10px;text-align:center;color:var(--text3);font-size:12px;">… mostrando primeras 20 filas. El archivo tendrá todas.</td></tr>` : ''}
       </tbody>
     </table>`;
 }
 
-// ── EXPORTAR CSV ──────────────────────────────────────────────────────────────
+// ── CSV ───────────────────────────────────────────────────────────────────────
 function _buildCSV(rows) {
-  const cols = ['fecha_creacion','fecha_registro','cliente','celular','ubicacion','producto','cantidad','subtotal','monto_total','descuento_pct','estado','archivado','notas','agente'];
+  const cols    = ['fecha_creacion','fecha_registro','cliente','celular','ubicacion','producto','cantidad','subtotal','monto_total','descuento_pct','estado','archivado','notas','agente'];
   const headers = ['Fecha Creacion','Fecha Registro','Cliente','Celular','Ubicacion','Producto','Cantidad','Subtotal','Monto Total','Descuento %','Estado','Archivado','Notas','Agente'];
-  const escape = v => `"${(v ?? '').toString().replace(/"/g, '""')}"`;
-  return [
-    headers.join(','),
-    ...rows.map(r => cols.map(c => escape(r[c])).join(','))
-  ].join('\n');
+  const escape  = v => `"${(v ?? '').toString().replace(/"/g, '""')}"`;
+  return [headers.join(','), ...rows.map(r => cols.map(c => escape(r[c])).join(','))].join('\n');
 }
 
 function _exportarCSVLocal() {
-  if (_memoriaData.length === 0) { toast('⚠️ Primero genera el preview', 'error'); return; }
-  const csv = _buildCSV(_memoriaData);
+  const filtrados = _getDataFiltrada();
+  if (filtrados.length === 0) { toast('⚠️ Primero genera el preview', 'error'); return; }
+  const csv  = _buildCSV(filtrados);
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `memoria_${_memoriaMes}.csv`;
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `memoria_${_memoriaMes}${_sufijoDeFiltro()}.csv`;
   a.click();
   toast('💾 CSV descargado', 'success');
 }
 
 async function _exportarCSVStorage() {
-  if (_memoriaData.length === 0) { toast('⚠️ Primero genera el preview', 'error'); return; }
-  const btn = document.getElementById('mem-btn-storage');
-  btn.textContent = '⏳ Subiendo...';
-  btn.disabled = true;
+  const filtrados = _getDataFiltrada();
+  if (filtrados.length === 0) { toast('⚠️ Primero genera el preview', 'error'); return; }
+  const btn = document.getElementById('mem-btn-csv-storage');
+  btn.textContent = '⏳ Subiendo...'; btn.disabled = true;
   try {
-    const csv = _buildCSV(_memoriaData);
+    const csv  = _buildCSV(filtrados);
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-    const path = `${_memoriaMes}.csv`;
+    const path = `${_memoriaMes}${_sufijoDeFiltro()}.csv`;
     const { error } = await db.storage.from(MEMORIAS_BUCKET).upload(path, blob, { upsert: true, contentType: 'text/csv' });
     if (error) throw error;
-    toast('☁️ Guardado en Supabase Storage', 'success');
+    toast('☁️ CSV guardado en Supabase', 'success');
     await _cargarRespaldosStorage();
   } catch(e) {
     toast('❌ Error subiendo: ' + e.message, 'error');
   } finally {
-    btn.textContent = '☁️ Guardar en Supabase';
-    btn.disabled = false;
+    btn.textContent = '☁️ CSV — Supabase'; btn.disabled = false;
+  }
+}
+
+function _sufijoDeFiltro() {
+  if (_memoriaEstadosFiltro.includes('todos')) return '';
+  return '_' + _memoriaEstadosFiltro.join('-');
+}
+
+// ── PDF ───────────────────────────────────────────────────────────────────────
+// Genera el PDF como Uint8Array usando canvas + jsPDF (cargado dinámicamente)
+async function _cargarJsPDF() {
+  if (window.jspdf) return window.jspdf.jsPDF;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload = () => resolve(window.jspdf.jsPDF);
+    s.onerror = () => reject(new Error('No se pudo cargar jsPDF'));
+    document.head.appendChild(s);
+  });
+}
+
+async function _construirPDF() {
+  const filtrados = _getDataFiltrada();
+  if (filtrados.length === 0) { toast('⚠️ Sin datos para exportar', 'error'); return null; }
+
+  const JsPDF = await _cargarJsPDF();
+  const doc   = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const W     = doc.internal.pageSize.getWidth();
+  const H     = doc.internal.pageSize.getHeight();
+
+  // ── Paleta ──
+  const C = {
+    bg:      [10,  10,  20],
+    surface: [20,  20,  38],
+    accent:  [99,  102, 241],  // indigo
+    green:   [34,  211, 164],
+    yellow:  [251, 191, 36],
+    red:     [248, 113, 113],
+    blue:    [96,  165, 250],
+    text:    [230, 230, 255],
+    text2:   [140, 140, 180],
+    border:  [40,  40,  65],
+    white:   [255, 255, 255],
+  };
+
+  const estadoColor = {
+    vendido:       C.green,
+    rellamada:     [167,139,250],
+    seguimiento:   C.blue,
+    interesado:    C.yellow,
+    agendar:       [251,146,60],
+    sin_respuesta: C.red,
+    no_interesado: C.text2,
+    enviado:       C.blue,
+    cancelado:     C.red,
+    spam:          C.text2,
+  };
+
+  // ── Helpers ──
+  const setFill  = c => doc.setFillColor(c[0], c[1], c[2]);
+  const setStroke= c => doc.setDrawColor(c[0], c[1], c[2]);
+  const setTextC = c => doc.setTextColor(c[0], c[1], c[2]);
+  const rect     = (x,y,w,h,r=0) => r ? doc.roundedRect(x,y,w,h,r,r,'F') : doc.rect(x,y,w,h,'F');
+
+  // ── Fondo oscuro ──
+  setFill(C.bg); rect(0, 0, W, H);
+
+  // ── Header band ──
+  setFill(C.surface); rect(0, 0, W, 22);
+  // Acento izquierdo
+  setFill(C.accent); rect(0, 0, 4, 22);
+
+  // Logo
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(14);
+  setTextC(C.white);
+  doc.text('LIT CRM', 9, 14);
+  doc.setFontSize(8);
+  setTextC(C.accent);
+  // Convertir accent a hex para el círculo
+  doc.text('PRO', 28, 10);
+
+  // Título
+  const [year, month] = _memoriaMes.split('-').map(Number);
+  const mesLabel = new Date(year, month-1, 1).toLocaleDateString('es-BO', { month:'long', year:'numeric' }).replace(/^\w/,c=>c.toUpperCase());
+  const filtroLabel = _memoriaEstadosFiltro.includes('todos') ? 'Todos los estados' :
+    _memoriaEstadosFiltro.map(e => _ESTADOS_LABELS[e]?.label || e).join(', ');
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(13);
+  setTextC(C.white);
+  doc.text(`Memoria — ${mesLabel}`, W/2, 10, { align:'center' });
+  doc.setFontSize(7);
+  setTextC(C.text2);
+  doc.text(`Filtro: ${filtroLabel}`, W/2, 16, { align:'center' });
+
+  // Fecha generación
+  doc.setFontSize(7);
+  setTextC(C.text2);
+  doc.text(`Generado: ${new Date().toLocaleString('es-BO')}`, W-6, 10, { align:'right' });
+
+  // ── Stats cards ──
+  const ventasUnicas  = new Set(filtrados.map(r => r.venta_id)).size;
+  const totalUnidades = filtrados.reduce((s,r) => s+(parseInt(r.cantidad)||0), 0);
+  const montoTotal    = [...new Set(filtrados.map(r=>r.venta_id))]
+    .filter(id => filtrados.find(r=>r.venta_id===id)?.estado==='vendido')
+    .reduce((s,id) => s+(parseFloat(filtrados.find(r=>r.venta_id===id)?.monto_total)||0), 0);
+  const tieneVendidos = filtrados.some(r => r.estado==='vendido');
+
+  const stats = [
+    { label:'REGISTROS', value: ventasUnicas, color: C.accent },
+    { label:'UNIDADES',  value: totalUnidades,  color: C.blue  },
+    ...(tieneVendidos ? [{ label:'MONTO VENDIDO', value:`Bs.${montoTotal.toFixed(0)}`, color:C.green }] : []),
+    { label:'FILAS CSV', value: filtrados.length, color: C.text2 },
+  ];
+
+  const cardW = 40, cardH = 18, cardGap = 6;
+  const statsStartX = 6;
+  let sx = statsStartX;
+  const sy = 26;
+
+  stats.forEach(st => {
+    setFill(C.surface); doc.roundedRect(sx, sy, cardW, cardH, 2, 2, 'F');
+    setFill(st.color);  doc.roundedRect(sx, sy, 3, cardH, 1, 1, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(14);
+    setTextC(st.color);
+    doc.text(String(st.value), sx + 7, sy + 11);
+    doc.setFontSize(6);
+    setTextC(C.text2);
+    doc.text(st.label, sx + 7, sy + 16);
+    sx += cardW + cardGap;
+  });
+
+  // ── Tabla ──
+  const tableTop = sy + cardH + 6;
+  const cols = ['Fecha','Cliente','Celular','Ubicación','Producto','Cant.','Monto','Estado','Agente','Notas'];
+  const keys = ['fecha_registro','cliente','celular','ubicacion','producto','cantidad','monto_total','estado','agente','notas'];
+  const colW = [18, 32, 22, 30, 28, 10, 18, 22, 22, 50]; // suma ~252 ≈ landscape A4 interior
+  const rowH  = 7;
+  const thH   = 8;
+
+  // Header de tabla
+  setFill(C.surface);
+  rect(6, tableTop, W-12, thH);
+  setFill(C.accent);
+  rect(6, tableTop, W-12, 1.2);
+
+  let cx = 6;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(6.5);
+  setTextC(C.accent);
+  cols.forEach((c, i) => {
+    doc.text(c.toUpperCase(), cx + 2, tableTop + 5.5);
+    cx += colW[i];
+  });
+
+  // Filas
+  let y = tableTop + thH;
+  let page = 1;
+
+  filtrados.forEach((row, ri) => {
+    if (y + rowH > H - 10) {
+      doc.addPage();
+      setFill(C.bg); rect(0, 0, W, H);
+      // mini header en páginas siguientes
+      setFill(C.surface); rect(0,0,W,10);
+      setFill(C.accent);  rect(0,0,4,10);
+      doc.setFont('helvetica','bold'); doc.setFontSize(7); setTextC(C.text2);
+      doc.text(`LIT CRM · Memoria ${mesLabel} · pág. ${++page}`, W/2, 7, {align:'center'});
+      y = 14;
+    }
+
+    const isEven = ri % 2 === 0;
+    setFill(isEven ? C.surface : C.bg);
+    rect(6, y, W-12, rowH);
+
+    // Línea izquierda de estado
+    const ec = estadoColor[row.estado] || C.text2;
+    setFill(ec); rect(6, y, 1.5, rowH);
+
+    cx = 6;
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(6.2);
+    keys.forEach((k, i) => {
+      let val = String(row[k] ?? '');
+      if (k === 'monto_total' && val) val = `Bs.${parseFloat(val).toFixed(0)}`;
+      if (k === 'estado') {
+        setTextC(ec);
+        const eLabel = _ESTADOS_LABELS[val]?.label || val;
+        doc.text(_truncate(eLabel, colW[i]-3), cx + 3, y + 5);
+        setTextC(C.text);
+      } else {
+        setTextC(C.text);
+        doc.text(_truncate(val, colW[i]-3), cx + 3, y + 5);
+      }
+      cx += colW[i];
+    });
+
+    // Separador
+    setStroke(C.border);
+    doc.setLineWidth(0.1);
+    doc.line(6, y + rowH, W-6, y + rowH);
+
+    y += rowH;
+  });
+
+  // ── Footer ──
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    setFill(C.surface); rect(0, H-8, W, 8);
+    setFill(C.accent);  rect(0, H-1, W, 1);
+    doc.setFont('helvetica','normal'); doc.setFontSize(6); setTextC(C.text2);
+    doc.text(`LIT CRM · ${mesLabel} · ${filtroLabel}`, 8, H-3);
+    doc.text(`Pág. ${p} / ${totalPages}`, W-8, H-3, {align:'right'});
+  }
+
+  return doc;
+}
+
+function _truncate(str, maxMm) {
+  // Estimación rápida: ~0.42 mm por carácter a 6pt
+  const max = Math.floor(maxMm / 0.42);
+  if (!str) return '';
+  return str.length > max ? str.slice(0, max-1) + '…' : str;
+}
+
+async function _exportarPDFLocal() {
+  const btn = document.getElementById('mem-btn-pdf-local');
+  btn.textContent = '⏳ Generando...'; btn.disabled = true;
+  try {
+    const doc = await _construirPDF();
+    if (!doc) return;
+    doc.save(`memoria_${_memoriaMes}${_sufijoDeFiltro()}.pdf`);
+    toast('🖨️ PDF descargado', 'success');
+  } catch(e) {
+    toast('❌ Error PDF: ' + e.message, 'error'); console.error(e);
+  } finally {
+    btn.textContent = '🖨️ PDF — PC'; btn.disabled = false;
+  }
+}
+
+async function _exportarPDFStorage() {
+  const btn = document.getElementById('mem-btn-pdf-storage');
+  btn.textContent = '⏳ Subiendo...'; btn.disabled = true;
+  try {
+    const doc = await _construirPDF();
+    if (!doc) return;
+    const pdfBytes = doc.output('arraybuffer');
+    const blob     = new Blob([pdfBytes], { type: 'application/pdf' });
+    const path     = `${_memoriaMes}${_sufijoDeFiltro()}.pdf`;
+    const { error } = await db.storage.from(MEMORIAS_BUCKET).upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+    if (error) throw error;
+    toast('☁️ PDF guardado en Supabase', 'success');
+    await _cargarRespaldosStorage();
+  } catch(e) {
+    toast('❌ Error subiendo PDF: ' + e.message, 'error'); console.error(e);
+  } finally {
+    btn.textContent = '☁️ PDF — Supabase'; btn.disabled = false;
   }
 }
 
@@ -365,7 +732,7 @@ async function _cargarRespaldosStorage() {
   try {
     const { data, error } = await db.storage.from(MEMORIAS_BUCKET).list('', { sortBy: { column: 'name', order: 'desc' } });
     if (error) throw error;
-    const archivos = (data || []).filter(f => f.name.endsWith('.csv'));
+    const archivos = (data || []).filter(f => f.name.endsWith('.csv') || f.name.endsWith('.pdf'));
     if (archivos.length === 0) {
       listEl.innerHTML = '<p style="color:var(--text3);font-size:13px;">Sin respaldos guardados aún.</p>';
       return;
@@ -373,25 +740,39 @@ async function _cargarRespaldosStorage() {
     listEl.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:8px;">
         ${archivos.map(f => {
-          const label = f.name.replace('.csv', '');
-          const [yr, mo] = label.split('-');
-          const fecha = yr && mo ? new Date(parseInt(yr), parseInt(mo)-1, 1).toLocaleDateString('es-BO',{month:'long',year:'numeric'}).replace(/^\w/,c=>c.toUpperCase()) : label;
+          const isPdf = f.name.endsWith('.pdf');
+          const base  = f.name.replace(/\.(csv|pdf)$/, '');
+          const [yr, mo] = base.split('-');
+          const fechaLabel = yr && mo ? new Date(parseInt(yr), parseInt(mo)-1, 1)
+            .toLocaleDateString('es-BO',{month:'long',year:'numeric'})
+            .replace(/^\w/,c=>c.toUpperCase()) : base;
           const size = f.metadata?.size ? `${(f.metadata.size/1024).toFixed(1)} KB` : '';
+          const icon = isPdf ? '📄' : '📊';
+          const badge = isPdf
+            ? `<span style="background:rgba(99,102,241,0.15);border:1px solid #6366f1;color:#a5b4fc;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">PDF</span>`
+            : `<span style="background:rgba(34,211,164,0.15);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">CSV</span>`;
           return `
           <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;">
-            <div>
-              <div style="font-weight:600;font-size:14px;">📅 ${fecha}</div>
-              <div style="font-size:11px;color:var(--text3);margin-top:2px;">${f.name} ${size ? '· ' + size : ''}</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:20px;">${icon}</span>
+              <div>
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;">
+                  <span style="font-weight:600;font-size:14px;">${fechaLabel}</span>
+                  ${badge}
+                </div>
+                <div style="font-size:11px;color:var(--text3);">${f.name}${size ? ' · ' + size : ''}</div>
+              </div>
             </div>
             <div style="display:flex;gap:6px;">
-              <button class="icon-btn" onclick="_verRespaldoStorage('${f.name}')" title="Ver">👁️</button>
+              ${isPdf ? `<button class="icon-btn" onclick="_verPDFStorage('${f.name}')" title="Ver">👁️</button>` :
+                        `<button class="icon-btn" onclick="_verRespaldoStorage('${f.name}')" title="Ver">👁️</button>`}
               <button class="icon-btn" onclick="_descargarRespaldoStorage('${f.name}')" title="Descargar">💾</button>
             </div>
           </div>`;
         }).join('')}
       </div>`;
   } catch(e) {
-    listEl.innerHTML = `<p style="color:var(--red);font-size:13px;">Error cargando lista: ${e.message}</p>`;
+    listEl.innerHTML = `<p style="color:var(--text3);font-size:13px;">Sin respaldos aún.</p>`;
   }
 }
 
@@ -401,23 +782,29 @@ async function _verRespaldoStorage(nombre) {
     if (error) throw error;
     const text = await data.text();
     _mostrarCSVEnModal(text, nombre);
-  } catch(e) {
-    toast('❌ Error descargando: ' + e.message, 'error');
-  }
+  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
+}
+
+async function _verPDFStorage(nombre) {
+  try {
+    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(nombre);
+    if (error) throw error;
+    const url = URL.createObjectURL(data);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
 }
 
 async function _descargarRespaldoStorage(nombre) {
   try {
     const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(nombre);
     if (error) throw error;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(data);
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(data);
     a.download = nombre;
     a.click();
     toast('💾 Descargado', 'success');
-  } catch(e) {
-    toast('❌ Error: ' + e.message, 'error');
-  }
+  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
 }
 
 function _importarCSVLocal(input) {
@@ -433,31 +820,23 @@ function _mostrarCSVEnModal(csvText, titulo) {
   const lines = csvText.replace(/^\uFEFF/, '').trim().split('\n');
   if (lines.length < 2) { toast('⚠️ CSV vacío', 'error'); return; }
   const parseRow = line => {
-    const result = [];
-    let cur = '', inQ = false;
+    const result = []; let cur = '', inQ = false;
     for (const ch of line) {
       if (ch === '"') { inQ = !inQ; }
       else if (ch === ',' && !inQ) { result.push(cur); cur = ''; }
       else cur += ch;
     }
     result.push(cur);
-    return result.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"'));
+    return result.map(v => v.replace(/^"|"$/g,'').replace(/""/g,'"'));
   };
   const headers = parseRow(lines[0]);
-  const rows = lines.slice(1).map(parseRow);
-
+  const rows    = lines.slice(1).map(parseRow);
   document.getElementById('mem-csv-modal-title').textContent = `📋 ${titulo} — ${rows.length} filas`;
   document.getElementById('mem-csv-modal-body').innerHTML = `
     <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
-        <thead>
-          <tr>${headers.map(h => `<th style="background:var(--surface2);padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);white-space:nowrap;">${h}</th>`).join('')}</tr>
-        </thead>
-        <tbody>
-          ${rows.map(r => `<tr style="border-bottom:1px solid var(--border);">
-            ${r.map(v => `<td style="padding:6px 10px;color:var(--text2);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${v}">${v}</td>`).join('')}
-          </tr>`).join('')}
-        </tbody>
+        <thead><tr>${headers.map(h=>`<th style="background:var(--surface2);padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);white-space:nowrap;">${h}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r=>`<tr style="border-bottom:1px solid var(--border);">${r.map(v=>`<td style="padding:6px 10px;color:var(--text2);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${v}">${v}</td>`).join('')}</tr>`).join('')}</tbody>
       </table>
     </div>`;
   document.getElementById('mem-csv-modal').classList.add('open');
@@ -467,10 +846,9 @@ function _mostrarCSVEnModal(csvText, titulo) {
 function _confirmarLimpieza() {
   if (!_memoriaMes) return;
   const [d1, d2] = _getRangoMes(_memoriaMes);
-  const label = d1.toLocaleDateString('es-BO', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase());
-
+  const label = d1.toLocaleDateString('es-BO', { month:'long', year:'numeric' }).replace(/^\w/,c=>c.toUpperCase());
   document.getElementById('mem-confirm-detalle').innerHTML = `
-    Estás por eliminar <b style="color:var(--red);">permanentemente</b> todos los registros de ventas, 
+    Estás por eliminar <b style="color:var(--red);">permanentemente</b> todos los registros de ventas,
     items y leads creados en <b>${label}</b>
     (del ${d1.toLocaleDateString('es-BO')} al ${new Date(d2.getTime()-1).toLocaleDateString('es-BO')}).<br><br>
     <b style="color:var(--text);">La tabla de clientes NO se toca.</b><br>
@@ -479,13 +857,9 @@ function _confirmarLimpieza() {
   document.getElementById('mem-confirm-input').value = '';
   document.getElementById('mem-confirm-error').style.display = 'none';
   document.getElementById('mem-confirm-modal').classList.add('open');
-
   document.getElementById('mem-confirm-btn').onclick = async () => {
     const typed = document.getElementById('mem-confirm-input').value.trim();
-    if (typed !== _memoriaMes) {
-      document.getElementById('mem-confirm-error').style.display = '';
-      return;
-    }
+    if (typed !== _memoriaMes) { document.getElementById('mem-confirm-error').style.display = ''; return; }
     document.getElementById('mem-confirm-modal').classList.remove('open');
     await _ejecutarLimpieza();
   };
@@ -493,67 +867,44 @@ function _confirmarLimpieza() {
 
 async function _ejecutarLimpieza() {
   const [desde, hasta] = _getRangoMes(_memoriaMes);
-  const desdeISO = desde.toISOString();
-  const hastaISO = hasta.toISOString();
+  const desdeStr = `${desde.getFullYear()}-${String(desde.getMonth()+1).padStart(2,'0')}-01`;
+  const hastaStr = `${hasta.getFullYear()}-${String(hasta.getMonth()+1).padStart(2,'0')}-01`;
 
   const btn = document.getElementById('mem-btn-limpiar');
-  btn.textContent = '⏳ Limpiando...';
-  btn.disabled = true;
+  btn.textContent = '⏳ Limpiando...'; btn.disabled = true;
 
   try {
-    // 1. Obtener IDs de ventas del mes
+    // Obtener IDs por fecha (consistente con el preview)
     const { data: ventasDelMes, error: e1 } = await db.from('ventas')
-      .select('id')
-      .gte('created_at', desdeISO)
-      .lt('created_at', hastaISO);
+      .select('id').gte('fecha', desdeStr).lt('fecha', hastaStr);
     if (e1) throw e1;
-
     const ids = (ventasDelMes || []).map(v => v.id);
 
     if (ids.length > 0) {
-      // 2. Eliminar venta_items
       const { error: e2 } = await db.from('venta_items').delete().in('venta_id', ids);
       if (e2) throw e2;
-
-      // 3. Eliminar ventas
       const { error: e3 } = await db.from('ventas').delete().in('id', ids);
       if (e3) throw e3;
     }
 
-    // 4. Eliminar leads del mismo período
+    // Leads del mismo período por created_at
     const { error: e4 } = await db.from('leads')
-      .delete()
-      .gte('created_at', desdeISO)
-      .lt('created_at', hastaISO);
+      .delete().gte('created_at', desde.toISOString()).lt('created_at', hasta.toISOString());
     if (e4) throw e4;
 
     toast(`✅ Limpieza completada — ${ids.length} registros eliminados`, 'success');
 
-    // Recargar datos en memoria
-    _memoriaData = [];
-    _memoriaMes = '';
+    _memoriaData = []; _memoriaMes = '';
     document.getElementById('mem-preview-wrap').style.display = 'none';
     document.getElementById('mem-limpiar-info').innerHTML = 'Primero previsualiza un mes para habilitar la limpieza.';
-    btn.disabled = true;
-    btn.style.opacity = '0.5';
-    btn.style.cursor = 'not-allowed';
+    btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed';
     btn.textContent = '🗑️ Limpiar mes';
 
-    // Recargar ventas en app
-    if (typeof loadVentas === 'function') {
-      await loadVentas();
-      renderDashboard();
-      renderVentas();
-    }
-    if (typeof _cargarLeadsPendientes === 'function') {
-      await _cargarLeadsPendientes();
-    }
+    if (typeof loadVentas === 'function') { await loadVentas(); renderDashboard(); renderVentas(); }
+    if (typeof _cargarLeadsPendientes === 'function') await _cargarLeadsPendientes();
 
   } catch(e) {
     toast('❌ Error en limpieza: ' + e.message, 'error');
-    btn.textContent = '🗑️ Limpiar mes';
-    btn.disabled = false;
-    btn.style.opacity = '';
-    btn.style.cursor = '';
+    btn.textContent = '🗑️ Limpiar mes'; btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = '';
   }
 }
