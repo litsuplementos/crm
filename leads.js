@@ -296,35 +296,11 @@ async function onVentaGuardadaDesdeLeads() {
   _actualizarBadgeLeads();
 }
 
-// ── Checar si hay que re-mostrar lead cuando se archiva venta ─
 // Se llama desde saveVenta() en app.js cuando el estado es de cierre
 async function _reactivarLeadSiArchivado(celular) {
   // Los estados de cierre son: vendido, no_interesado, spam, cancelado
   // Si el registro queda archivado, el lead puede volver a aparecer
   // solo si hay un nuevo mensaje (webhook lo manejará automáticamente)
-  // No hacemos nada aquí — el webhook creará un nuevo registro en leads
-  // con procesado=false cuando llegue el próximo mensaje
-}
-
-// Agregar lead manualmente
-async function agregarLeadManual() {
-  const celular = document.getElementById('lead-manual-celular')?.value.trim();
-  const nombre  = document.getElementById('lead-manual-nombre')?.value.trim() || null;
-  if (!celular) { toast('⚠️ El celular es obligatorio', 'error'); return; }
-
-  const { error } = await db.from('leads').upsert(
-    [{ celular, nombre, fuente: 'manual', procesado: false }],
-    { onConflict: 'celular', ignoreDuplicates: false }
-  );
-
-  if (error) { toast('❌ ' + error.message, 'error'); return; }
-
-  document.getElementById('lead-manual-celular').value = '';
-  document.getElementById('lead-manual-nombre').value = '';
-  document.getElementById('leads-manual-panel').style.display = 'none';
-
-  await _cargarLeadsPendientes();
-  toast('✅ Lead agregado', 'success');
 }
 
 // Render vista (llamado desde showView)

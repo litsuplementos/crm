@@ -1385,25 +1385,55 @@ let celularTimer = null;
 
 async function onCelularInput() {
   clearTimeout(celularTimer);
-  celularTimer = null; // FIX #2 — resetear a null después de limpiar
+  celularTimer = null;
   const cel = document.getElementById('f-celular').value.trim();
   const sugg = document.getElementById('celular-suggestion');
   sugg.style.display = 'none';
   document.getElementById('cliente-info-box').style.display = 'none';
   if (cel.length < 6) return;
+
   celularTimer = setTimeout(async () => {
-    celularTimer = null; // FIX #2 — resetear al ejecutarse para que no quede referencia muerta
-    const { data } = await db.from('clientes')
-      .select('id, nombre, ubicacion, producto_interes, notas, faltas, flag')
-      .eq('celular', cel).maybeSingle();
-    if (data) {
-      document.getElementById('f-cliente-id').value = data.id;
-      document.getElementById('f-nombre').value = data.nombre || '';
-      document.getElementById('f-ubicacion').value = data.ubicacion || '';
-      if (data.producto_interes) {
+    celularTimer = null;
+
+    // Un solo query: cliente + su venta activa abierta con este agente, en paralelo
+    const [{ data: clienteData }, { data: cicloAbierto }] = await Promise.all([
+      db.from('clientes')
+        .select('id, nombre, ubicacion, producto_interes, notas, faltas, flag')
+        .eq('celular', cel).maybeSingle(),
+      db.from('ventas')
+        .select('id, estado, fecha, agente_id, venta_items( productos:producto_id(nombre) )')
+        .eq('agente_id', currentUser.id)
+        .eq('archivado', false)
+        .order('id', { ascending: false })
+        .limit(1).maybeSingle(),
+    ]);
+
+    // Filtrar cicloAbierto por cliente solo si encontramos el cliente
+    // (el query paralelo trae la última venta activa del agente en general;
+    // verificamos que corresponda a este cliente después)
+    const cicloDelCliente = (clienteData && cicloAbierto?.agente_id === currentUser.id)
+      ? await (async () => {
+          // Solo hacer este query si el cliente existe y el ciclo no es suyo aún
+          const { data } = await db.from('ventas')
+            .select('id, estado, fecha, venta_items( productos:producto_id(nombre) )')
+            .eq('cliente_id', clienteData.id)
+            .eq('agente_id', currentUser.id)
+            .eq('archivado', false)
+            .order('id', { ascending: false })
+            .limit(1).maybeSingle();
+          return data;
+        })()
+      : null;
+
+    if (clienteData) {
+      document.getElementById('f-cliente-id').value = clienteData.id;
+      document.getElementById('f-nombre').value = clienteData.nombre || '';
+      document.getElementById('f-ubicacion').value = clienteData.ubicacion || '';
+
+      if (clienteData.producto_interes) {
         const matchProd = allProductos.find(p =>
-          p.nombre.toLowerCase().includes(data.producto_interes.toLowerCase()) ||
-          data.producto_interes.toLowerCase().includes(p.nombre.toLowerCase())
+          p.nombre.toLowerCase().includes(clienteData.producto_interes.toLowerCase()) ||
+          clienteData.producto_interes.toLowerCase().includes(p.nombre.toLowerCase())
         );
         if (matchProd) {
           const firstSel = document.querySelector('#venta-items-wrap .item-producto');
@@ -1413,51 +1443,45 @@ async function onCelularInput() {
           }
         }
       }
+
       sugg.style.display = 'none';
       const infoBox = document.getElementById('cliente-info-box');
       infoBox.style.display = '';
-      const { data: cicloAbierto } = await db.from('ventas')
-        .select('id, estado, fecha, venta_items( productos:producto_id(nombre) )')
-        .eq('cliente_id', data.id).eq('agente_id', currentUser.id).eq('archivado', false)
-        .order('id', { ascending: false }).limit(1).maybeSingle();
-      const cicloProds = cicloAbierto
-        ? (cicloAbierto.venta_items || []).map(it => it.productos?.nombre).filter(Boolean).join(', ')
+
+      const cicloProds = cicloDelCliente
+        ? (cicloDelCliente.venta_items || []).map(it => it.productos?.nombre).filter(Boolean).join(', ')
         : '';
-      const cicloWarning = cicloAbierto ? `
+
+      const cicloWarning = cicloDelCliente ? `
         <div style="background:rgba(251,191,36,0.15);border:2px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-bottom:8px;">
           <div style="color:var(--yellow);font-size:13px;font-weight:700;margin-bottom:6px;">⚠️ Ya tienes un registro activo con este cliente</div>
-          <div style="color:var(--text2);font-size:12px;margin-bottom:8px;">${cicloProds || '—'} · ${ESTADOS[cicloAbierto.estado]?.label || cicloAbierto.estado} · ${cicloAbierto.fecha || ''}</div>
+          <div style="color:var(--text2);font-size:12px;margin-bottom:8px;">${cicloProds || '—'} · ${ESTADOS[cicloDelCliente.estado]?.label || cicloDelCliente.estado} · ${cicloDelCliente.fecha || ''}</div>
           <div style="color:var(--text3);font-size:11px;margin-bottom:8px;">No puedes crear un registro nuevo. Actualiza el existente.</div>
-          <button onclick="closeVentaModal();setTimeout(()=>openVentaModal(${cicloAbierto.id}),50)"
+          <button onclick="closeVentaModal();setTimeout(()=>openVentaModal(${cicloDelCliente.id}),50)"
             style="background:var(--yellow);border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;color:#0a0a0f;cursor:pointer;width:100%;">
             → Ir al registro existente
           </button>
         </div>` : '';
-      const spamBanner = data.flag === 'spam' ? `
+
+      const spamBanner = clienteData.flag === 'spam' ? `
         <div style="background:rgba(248,113,113,0.15);border:2px solid var(--red);border-radius:8px;padding:12px 16px;margin-bottom:8px;">
           <div style="color:var(--red);font-weight:700;font-size:14px;margin-bottom:4px;">🚫 ¡SPAM! Este cliente solo molesta, no compra.</div>
-          <div style="color:var(--text2);font-size:12px;">Tiene ${data.faltas} cancelación(es) registrada(s).</div>
+          <div style="color:var(--text2);font-size:12px;">Tiene ${clienteData.faltas} cancelación(es) registrada(s).</div>
         </div>` : '';
+
       infoBox.innerHTML = spamBanner + cicloWarning + `
         <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;">
-          <div style="color:var(--accent2);font-weight:600;margin-bottom:4px;">👤 Cliente registrado ${flagBadge(data)}</div>
-          ${data.faltas > 0 && data.flag !== 'spam' ? `<div style="color:var(--orange);font-size:11px;">❌ ${data.faltas} cancelación(es)</div>` : ''}
-          ${data.notas ? `<div style="color:var(--text2);margin-top:4px;">${data.notas}</div>` : ''}
+          <div style="color:var(--accent2);font-weight:600;margin-bottom:4px;">👤 Cliente registrado ${flagBadge(clienteData)}</div>
+          ${clienteData.faltas > 0 && clienteData.flag !== 'spam' ? `<div style="color:var(--orange);font-size:11px;">❌ ${clienteData.faltas} cancelación(es)</div>` : ''}
+          ${clienteData.notas ? `<div style="color:var(--text2);margin-top:4px;">${clienteData.notas}</div>` : ''}
         </div>`;
 
       const saveBtn = document.querySelector('#venta-modal .btn-save');
       if (saveBtn) {
-        if (cicloAbierto) {
-          saveBtn.disabled = true;
-          saveBtn.style.opacity = '0.4';
-          saveBtn.style.cursor = 'not-allowed';
-          saveBtn.title = 'Debes ir al registro existente antes de crear uno nuevo';
-        } else {
-          saveBtn.disabled = false;
-          saveBtn.style.opacity = '';
-          saveBtn.style.cursor = '';
-          saveBtn.title = '';
-        }
+        saveBtn.disabled = !!cicloDelCliente;
+        saveBtn.style.opacity = cicloDelCliente ? '0.4' : '';
+        saveBtn.style.cursor = cicloDelCliente ? 'not-allowed' : '';
+        saveBtn.title = cicloDelCliente ? 'Debes ir al registro existente antes de crear uno nuevo' : '';
       }
     } else {
       document.getElementById('f-cliente-id').value = '';
@@ -1478,7 +1502,6 @@ async function onCelularInput() {
   }, 350);
 }
 
-// FIX #8 — openVentaModal ya no hace fetch de productos: allProductos siempre está cargado
 async function openVentaModal(id) {
   document.getElementById('venta-modal').classList.add('open');
   document.querySelectorAll('.quick-chip').forEach(ch => {
@@ -1489,7 +1512,7 @@ async function openVentaModal(id) {
   document.getElementById('cliente-info-box').style.display = 'none';
   document.getElementById('f-comprobante').value = '';
   renderComprobantePreview(null);
-  // FIX #8 — eliminada la carga condicional: allProductos ya tiene datos desde initApp
+
   const af = document.getElementById('agente-field');
   if (af) {
     af.style.display = currentUser.rol === 'admin' ? '' : 'none';
@@ -1502,12 +1525,62 @@ async function openVentaModal(id) {
   if (id) {
     const v = ventasIndex[id];
     if (!v) return;
+
+    // Lanzar getVendidosEditables en paralelo mientras preparamos el DOM
+    const vendidosEditablesPromise = getVendidosEditables();
+
     const isArchivado = !!v.archivado;
     const isAdmin = currentUser?.rol === 'admin';
-    const vendidosEditables = await getVendidosEditables();
+
+    // Preparar DOM que no depende del resultado del fetch
+    document.getElementById('edit-venta-id').value = id;
+    document.getElementById('f-fecha').value = v.fecha || '';
+    document.getElementById('f-celular').value = v.cliente?.celular || '';
+    document.getElementById('f-nombre').value = v.cliente?.nombre || '';
+    document.getElementById('f-cliente-id').value = v.cliente_id || '';
+    document.getElementById('f-ubicacion').value = v.cliente?.ubicacion || '';
+    document.getElementById('f-notas').value = v.notas || '';
+    document.getElementById('f-recordatorio').value = v.recordatorio ? v.recordatorio.slice(0, 16) : '';
+    document.getElementById('f-direccion').value = v.cliente?.direccion_residencial || '';
+    document.getElementById('f-monto').value = v.monto_total || '';
+    document.getElementById('monto-tag').textContent = '';
+
+    const descuentoGuardado = v.descuento_pct || 0;
+    clearVentaItems();
+    document.getElementById('f-descuento').value = descuentoGuardado;
+    document.getElementById('f-monto')._baseValue = parseFloat(v.monto_total) || 0;
+
+    const itemsExistentes = v.venta_items || [];
+    if (itemsExistentes.length > 0) {
+      itemsExistentes.forEach(it => addVentaItem({
+        producto_id: it.producto_id,
+        cantidad: it.cantidad,
+        subtotal: it.subtotal,
+      }));
+    } else {
+      addVentaItem();
+    }
+
+    _loadIntentosEditar(v.estado, v.intentos);
+    document.getElementById('f-estado').value = v.estado || 'interesado';
+    document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');
+
+    if (currentUser.rol === 'admin' && v.agente_id)
+      document.getElementById('f-agente').value = v.agente_id;
+
+    ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
+      const el = document.getElementById(sid);
+      if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
+    });
+
+    const mp = document.getElementById('maps-preview');
+    if (mp) mp.innerHTML = '';
+    if (v.cliente?.direccion_residencial) onDireccionKeydown({ key: 'Enter', preventDefault: () => {} });
+
+    // Ahora sí esperar el resultado del fetch (que ya estaba corriendo)
+    const vendidosEditables = await vendidosEditablesPromise;
 
     const shouldLock = isArchivado && !isAdmin && !(v?.estado === 'vendido' && vendidosEditables);
-
     const mensajeArchivado = (v?.estado === 'vendido' && vendidosEditables && !isAdmin)
       ? '✏️ Registro archivado. Habilitado para hacer cambios.'
       : '🔒 Registro archivado. Este ciclo de venta está cerrado. Sólo el administrador puede editarlo.';
@@ -1538,68 +1611,21 @@ async function openVentaModal(id) {
     const addItemBtn = document.getElementById('btn-add-item');
     if (addItemBtn) addItemBtn.style.display = shouldLock ? 'none' : '';
 
-    const saveBtn = document.querySelector('#venta-modal .btn-save');
-    if (saveBtn) saveBtn.style.display = shouldLock ? 'none' : '';
-
-    document.getElementById('edit-venta-id').value = id;
-    document.getElementById('f-fecha').value = v.fecha || '';
-    document.getElementById('f-celular').value = v.cliente?.celular || '';
-    document.getElementById('f-nombre').value = v.cliente?.nombre || '';
-    document.getElementById('f-cliente-id').value = v.cliente_id || '';
-    document.getElementById('f-ubicacion').value = v.cliente?.ubicacion || '';
-    document.getElementById('f-notas').value = v.notas || '';
-    document.getElementById('f-recordatorio').value = v.recordatorio
-      ? v.recordatorio.slice(0, 16)
-      : '';
-    document.getElementById('f-direccion').value = v.cliente?.direccion_residencial || '';
-    document.getElementById('f-monto').value = v.monto_total || '';
-    document.getElementById('monto-tag').textContent = '';
-
-    const descuentoGuardado = v.descuento_pct || 0;
-    clearVentaItems();
-    document.getElementById('f-descuento').value = descuentoGuardado;
-    document.getElementById('f-monto')._baseValue = parseFloat(v.monto_total) || 0;
-
-    const itemsExistentes = v.venta_items || [];
-    if (itemsExistentes.length > 0) {
-      itemsExistentes.forEach(it => addVentaItem({
-        producto_id: it.producto_id,
-        cantidad: it.cantidad,
-        subtotal: it.subtotal,
-      }));
-    } else {
-      addVentaItem();
-    }
-
     if (shouldLock) {
-      document.querySelectorAll('#venta-items-wrap select, #venta-items-wrap input, #venta-items-wrap button').forEach(el => el.disabled = true);
+      document.querySelectorAll('#venta-items-wrap select, #venta-items-wrap input, #venta-items-wrap button')
+        .forEach(el => el.disabled = true);
     }
-
-    const mp = document.getElementById('maps-preview');
-    if (mp) mp.innerHTML = '';
-    if (v.cliente?.direccion_residencial) onDireccionKeydown({ key: 'Enter', preventDefault: () => {} });
-
-    ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
-      const el = document.getElementById(sid);
-      if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
-    });
-
-    _loadIntentosEditar(v.estado, v.intentos);
-    document.getElementById('f-estado').value = v.estado || 'interesado';
-    document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');
-
-    if (currentUser.rol === 'admin' && v.agente_id)
-      document.getElementById('f-agente').value = v.agente_id;
 
     renderComprobantePreview(v.comprobante_url || null, shouldLock);
-    if (!shouldLock) {
-      const saveBtnFinal = document.querySelector('#venta-modal .btn-save');
-      if (saveBtnFinal) {
-        saveBtnFinal.disabled = false;
-        saveBtnFinal.style.opacity = '';
-        saveBtnFinal.style.cursor = '';
-        saveBtnFinal.title = '';
-        saveBtnFinal.style.display = '';
+
+    const saveBtn = document.querySelector('#venta-modal .btn-save');
+    if (saveBtn) {
+      saveBtn.style.display = shouldLock ? 'none' : '';
+      if (!shouldLock) {
+        saveBtn.disabled = false;
+        saveBtn.style.opacity = '';
+        saveBtn.style.cursor = '';
+        saveBtn.title = '';
       }
     }
   } else {
@@ -1701,7 +1727,6 @@ async function saveVenta() {
     : currentUser.id;
 
   const intentos = _leerIntentos(estado);
-
   if (!celular) { toast('⚠️ El celular es obligatorio', 'error'); return; }
 
   const items = getVentaItemsData();
@@ -1710,10 +1735,7 @@ async function saveVenta() {
   let estadoFinal = estado;
 
   if (estado === 'rellamada' && intentos >= MAX_RELLAMADAS) {
-    const ok = confirm(
-      `Este registro ya tiene ${intentos} intentos de llamada.\n` +
-      `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
-    );
+    const ok = confirm(`Este registro ya tiene ${intentos} intentos de llamada.\nAl guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`);
     if (!ok) return;
     estadoFinal = 'no_interesado';
     toast('🔕 Marcado como No interesado (3 rellamadas)', 'error');
@@ -1722,10 +1744,7 @@ async function saveVenta() {
   }
 
   if (estado === 'sin_respuesta' && intentos >= MAX_SIN_RESPUESTA) {
-    const ok = confirm(
-      `Este cliente ya tiene ${intentos} mensajes sin respuesta.\n` +
-      `Al guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`
-    );
+    const ok = confirm(`Este cliente ya tiene ${intentos} mensajes sin respuesta.\nAl guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`);
     if (!ok) return;
     estadoFinal = 'no_interesado';
     toast('🔕 Marcado como No interesado (4 sin respuesta)', 'error');
@@ -1735,33 +1754,93 @@ async function saveVenta() {
 
   const debeArchivar = ESTADOS_CIERRE.includes(estadoFinal);
 
+  const prodNombreParaPerfil = items
+    .map(it => allProductos.find(p => p.id === it.producto_id)?.nombre)
+    .filter(Boolean).join(', ');
+
+  const ventaData = {
+    agente_id: agenteId,
+    fecha,
+    notas,
+    monto_total: monto,
+    descuento_pct: descuentoPct,
+    recordatorio: recordatorio || null,
+    estado: estadoFinal,
+    intentos: ['rellamada', 'sin_respuesta'].includes(estado) ? intentos : 1,
+    archivado: debeArchivar,
+  };
+
   try {
     let cId = clienteId ? parseInt(clienteId) : null;
-    const prodNombreParaPerfil = items
-      .map(it => allProductos.find(p => p.id === it.producto_id)?.nombre)
-      .filter(Boolean).join(', ');
+    let savedId;
 
-    if (!cId) {
-      const { data: newC, error: errC } = await db.from('clientes')
-        .insert({
+    if (ventaId) {
+      // EDICIÓN: actualizar cliente + eliminar items viejos + actualizar venta, todo en paralelo
+      if (!cId) throw new Error('Cliente ID faltante en edición');
+      const [, , { error: errV }] = await Promise.all([
+        db.from('clientes').update({
+          nombre: nombre || 's/n',
+          ubicacion,
+          producto_interes: prodNombreParaPerfil || undefined,
+          direccion_residencial: direccion,
+        }).eq('id', cId),
+        db.from('venta_items').delete().eq('venta_id', parseInt(ventaId)),
+        db.from('ventas').update({ ...ventaData, cliente_id: cId }).eq('id', parseInt(ventaId)),
+      ]);
+      if (errV) throw errV;
+      savedId = parseInt(ventaId);
+      toast('✅ Registro actualizado', 'success');
+    } else {
+      // CREACIÓN: primero cliente (necesitamos su id), luego venta
+      if (!cId) {
+        const { data: newC, error: errC } = await db.from('clientes').insert({
           celular,
           nombre: nombre || 's/n',
           ubicacion,
           producto_interes: prodNombreParaPerfil || null,
           direccion_residencial: direccion,
         }).select().single();
-      if (errC) throw errC;
-      cId = newC.id;
-    } else {
-      await db.from('clientes').update({
-        nombre: nombre || 's/n',
-        ubicacion,
-        producto_interes: prodNombreParaPerfil || undefined,
-        direccion_residencial: direccion,
-      }).eq('id', cId);
+        if (errC) throw errC;
+        cId = newC.id;
+      } else {
+        await db.from('clientes').update({
+          nombre: nombre || 's/n',
+          ubicacion,
+          producto_interes: prodNombreParaPerfil || undefined,
+          direccion_residencial: direccion,
+        }).eq('id', cId);
+      }
+      const { data: saved, error: errVenta } = await db.from('ventas')
+        .insert({ ...ventaData, cliente_id: cId }).select().single();
+      if (errVenta) throw errVenta;
+      savedId = saved.id;
+      toast('✅ Registro agregado', 'success');
     }
 
-    const ventaData = {
+    // Items + comprobante en paralelo
+    const itemsToInsert = items.map(it => ({ ...it, venta_id: savedId }));
+    const [{ error: errItems }, url] = await Promise.all([
+      db.from('venta_items').insert(itemsToInsert),
+      uploadComprobante(savedId),
+    ]);
+    if (errItems) throw errItems;
+    if (url) await db.from('ventas').update({ comprobante_url: url }).eq('id', savedId);
+
+    // Construir objeto actualizado en memoria en lugar de hacer SELECT
+    const ventaEnMemoria = ventasIndex[savedId];
+    const clienteActualizado = {
+      ...(ventaEnMemoria?.cliente || {}),
+      id: cId,
+      celular,
+      nombre: nombre || 's/n',
+      ubicacion,
+      direccion_residencial: direccion,
+      producto_interes: prodNombreParaPerfil || null,
+    };
+    const agenteObj = allAgents.find(a => a.id === agenteId) || ventaEnMemoria?.agente || { id: agenteId, nombre: currentUser.nombre };
+    const ventaActualizada = {
+      ...(ventaEnMemoria || {}),
+      id: savedId,
       cliente_id: cId,
       agente_id: agenteId,
       fecha,
@@ -1769,66 +1848,34 @@ async function saveVenta() {
       monto_total: monto,
       descuento_pct: descuentoPct,
       recordatorio: recordatorio || null,
+      recordatorio_visto: false,
       estado: estadoFinal,
       intentos: ['rellamada', 'sin_respuesta'].includes(estado) ? intentos : 1,
       archivado: debeArchivar,
+      comprobante_url: url || ventaEnMemoria?.comprobante_url || null,
+      cliente: clienteActualizado,
+      agente: agenteObj,
+      venta_items: itemsToInsert.map((it, i) => ({
+        id: i,
+        venta_id: savedId,
+        producto_id: it.producto_id,
+        cantidad: it.cantidad,
+        subtotal: it.subtotal,
+        productos: { id: it.producto_id, nombre: allProductos.find(p => p.id === it.producto_id)?.nombre || '' },
+      })),
     };
 
-    let savedId;
-    if (ventaId) {
-      const { error } = await db.from('ventas').update(ventaData).eq('id', parseInt(ventaId));
-      if (error) throw error;
-      savedId = parseInt(ventaId);
-      await db.from('venta_items').delete().eq('venta_id', savedId);
-      toast('✅ Registro actualizado', 'success');
+    const idx = ventas.findIndex(v => v.id === savedId);
+    if (idx >= 0) {
+      ventas[idx] = ventaActualizada;
     } else {
-      const { data: saved, error } = await db.from('ventas').insert(ventaData).select().single();
-      if (error) throw error;
-      savedId = saved.id;
-      toast('✅ Registro agregado', 'success');
+      ventas.unshift(ventaActualizada);
     }
-
-    const itemsToInsert = items.map(it => ({ ...it, venta_id: savedId }));
-    const { error: errItems } = await db.from('venta_items').insert(itemsToInsert);
-    if (errItems) throw errItems;
-
-    if (currentUser.rol === 'admin' && estadoFinal !== 'spam') {
-      const { data: stats } = await db.from('ventas')
-        .select('estado', { count: 'exact' })
-        .eq('cliente_id', cId)
-        .in('estado', ['cancelado', 'spam', 'sin_respuesta']);
-      const spamCount = stats?.filter(s => s.estado === 'spam').length || 0;
-      if (spamCount === 0) {
-        await db.from('clientes').update({ flag: 'normal' }).eq('id', cId);
-      }
-    }
-
-    const url = await uploadComprobante(savedId);
-    if (url) await db.from('ventas').update({ comprobante_url: url }).eq('id', savedId);
-
-    const { data: ventaActualizada } = await db.from('ventas')
-      .select(`id, cliente_id, agente_id, fecha, estado, intentos,
-        notas, comprobante_url, archivado, monto_total, descuento_pct, recordatorio,
-        cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
-                             producto_interes, notas, faltas, flag ),
-        agente:agente_id ( id, nombre ),
-        venta_items ( id, cantidad, subtotal, producto_id, productos ( id, nombre ))`)
-      .eq('id', savedId).single();
-
-    if (ventaActualizada) {
-      const idx = ventas.findIndex(v => v.id === savedId);
-      if (idx >= 0) {
-        ventas[idx] = ventaActualizada;
-        ventasIndex[savedId] = ventaActualizada;
-      } else {
-        ventas.unshift(ventaActualizada);
-        ventasIndex[savedId] = ventaActualizada;
-      }
-    }
+    ventasIndex[savedId] = ventaActualizada;
 
     dashboardCache.invalidate();
-    filteredCache.invalidate(); // FIX #6
-    _cityFilterDirty = true;   // FIX #5
+    filteredCache.invalidate();
+    _cityFilterDirty = true;
     await onVentaGuardadaDesdeLeads();
     closeVentaModal();
     renderVentas();

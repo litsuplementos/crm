@@ -134,33 +134,9 @@
             <option value="mes" selected>🗃 Mes</option>
             <option value="año">📊 Año</option>
           </select>
-          <button class="icon-btn"
-            onclick="const p=document.getElementById('leads-manual-panel');p.style.display=p.style.display==='none'?'':'none';">
-            ＋ Manual
-          </button>
         </div>
       </div>
-
-      <div id="leads-manual-panel" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:20px;">
-        <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:12px;">➕ Agregar lead manualmente</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;">
-          <div>
-            <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">Celular</label>
-            <input class="smart-input" type="tel" id="lead-manual-celular" placeholder="70000000">
-          </div>
-          <div>
-            <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:4px;">Nombre (opcional)</label>
-            <input class="smart-input" id="lead-manual-nombre" placeholder="Nombre del cliente">
-          </div>
-          <button class="btn-save" onclick="agregarLeadManual()" style="white-space:nowrap;">✚ Agregar</button>
-        </div>
-      </div>
-
-      <div style="background:rgba(125,211,252,0.06);border:1px solid rgba(125,211,252,0.2);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--text3);display:flex;align-items:center;gap:8px;">
-        <span style="font-size:16px;">🔗</span>
-        <span>Los leads llegan automáticamente desde <b style="color:var(--accent2);">Kommo</b> vía webhook · Usa <b style="color:var(--accent2);">Recuperar Leads</b> para acelerar el proceso</span>
-      </div>
-
+  
       <div id="leads-list-wrap" style="display:flex;flex-direction:column;gap:10px;"></div>
     </div></div>
 
