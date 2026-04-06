@@ -2620,3 +2620,124 @@ function _activarSonido(btn) {
 
 // INIT
 initTheme();
+
+// ZADARMA WEBRTC — solo contestar
+let _zadarmaSipActivo = false;
+
+function initZadarmaWidget() {
+  if (_zadarmaSipActivo) return;
+  if (typeof zadarmaWidgetFn === 'undefined') {
+    setTimeout(initZadarmaWidget, 300);
+    return;
+  }
+
+  zadarmaWidgetFn(
+    '560508_101',   // YOUR_SIP — la extensión del agente
+    '560508_101',   // YOUR_KEY — para modo interno sin key dinámica
+    'rounded',
+    'es',
+    true,
+    { right: '10px', bottom: '70px' } // posición — encima del botón de sync
+  );
+
+  _zadarmaSipActivo = true;
+
+  // Escuchar llamada entrante
+  window.addEventListener('zadarmaWidgetEvent', (e) => {
+    const { type, data } = e.detail || {};
+
+    if (type === 'incoming_call') {
+      const celular = data?.caller_number?.replace(/\D/g, '') || '';
+      _onLlamadaEntrante(celular);
+    }
+
+    if (type === 'call_ended' || type === 'call_rejected') {
+      _onLlamadaTerminada();
+    }
+  });
+}
+
+function _onLlamadaEntrante(celular) {
+  // Mostrar banner igual al de recordatorios
+  let banner = document.getElementById('llamada-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'llamada-banner';
+    banner.style.cssText = `
+      position:fixed;top:0;left:0;right:0;z-index:9998;
+      background:linear-gradient(135deg,#22d3a4,#6366f1);
+      color:white;padding:14px 20px;
+      display:flex;align-items:center;justify-content:space-between;
+      box-shadow:0 4px 20px rgba(0,0,0,0.3);
+      font-family:'DM Sans',sans-serif;font-size:14px;
+      animation: slideDown 0.3s ease;
+    `;
+    document.body.appendChild(banner);
+  }
+
+  // Buscar cliente en memoria primero (gratis, sin query)
+  const clienteEnMemoria = ventas.find(v =>
+    v.cliente?.celular?.replace(/\D/g, '') === celular
+  );
+  const nombreCliente = clienteEnMemoria?.cliente?.nombre || celular || 'Número desconocido';
+
+  banner.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:22px;">📞</span>
+      <div>
+        <div style="font-weight:700;font-size:15px;">Llamada entrante</div>
+        <div style="font-size:12px;opacity:0.9;">${nombreCliente}${celular && nombreCliente !== celular ? ' · ' + celular : ''}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      ${celular ? `
+        <button onclick="_abrirRegistroDesdeLlamada('${celular}')"
+          style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);
+                 border-radius:6px;padding:6px 14px;color:white;cursor:pointer;
+                 font-size:13px;font-weight:600;">
+          📋 Abrir registro
+        </button>` : ''}
+      <button onclick="_dismissBannerLlamada()"
+        style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);
+               border-radius:6px;padding:6px 10px;color:white;cursor:pointer;font-size:13px;">
+        ✕
+      </button>
+    </div>
+  `;
+  banner.style.display = 'flex';
+}
+
+async function _abrirRegistroDesdeLlamada(celular) {
+  _dismissBannerLlamada();
+
+  // Buscar en memoria primero
+  const ventaExistente = ventas.find(v =>
+    v.cliente?.celular?.replace(/\D/g, '') === celular && !v.archivado
+  );
+
+  if (ventaExistente) {
+    // Cliente con registro activo — abrir directo
+    showViewDirect('ventas');
+    setTimeout(() => openVentaModal(ventaExistente.id), 50);
+    return;
+  }
+
+  // Cliente nuevo o sin registro activo — abrir modal nuevo precargado
+  showViewDirect('ventas');
+  await openVentaModal();
+  await new Promise(r => setTimeout(r, 80));
+  const celularInput = document.getElementById('f-celular');
+  if (celularInput) {
+    celularInput.value = celular;
+    await onCelularInput();
+  }
+}
+
+function _dismissBannerLlamada() {
+  const banner = document.getElementById('llamada-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+function _onLlamadaTerminada() {
+  _dismissBannerLlamada();
+}
