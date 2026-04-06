@@ -2623,7 +2623,7 @@ function _activarSonido(btn) {
 initTheme();
 
 // ZADARMA WEBRTC — solo contestar
-let _zadarmaSipActivo = false;
+/*let _zadarmaSipActivo = false; 
 
 async function initZadarmaWidget() {
   if (_zadarmaSipActivo) return;
@@ -2744,3 +2744,4 @@ function _dismissBannerLlamada() {
 function _onLlamadaTerminada() {
   _dismissBannerLlamada();
 }
+  */
