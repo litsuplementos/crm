@@ -292,7 +292,7 @@ async function initApp() {
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
   iniciarChequeoRecordatorios();
   _cargarLeadsPendientes();
-  initZadarmaWidget();
+  setTimeout(initZadarmaWidget, 1500);
 }
 
 // FIX #13 — flag para registrar el listener una sola vez por sesión completa de la app
@@ -2627,8 +2627,8 @@ let _zadarmaSipActivo = false;
 
 async function initZadarmaWidget() {
   if (_zadarmaSipActivo) return;
-  if (typeof zadarmaWidgetFn === 'undefined') {
-    setTimeout(initZadarmaWidget, 300);
+  if (typeof zadarmaWidgetFn === 'undefined' || typeof zdrmWebrtcPhoneInterface === 'undefined') {
+    setTimeout(initZadarmaWidget, 500);
     return;
   }
 
