@@ -2633,31 +2633,13 @@ async function initZadarmaWidget() {
   }
 
   try {
-    // Generar webrtc key via API de Zadarma
-    const apiKey    = '1555e799e23350ec6d1f';
-    const apiSecret = '2682fc65220eb93e8e9a';
-    const method    = '/v1/webrtc/get_key';
-    const params    = '';
-
-    // Firma HMAC-SHA1
-    const stringToSign = method + params + CryptoJS.MD5(params).toString();
-    const signature = btoa(CryptoJS.HmacSHA1(stringToSign, apiSecret).toString());
-
-    const resp = await fetch('https://api.zadarma.com' + method, {
-      headers: {
-        'Authorization': apiKey + ':' + signature
-      }
-    });
-    const json = await resp.json();
-    if (!json.key) throw new Error('No key returned');
-
     zadarmaWidgetFn(
-      'LcYg5f13pu',    // password del SIP como key
-      '560508-101',    // SIP con guión
+      'LcYg5f13pu',
+      '560508-101',
       'rounded',
       'es',
       true,
-      { right: '10px', bottom: '70px' } // posición — encima del botón de sync
+      { right: '10px', bottom: '70px' }
     );
 
     _zadarmaSipActivo = true;
