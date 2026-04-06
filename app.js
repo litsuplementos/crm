@@ -274,28 +274,22 @@ async function initApp() {
   document.getElementById('dash-date').textContent =
     new Date().toLocaleDateString('es-BO', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
 
-  // FIX #10 — cargar siempre con soloActivos=false para unificar caché
   if (currentUser.rol === 'admin') {
-    await Promise.all([loadProductos(false), loadAgents(), loadVentas()]);
+    await Promise.all([loadProductos(false), loadAgents(), loadVentas(), loadConfigVendidosEditables()]);
     buildAgentSelector();
   } else {
-    await Promise.all([loadProductos(false), loadVentas()]);
+    // Precalentar caché para agentes también — evita el fetch en openVentaModal
+    await Promise.all([loadProductos(false), loadVentas(), getVendidosEditables()]);
   }
 
-  // FIX #13 — registrar event delegation una sola vez por sesión
   _setupEventDelegationOnce();
-
   renderDashboard();
-
-  // FIX #14 — usar variable de módulo en lugar de propiedad del elemento
   _geoSelectorsInitialized = false;
   initGeoSelectors();
-
   renderVentas();
   populateProductoFilter();
   setArchivoFiltro(false);
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
-  if (currentUser.rol === 'admin') loadConfigVendidosEditables();
   iniciarChequeoRecordatorios();
   _cargarLeadsPendientes();
 }
@@ -1395,34 +1389,21 @@ async function onCelularInput() {
   celularTimer = setTimeout(async () => {
     celularTimer = null;
 
-    // Un solo query: cliente + su venta activa abierta con este agente, en paralelo
-    const [{ data: clienteData }, { data: cicloAbierto }] = await Promise.all([
-      db.from('clientes')
-        .select('id, nombre, ubicacion, producto_interes, notas, faltas, flag')
-        .eq('celular', cel).maybeSingle(),
-      db.from('ventas')
-        .select('id, estado, fecha, agente_id, venta_items( productos:producto_id(nombre) )')
-        .eq('agente_id', currentUser.id)
-        .eq('archivado', false)
-        .order('id', { ascending: false })
-        .limit(1).maybeSingle(),
-    ]);
+    // Query 1: cliente por celular
+    const { data: clienteData } = await db.from('clientes')
+      .select('id, nombre, ubicacion, producto_interes, notas, faltas, flag')
+      .eq('celular', cel).maybeSingle();
 
-    // Filtrar cicloAbierto por cliente solo si encontramos el cliente
-    // (el query paralelo trae la última venta activa del agente en general;
-    // verificamos que corresponda a este cliente después)
-    const cicloDelCliente = (clienteData && cicloAbierto?.agente_id === currentUser.id)
-      ? await (async () => {
-          // Solo hacer este query si el cliente existe y el ciclo no es suyo aún
-          const { data } = await db.from('ventas')
-            .select('id, estado, fecha, venta_items( productos:producto_id(nombre) )')
-            .eq('cliente_id', clienteData.id)
-            .eq('agente_id', currentUser.id)
-            .eq('archivado', false)
-            .order('id', { ascending: false })
-            .limit(1).maybeSingle();
-          return data;
-        })()
+    // Query 2: solo si hay cliente, buscar ciclo activo por cliente_id (ya lo tenemos)
+    const cicloDelCliente = clienteData
+      ? await db.from('ventas')
+          .select('id, estado, fecha, venta_items( productos:producto_id(nombre) )')
+          .eq('cliente_id', clienteData.id)
+          .eq('agente_id', currentUser.id)
+          .eq('archivado', false)
+          .order('id', { ascending: false })
+          .limit(1).maybeSingle()
+          .then(r => r.data)
       : null;
 
     if (clienteData) {
@@ -2415,19 +2396,23 @@ function renderStatModal() {
 
 async function loadConfigVendidosEditables() {
   try {
-    const { data, error } = await db.from('config')
-      .select('valor').eq('clave', 'vendidos_editables').single();
+    // ANTES: dos awaits en cadena
+    // AHORA: ambos en paralelo
+    const [{ data: dataVendidos, error }, { data: dataFiltro }] = await Promise.all([
+      db.from('config').select('valor').eq('clave', 'vendidos_editables').single(),
+      db.from('config').select('valor').eq('clave', 'filtro_tiempo_default').single(),
+    ]);
+
     if (error) throw error;
-    const val = data?.valor === 'true';
+
+    const val = dataVendidos?.valor === 'true';
     const cb = document.getElementById('toggle-vendidos-editables');
     const span = document.getElementById('toggle-vendidos-span');
     _vendidosEditablesCache = val;
     if (cb) cb.checked = val;
     if (span) span.style.background = val ? 'var(--green)' : 'var(--border)';
-    const { data: dataFiltro } = await db.from('config')
-      .select('valor').eq('clave', 'filtro_tiempo_default').single();
+
     if (dataFiltro?.valor) {
-      // Aplicar sin disparar el UPDATE a Supabase ni renders prematuros
       filtroTiempo = dataFiltro.valor;
       ['filtro-tiempo-global', 'filtro-tiempo-ventas', 'filtro-tiempo-dash', 'filtro-tiempo-leads'].forEach(id => {
         const el = document.getElementById(id);
@@ -2436,7 +2421,7 @@ async function loadConfigVendidosEditables() {
       if (filtroTiempo === 'mes') {
         const mesLabel = document.getElementById('mes-actual-label');
         const mesSel = document.getElementById('filtro-mes-especifico');
-        if (mesLabel) { 
+        if (mesLabel) {
           const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                          'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
           mesLabel.textContent = meses[new Date().getMonth()];
