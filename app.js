@@ -2652,12 +2652,12 @@ async function initZadarmaWidget() {
     if (!json.key) throw new Error('No key returned');
 
     zadarmaWidgetFn(
-      json.key,
-      '560508-101',
+      'LcYg5f13pu',    // password del SIP como key
+      '560508-101',    // SIP con guión
       'rounded',
       'es',
       true,
-      { right: '10px', bottom: '70px' }
+      { right: '10px', bottom: '70px' } // posición — encima del botón de sync
     );
 
     _zadarmaSipActivo = true;
