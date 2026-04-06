@@ -2633,8 +2633,8 @@ function initZadarmaWidget() {
   }
 
   zadarmaWidgetFn(
-    '560508_101',   // YOUR_SIP — la extensión del agente
-    '560508_101',   // YOUR_KEY — para modo interno sin key dinámica
+    'LcYg5f13pu',   // YOUR_KEY — password del SIP
+    '560508-101',   // YOUR_SIP — usuario SIP (con guión, no guión bajo)
     'rounded',
     'es',
     true,
