@@ -1415,14 +1415,10 @@ async function onCelularInput() {
       }
       sugg.style.display = 'none';
       const infoBox = document.getElementById('cliente-info-box');
-      const ventaIdActual = document.getElementById('edit-venta-id').value;
-      const ventaIdNum = ventaIdActual ? parseInt(ventaIdActual) : null;
       infoBox.style.display = '';
-      let cicloQuery = db.from('ventas')
+      const { data: cicloAbierto } = await db.from('ventas')
         .select('id, estado, fecha, venta_items( productos:producto_id(nombre) )')
-        .eq('cliente_id', data.id).eq('agente_id', currentUser.id).eq('archivado', false);
-      if (ventaIdNum) cicloQuery = cicloQuery.neq('id', ventaIdNum);
-      const { data: cicloAbierto } = await cicloQuery
+        .eq('cliente_id', data.id).eq('agente_id', currentUser.id).eq('archivado', false)
         .order('id', { ascending: false }).limit(1).maybeSingle();
       const cicloProds = cicloAbierto
         ? (cicloAbierto.venta_items || []).map(it => it.productos?.nombre).filter(Boolean).join(', ')
@@ -1596,7 +1592,16 @@ async function openVentaModal(id) {
       document.getElementById('f-agente').value = v.agente_id;
 
     renderComprobantePreview(v.comprobante_url || null, shouldLock);
-
+    if (!shouldLock) {
+      const saveBtnFinal = document.querySelector('#venta-modal .btn-save');
+      if (saveBtnFinal) {
+        saveBtnFinal.disabled = false;
+        saveBtnFinal.style.opacity = '';
+        saveBtnFinal.style.cursor = '';
+        saveBtnFinal.title = '';
+        saveBtnFinal.style.display = '';
+      }
+    }
   } else {
     document.getElementById('modal-title').textContent = 'Nuevo Registro';
     document.getElementById('edit-venta-id').value = '';
