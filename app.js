@@ -292,7 +292,7 @@ async function initApp() {
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
   iniciarChequeoRecordatorios();
   _cargarLeadsPendientes();
-  setTimeout(initZadarmaWidget, 1500);
+  initZadarmaWidget();
 }
 
 // FIX #13 — flag para registrar el listener una sola vez por sesión completa de la app
@@ -2627,14 +2627,26 @@ let _zadarmaSipActivo = false;
 
 async function initZadarmaWidget() {
   if (_zadarmaSipActivo) return;
-  if (typeof zadarmaWidgetFn === 'undefined' || typeof zdrmWebrtcPhoneInterface === 'undefined') {
-    setTimeout(initZadarmaWidget, 500);
+  if (typeof zadarmaWidgetFn === 'undefined') {
+    setTimeout(initZadarmaWidget, 300);
     return;
   }
 
   try {
-    const resp = await fetch('https://txjgdglfzskirujqctra.supabase.co/functions/v1/zadarma-key', {
-      headers: { 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+    // Generar webrtc key via API de Zadarma
+    const apiKey    = '1555e799e23350ec6d1f';
+    const apiSecret = '2682fc65220eb93e8e9a';
+    const method    = '/v1/webrtc/get_key';
+    const params    = '';
+
+    // Firma HMAC-SHA1
+    const stringToSign = method + params + CryptoJS.MD5(params).toString();
+    const signature = btoa(CryptoJS.HmacSHA1(stringToSign, apiSecret).toString());
+
+    const resp = await fetch('https://api.zadarma.com' + method, {
+      headers: {
+        'Authorization': apiKey + ':' + signature
+      }
     });
     const json = await resp.json();
     if (!json.key) throw new Error('No key returned');
