@@ -77,19 +77,6 @@ function _renderMemoriasAgente() {
       <!-- Paginación -->
       <div id="agente-storage-pagination" style="display:flex;justify-content:center;gap:6px;margin-top:14px;"></div>
     </div>
-
-    <!-- MODAL PREVISUALIZACIÓN CSV -->
-    <div class="modal-overlay" id="mem-csv-modal">
-      <div class="modal" style="max-width:90vw;width:90vw;max-height:85vh;">
-        <div class="modal-header">
-          <div class="modal-title" id="mem-csv-modal-title">📋 Vista previa</div>
-          <button class="modal-close" onclick="document.getElementById('mem-csv-modal').classList.remove('open')">×</button>
-        </div>
-        <div class="modal-body" style="overflow-y:auto;max-height:calc(85vh - 80px);">
-          <div id="mem-csv-modal-body"></div>
-        </div>
-      </div>
-    </div>
   `;
 
   _cargarRespaldosAgente();
@@ -191,10 +178,11 @@ function _renderAgenteStoragePage() {
           <div style="display:flex;gap:6px;">
             ${isPdf
               ? `<button class="icon-btn" onclick="_verPDFStorageAgente('${agenteCarpeta}/${f.name}')" title="Ver">👁️</button>`
-              : `<button class="icon-btn" onclick="_verCSVStorageAgente('${agenteCarpeta}/${f.name}','${f.name}')" title="Ver">👁️</button>`}
+              : `<button class="icon-btn" onclick="_verCSVStorageAgente('${agenteCarpeta}/${f.name}')" title="Ver">👁️</button>`}
             <button class="icon-btn" onclick="_descargarStorageAgente('${agenteCarpeta}/${f.name}','${f.name}')" title="Descargar">💾</button>
           </div>
-        </div>`;
+        </div>
+        ${!isPdf ? `<div id="preview-${btoa(agenteCarpeta+'/'+f.name).replace(/[^a-z0-9]/gi,'')}" style="display:none;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius-sm) var(--radius-sm);background:var(--surface);"></div>` : ''}`;
       }).join('')}
     </div>`;
 
@@ -221,7 +209,6 @@ async function _verCSVStorageAgente(path, nombre) {
     const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
     if (error) throw error;
     const text = await data.text();
-    _mostrarCSVEnModal(text, nombre);
   } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
 }
 
@@ -410,19 +397,6 @@ function _renderMemoriasUI() {
         onclick="_confirmarLimpieza()">
         🗑️ Limpiar mes
       </button>
-    </div>
-
-    <!-- MODAL PREVISUALIZACIÓN CSV -->
-    <div class="modal-overlay" id="mem-csv-modal">
-      <div class="modal" style="max-width:90vw;width:90vw;max-height:85vh;">
-        <div class="modal-header">
-          <div class="modal-title" id="mem-csv-modal-title">📋 Vista previa</div>
-          <button class="modal-close" onclick="document.getElementById('mem-csv-modal').classList.remove('open')">×</button>
-        </div>
-        <div class="modal-body" style="overflow-y:auto;max-height:calc(85vh - 80px);">
-          <div id="mem-csv-modal-body"></div>
-        </div>
-      </div>
     </div>
 
     <!-- MODAL CONFIRMACIÓN LIMPIEZA -->
@@ -956,6 +930,30 @@ function _truncate(str, maxMm) {
   return str.length > max ? str.slice(0, max-1) + '…' : str;
 }
 
+function _buildCSVTableHTML(csvText) {
+  const lines = csvText.replace(/^\uFEFF/, '').trim().split('\n');
+  if (lines.length < 2) return '<p style="color:var(--text3);padding:12px;font-size:13px;">CSV vacío.</p>';
+  const parseRow = line => {
+    const result = []; let cur = '', inQ = false;
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { result.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    result.push(cur);
+    return result.map(v => v.replace(/^"|"$/g,'').replace(/""/g,'"'));
+  };
+  const headers = parseRow(lines[0]);
+  const rows = lines.slice(1).map(parseRow);
+  return `
+    <div style="overflow-x:auto;max-height:340px;overflow-y:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr>${headers.map(h=>`<th style="background:var(--surface2);padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;">${h}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r=>`<tr style="border-bottom:1px solid var(--border);">${r.map(v=>`<td style="padding:6px 10px;color:var(--text2);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${v}">${v}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
 async function _exportarPDFLocal() {
   const btn = document.getElementById('mem-btn-pdf-local');
   btn.textContent = '⏳ Generando...'; btn.disabled = true;
@@ -1082,7 +1080,8 @@ async function _cargarRespaldosStorage() {
                 : `<button class="icon-btn" onclick="_verRespaldoStorage('${f._path}')" title="Ver">👁️</button>`}
               <button class="icon-btn" onclick="_descargarRespaldoStorage('${f._path}','${f.name}')" title="Descargar">💾</button>
             </div>
-          </div>`;
+          </div>
+          ${!isPdf ? `<div id="preview-${btoa(f._path).replace(/[^a-z0-9]/gi,'')}" style="display:none;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius-sm) var(--radius-sm);background:var(--surface);"></div>` : ''}`;
         }).join('')}
       </div>`;
   } catch(e) {
@@ -1091,12 +1090,21 @@ async function _cargarRespaldosStorage() {
 }
 
 async function _verRespaldoStorage(path) {
+  const panelId = 'preview-' + btoa(path).replace(/[^a-z0-9]/gi, '');
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+  panel.innerHTML = '<div style="padding:12px;color:var(--text3);font-size:13px;">Cargando...</div>';
+  panel.style.display = '';
   try {
     const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
     if (error) throw error;
-    const text = await data.text();
-    _mostrarCSVEnModal(text, path.split('/').pop());
-  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
+    panel.innerHTML = _buildCSVTableHTML(await data.text());
+  } catch(e) { panel.innerHTML = `<p style="color:var(--red);padding:12px;font-size:13px;">❌ ${e.message}</p>`; }
+}
+
+async function _verCSVStorageAgente(path) {
+  await _verRespaldoStorage(path);
 }
 
 async function _verPDFStorage(path) {
@@ -1125,38 +1133,11 @@ function _importarCSVLocal(input) {
   const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => _mostrarCSVEnModal(e.target.result, file.name);
   reader.readAsText(file, 'UTF-8');
   input.value = '';
 }
 
-function _mostrarCSVEnModal(csvText, titulo) {
-  const lines = csvText.replace(/^\uFEFF/, '').trim().split('\n');
-  if (lines.length < 2) { toast('⚠️ CSV vacío', 'error'); return; }
-  const parseRow = line => {
-    const result = []; let cur = '', inQ = false;
-    for (const ch of line) {
-      if (ch === '"') { inQ = !inQ; }
-      else if (ch === ',' && !inQ) { result.push(cur); cur = ''; }
-      else cur += ch;
-    }
-    result.push(cur);
-    return result.map(v => v.replace(/^"|"$/g,'').replace(/""/g,'"'));
-  };
-  const headers = parseRow(lines[0]);
-  const rows    = lines.slice(1).map(parseRow);
-  document.getElementById('mem-csv-modal-title').textContent = `📋 ${titulo} — ${rows.length} filas`;
-  document.getElementById('mem-csv-modal-body').innerHTML = `
-    <div style="overflow-x:auto;">
-      <table style="width:100%;border-collapse:collapse;font-size:12px;">
-        <thead><tr>${headers.map(h=>`<th style="background:var(--surface2);padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);white-space:nowrap;">${h}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map(r=>`<tr style="border-bottom:1px solid var(--border);">${r.map(v=>`<td style="padding:6px 10px;color:var(--text2);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${v}">${v}</td>`).join('')}</tr>`).join('')}</tbody>
-      </table>
-    </div>`;
-  document.getElementById('mem-csv-modal').classList.add('open');
-}
-
-// ── LIMPIAR ───────────────────────────────────────────────────────────────────
+// LIMPIAR
 function _confirmarLimpieza() {
   if (!_memoriaMes) return;
   const [d1, d2] = _getRangoMes(_memoriaMes);
