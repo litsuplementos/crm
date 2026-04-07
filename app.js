@@ -692,7 +692,7 @@ function showView(name) {
   if (name === 'dashboard') renderDashboard();
   if (name === 'leads') renderLeads();
   if (name === 'usuarios') renderUsers();
-  if (name === 'memorias') renderMemorias();
+  if (name === 'memorias' && !document.getElementById('memorias-wrap')?.firstElementChild) renderMemorias();
   if (name === 'productos') renderProductos();
   if (name === 'guia') renderGuia();
   if (name === 'config' && currentUser.rol === 'admin') loadConfigVendidosEditables();
