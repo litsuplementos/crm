@@ -27,6 +27,11 @@ let _memoriaMes  = '';
 let _memoriaEstadosFiltro = ['todos']; // array de estados seleccionados
 let _memoriaAgenteId = 'todos'; // agente seleccionado para el filtro admin
 
+// ── ESTADO PERSISTENTE DEL CSV (agente) ──────────────────────────────────────
+let _agenteCSVAbierto = null;      // path del archivo abierto
+let _agenteCSVData    = null;      // { headers: [], rows: [] } parseado
+let _agenteCSVBusqueda = '';
+
 // Paginación para la vista de agente
 const _AGENTE_PAGE_SIZE = 15;
 let _agenteStoragePage = 1;
@@ -46,7 +51,319 @@ const _ESTADOS_LABELS = {
   spam:         { label: 'SPAM',           emoji: '🚫',  color: '#94a3b8' },
 };
 
+// ── HELPERS DE PARSEO CSV ─────────────────────────────────────────────────────
+function _parseCSV(text) {
+  const lines = text.replace(/^\uFEFF/, '').trim().split('\n');
+  if (lines.length < 2) return { headers: [], rows: [] };
+
+  const parseRow = line => {
+    const result = []; let cur = '', inQ = false;
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { result.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    result.push(cur);
+    return result.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"'));
+  };
+
+  return {
+    headers: parseRow(lines[0]),
+    rows: lines.slice(1).map(parseRow).filter(r => r.some(c => c.trim())),
+  };
+}
+
+// Encontrar índices de columnas clave (nombre, celular, estado, producto, ubicación, monto)
+function _getColIndices(headers) {
+  const h = headers.map(x => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''));
+  return {
+    nombre:    h.findIndex(x => x.includes('cliente') || x.includes('nombre')),
+    celular:   h.findIndex(x => x.includes('celular')),
+    estado:    h.findIndex(x => x.includes('estado')),
+    producto:  h.findIndex(x => x.includes('producto')),
+    ubicacion: h.findIndex(x => x.includes('ubicaci')),
+    monto:     h.findIndex(x => x.includes('monto')),
+    fecha:     h.findIndex(x => x.includes('fecha') && x.includes('reg')),
+  };
+}
+
+// ── CARGAR Y MOSTRAR CSV (agente) ─────────────────────────────────────────────
+async function _verCSVStorageAgente(path) {
+  // Toggle: si ya está abierto, cerrar
+  if (_agenteCSVAbierto === path) {
+    _agenteCSVAbierto = null;
+    _agenteCSVData    = null;
+    _agenteCSVBusqueda = '';
+    _renderAgenteCSVPanel();
+    return;
+  }
+
+  // Abrir nuevo archivo
+  _agenteCSVAbierto  = path;
+  _agenteCSVData     = null;
+  _agenteCSVBusqueda = '';
+  _renderAgenteCSVPanel(); // mostrar loading
+
+  try {
+    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
+    if (error) throw error;
+    _agenteCSVData = _parseCSV(await data.text());
+    _renderAgenteCSVPanel();
+  } catch(e) {
+    _agenteCSVAbierto = null;
+    toast('❌ Error cargando: ' + e.message, 'error');
+    _renderAgenteCSVPanel();
+  }
+}
+
+// Renderizar el panel del CSV (se llama tras cargar datos o al volver a la pestaña)
+function _renderAgenteCSVPanel() {
+  const panelEl = document.getElementById('agente-csv-panel');
+  if (!panelEl) return; // el panel aún no existe en el DOM
+
+  if (!_agenteCSVAbierto) {
+    panelEl.style.display = 'none';
+    panelEl.innerHTML = '';
+    return;
+  }
+
+  if (!_agenteCSVData) {
+    // Loading
+    panelEl.style.display = '';
+    panelEl.innerHTML = `
+      <div style="padding:16px;color:var(--text3);font-size:13px;display:flex;align-items:center;gap:8px;">
+        <div class="syncing" style="display:inline-block;width:16px;height:16px;border:2px solid var(--accent);border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;"></div>
+        Cargando archivo...
+      </div>`;
+    return;
+  }
+
+  const { headers, rows } = _agenteCSVData;
+  const cols = _getColIndices(headers);
+
+  // Filtrar por búsqueda
+  const busq = _agenteCSVBusqueda.toLowerCase().trim();
+  const filtered = busq
+    ? rows.filter(r => {
+        const nombre   = cols.nombre  >= 0 ? (r[cols.nombre]  || '').toLowerCase() : '';
+        const celular  = cols.celular >= 0 ? (r[cols.celular] || '').toLowerCase() : '';
+        return nombre.includes(busq) || celular.includes(busq);
+      })
+    : rows;
+
+  const fileName = _agenteCSVAbierto.split('/').pop();
+
+  panelEl.style.display = '';
+  panelEl.innerHTML = `
+    <div style="
+      background:var(--surface);
+      border:1.5px solid var(--accent);
+      border-radius:var(--radius-sm);
+      overflow:hidden;
+      margin-top:4px;
+    ">
+      <!-- Cabecera del panel -->
+      <div style="
+        background:var(--surface2);
+        padding:12px 16px;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        border-bottom:1px solid var(--border);
+        flex-wrap:wrap;
+        gap:8px;
+      ">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;">📊</span>
+          <div>
+            <div style="font-weight:700;font-size:13px;color:var(--text);">${fileName}</div>
+            <div style="font-size:11px;color:var(--text3);">
+              ${filtered.length}${busq ? ` de ${rows.length}` : ''} registros
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <!-- Barra de búsqueda -->
+          <div style="position:relative;">
+            <input
+              id="agente-csv-busqueda"
+              type="text"
+              placeholder="🔍 Nombre o celular..."
+              value="${_agenteCSVBusqueda}"
+              oninput="_onAgenteCSVBusqueda(this.value)"
+              style="
+                background:var(--surface);
+                border:1px solid var(--border);
+                border-radius:8px;
+                padding:6px 12px 6px 10px;
+                font-size:13px;
+                color:var(--text);
+                width:200px;
+                outline:none;
+              "
+            >
+            ${busq ? `<button onclick="_onAgenteCSVBusqueda('')" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:0;">✕</button>` : ''}
+          </div>
+          <button onclick="_verCSVStorageAgente('${_agenteCSVAbierto}')"
+            style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;color:var(--text2);cursor:pointer;">
+            ✕ Cerrar
+          </button>
+        </div>
+      </div>
+
+      <!-- Tabla -->
+      <div style="overflow-x:auto;max-height:420px;overflow-y:auto;">
+        ${filtered.length === 0
+          ? `<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px;">Sin resultados para "<b>${busq}</b>"</div>`
+          : `<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px;">
+              <thead>
+                <tr style="position:sticky;top:0;z-index:2;">
+                  ${headers.map(h => `
+                    <th style="
+                      background:var(--surface2);
+                      padding:8px 12px;
+                      text-align:left;
+                      font-size:10px;
+                      font-weight:700;
+                      color:var(--text3);
+                      text-transform:uppercase;
+                      letter-spacing:0.5px;
+                      border-bottom:1px solid var(--border);
+                      white-space:nowrap;
+                    ">${h}</th>`).join('')}
+                  <th style="
+                    background:var(--surface2);
+                    padding:8px 12px;
+                    border-bottom:1px solid var(--border);
+                    white-space:nowrap;
+                    font-size:10px;
+                    font-weight:700;
+                    color:var(--text3);
+                    text-transform:uppercase;
+                    letter-spacing:0.5px;
+                  ">ACCIÓN</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${filtered.map((row, ri) => {
+                  const estadoVal = cols.estado >= 0 ? row[cols.estado] : '';
+                  const estadoInfo = ESTADOS[estadoVal] || null;
+                  const badgeStyle = estadoInfo
+                    ? `color:${estadoInfo.color};font-weight:700;`
+                    : 'color:var(--text3);';
+
+                  const celularVal  = cols.celular  >= 0 ? row[cols.celular]  : '';
+                  const nombreVal   = cols.nombre   >= 0 ? row[cols.nombre]   : '';
+                  const productoVal = cols.producto >= 0 ? row[cols.producto] : '';
+                  const ubicVal     = cols.ubicacion >= 0 ? row[cols.ubicacion] : '';
+
+                  // Escapar para JSON inline
+                  const esc = s => (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+
+                  return `
+                  <tr style="border-bottom:1px solid var(--border);transition:background 0.15s;"
+                    onmouseover="this.style.background='var(--surface2)'"
+                    onmouseout="this.style.background=''">
+                    ${row.map((cell, ci) => {
+                      let cellContent = cell || '';
+                      // Colorear estado
+                      if (ci === cols.estado && estadoInfo) {
+                        cellContent = `<span style="${badgeStyle}">${estadoInfo.label}</span>`;
+                      }
+                      return `<td style="
+                        padding:7px 12px;
+                        color:var(--text2);
+                        white-space:nowrap;
+                        max-width:180px;
+                        overflow:hidden;
+                        text-overflow:ellipsis;
+                      " title="${esc(cell)}">${cellContent}</td>`;
+                    }).join('')}
+                    <td style="padding:7px 12px;white-space:nowrap;">
+                      <button
+                        onclick="_registrarDesdeMemoria('${esc(celularVal)}','${esc(nombreVal)}','${esc(productoVal)}','${esc(ubicVal)}')"
+                        style="
+                          background:var(--accent-glow);
+                          border:1.5px solid var(--accent);
+                          border-radius:6px;
+                          padding:4px 10px;
+                          font-size:11px;
+                          font-weight:700;
+                          color:var(--accent2);
+                          cursor:pointer;
+                          white-space:nowrap;
+                          transition:all 0.15s;
+                        "
+                        onmouseover="this.style.background='var(--accent)';this.style.color='white'"
+                        onmouseout="this.style.background='var(--accent-glow)';this.style.color='var(--accent2)'"
+                      >
+                        ➕ Registrar
+                      </button>
+                    </td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function _onAgenteCSVBusqueda(valor) {
+  _agenteCSVBusqueda = valor;
+  // Actualizar input si existe (por si se llamó desde el botón ✕)
+  const inp = document.getElementById('agente-csv-busqueda');
+  if (inp && inp.value !== valor) inp.value = valor;
+  _renderAgenteCSVPanel();
+}
+
+// ── REGISTRAR DESDE MEMORIA ───────────────────────────────────────────────────
+async function _registrarDesdeMemoria(celular, nombre, producto, ubicacion) {
+  // 1. Ir a la pestaña de ventas
+  showViewDirect('ventas');
+
+  // 2. Pequeño delay para que el DOM de ventas esté activo
+  await new Promise(r => setTimeout(r, 60));
+
+  // 3. Abrir modal nuevo
+  await openVentaModal();
+
+  // 4. Otro pequeño delay para que el modal esté listo
+  await new Promise(r => setTimeout(r, 80));
+
+  // 5. Pre-llenar campos
+  const celInput = document.getElementById('f-celular');
+  const nomInput = document.getElementById('f-nombre');
+  const ubInput  = document.getElementById('f-ubicacion');
+
+  if (celInput) { celInput.value = celular; await onCelularInput(); }
+  if (nomInput && nombre) nomInput.value = nombre;
+  if (ubInput  && ubicacion) ubInput.value = ubicacion;
+
+  // 6. Pre-seleccionar producto si existe en catálogo
+  if (producto) {
+    await new Promise(r => setTimeout(r, 200)); // esperar que onCelularInput termine
+    const matchProd = allProductos.find(p =>
+      p.activo && (
+        p.nombre.toLowerCase().includes(producto.toLowerCase()) ||
+        producto.toLowerCase().includes(p.nombre.toLowerCase())
+      )
+    );
+    if (matchProd) {
+      const firstSel = document.querySelector('#venta-items-wrap .item-producto');
+      if (firstSel && !firstSel.value) {
+        firstSel.value = matchProd.id;
+        onItemProductoChange(firstSel);
+      }
+    }
+  }
+
+  toast(`📋 Datos precargados desde memoria — ${nombre || celular}`, 'success');
+}
+
 // ── UI AGENTE (solo lectura) ──────────────────────────────────────────────────
+// REEMPLAZAR _renderMemoriasAgente completo:
 function _renderMemoriasAgente() {
   const wrap = document.getElementById('memorias-wrap');
   if (!wrap) return;
@@ -55,10 +372,9 @@ function _renderMemoriasAgente() {
     <div class="config-card">
       <div class="config-card-title">🗄️ Mis respaldos</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">
-        Aquí puedes ver los respaldos mensuales de tus registros guardados por el administrador.
+        Aquí puedes ver los respaldos mensuales de tus registros. Haz clic en 👁️ para ver el contenido y usar <b>➕ Registrar</b> para pasar un contacto directamente al formulario.
       </div>
 
-      <!-- Selector de mes -->
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px;">
         <div>
           <label style="display:block;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Filtrar por mes</label>
@@ -70,15 +386,17 @@ function _renderMemoriasAgente() {
         <button class="btn-secondary" onclick="_cargarRespaldosAgente()">🔄 Actualizar</button>
       </div>
 
+      <!-- Panel del CSV abierto (persistente) -->
+      <div id="agente-csv-panel" style="display:none;margin-bottom:18px;"></div>
+
       <!-- Lista de archivos -->
-      <div id="agente-storage-list" style="overflow-y:auto;max-height:540px;">
-        <div style="color:var(--text3);font-size:13px;">Cargando...</div>
-      </div>
-      <!-- Paginación -->
+      <div id="agente-storage-list" style="overflow-y:auto;max-height:420px;"></div>
       <div id="agente-storage-pagination" style="display:flex;justify-content:center;gap:6px;margin-top:14px;"></div>
     </div>
   `;
 
+  // Restaurar el panel si había uno abierto
+  _renderAgenteCSVPanel();
   _cargarRespaldosAgente();
 }
 
@@ -126,6 +444,7 @@ async function _cargarRespaldosAgente() {
   }
 }
 
+// REEMPLAZAR _renderAgenteStoragePage completo:
 function _renderAgenteStoragePage() {
   const listEl = document.getElementById('agente-storage-list');
   const pagEl  = document.getElementById('agente-storage-pagination');
@@ -146,43 +465,47 @@ function _renderAgenteStoragePage() {
     <div style="display:flex;flex-direction:column;gap:8px;">
       ${page.map(f => {
         const isPdf = f.name.endsWith('.pdf');
+        const filePath = `${agenteCarpeta}/${f.name}`;
+        const isOpen = _agenteCSVAbierto === filePath;
         const base  = f.name.replace(/\.(csv|pdf)$/, '');
-        // Nombre puede ser "2026-03" o "2026-03_vendido" etc
         const partes = base.split('_');
         const [yr, mo] = partes[0].split('-');
-        const fechaLabel = yr && mo ? new Date(parseInt(yr), parseInt(mo)-1, 1)
-          .toLocaleDateString('es-BO',{month:'long',year:'numeric'})
-          .replace(/^\w/,c=>c.toUpperCase()) : base;
-        const sufijo = partes.slice(1).join('_');
+        const fechaLabel = yr && mo
+          ? new Date(parseInt(yr), parseInt(mo)-1, 1)
+              .toLocaleDateString('es-BO', { month:'long', year:'numeric' })
+              .replace(/^\w/, c => c.toUpperCase())
+          : base;
         const size = f.metadata?.size ? `${(f.metadata.size/1024).toFixed(1)} KB` : '';
         const icon = isPdf ? '📄' : '📊';
         const badge = isPdf
           ? `<span style="background:rgba(99,102,241,0.15);border:1px solid #6366f1;color:#a5b4fc;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">PDF</span>`
           : `<span style="background:rgba(34,211,164,0.15);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">CSV</span>`;
-        const sufijoLabel = sufijo
-          ? `<span style="font-size:10px;color:var(--text3);"> · ${sufijo.replace(/-/g,', ')}</span>`
-          : '';
+
+        // Resaltar si está abierto
+        const cardStyle = isOpen
+          ? 'display:flex;align-items:center;justify-content:space-between;background:var(--accent-glow);border:1.5px solid var(--accent);border-radius:var(--radius-sm);padding:10px 14px;'
+          : 'display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;';
+
         return `
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;">
+        <div style="${cardStyle}">
           <div style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:20px;">${icon}</span>
             <div>
               <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;">
-                <span style="font-weight:600;font-size:14px;">${fechaLabel}</span>
+                <span style="font-weight:600;font-size:14px;${isOpen ? 'color:var(--accent2);' : ''}">${fechaLabel}</span>
                 ${badge}
-                ${sufijoLabel}
+                ${isOpen ? `<span style="background:var(--accent);color:white;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">● ABIERTO</span>` : ''}
               </div>
               <div style="font-size:11px;color:var(--text3);">${f.name}${size ? ' · ' + size : ''}</div>
             </div>
           </div>
           <div style="display:flex;gap:6px;">
             ${isPdf
-              ? `<button class="icon-btn" onclick="_verPDFStorageAgente('${agenteCarpeta}/${f.name}')" title="Ver">👁️</button>`
-              : `<button class="icon-btn" onclick="_verCSVStorageAgente('${agenteCarpeta}/${f.name}')" title="Ver">👁️</button>`}
-            <button class="icon-btn" onclick="_descargarStorageAgente('${agenteCarpeta}/${f.name}','${f.name}')" title="Descargar">💾</button>
+              ? `<button class="icon-btn" onclick="_verPDFStorageAgente('${filePath}')" title="Ver PDF">👁️</button>`
+              : `<button class="icon-btn${isOpen ? '' : ''}" onclick="_verCSVStorageAgente('${filePath}')" title="${isOpen ? 'Cerrar' : 'Ver contenido'}" style="${isOpen ? 'background:var(--accent);color:white;border-color:var(--accent);' : ''}">👁️</button>`}
+            <button class="icon-btn" onclick="_descargarStorageAgente('${filePath}','${f.name}')" title="Descargar">💾</button>
           </div>
-        </div>
-        ${!isPdf ? `<div id="preview-${btoa(agenteCarpeta+'/'+f.name).replace(/[^a-z0-9]/gi,'')}" style="display:none;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius-sm) var(--radius-sm);background:var(--surface);"></div>` : ''}`;
+        </div>`;
       }).join('')}
     </div>`;
 
@@ -201,15 +524,6 @@ function _renderAgenteStoragePage() {
 function _goAgentePage(p) {
   _agenteStoragePage = p;
   _renderAgenteStoragePage();
-}
-
-async function _verCSVStorageAgente(path, nombre) {
-  try {
-    // path incluye la carpeta, pero storage.download necesita la ruta relativa al bucket
-    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
-    if (error) throw error;
-    const text = await data.text();
-  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
 }
 
 async function _verPDFStorageAgente(path) {
@@ -1101,10 +1415,6 @@ async function _verRespaldoStorage(path) {
     if (error) throw error;
     panel.innerHTML = _buildCSVTableHTML(await data.text());
   } catch(e) { panel.innerHTML = `<p style="color:var(--red);padding:12px;font-size:13px;">❌ ${e.message}</p>`; }
-}
-
-async function _verCSVStorageAgente(path) {
-  await _verRespaldoStorage(path);
 }
 
 async function _verPDFStorage(path) {
