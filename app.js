@@ -123,7 +123,7 @@ function initializeSession() {
     document.getElementById('tab-productos').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-config').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-usuarios').style.display = isAdmin ? '' : 'none';
-    document.getElementById('tab-memorias').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-memorias').style.display = '';
     initApp().catch(e => console.error('Error inicializando app:', e));
   }
 }
@@ -211,7 +211,7 @@ async function doLogin() {
     document.getElementById('tab-productos').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-config').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-usuarios').style.display = isAdmin ? '' : 'none';
-    document.getElementById('tab-memorias').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-memorias').style.display = '';
     await initApp();
     SessionManager.saveSession(data);
   } catch(e) {

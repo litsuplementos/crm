@@ -5,8 +5,12 @@ const MEMORIAS_BUCKET = 'memorias';
 // ── INIT ─────────────────────────────────────────────────────────────────────
 async function renderMemorias() {
   await _ensureBucket();
-  _renderMemoriasUI();
-  await _cargarRespaldosStorage();
+  if (currentUser?.rol === 'admin') {
+    _renderMemoriasUI();
+    await _cargarRespaldosStorage();
+  } else {
+    _renderMemoriasAgente();
+  }
 }
 
 async function _ensureBucket() {
@@ -21,6 +25,12 @@ async function _ensureBucket() {
 let _memoriaData = [];
 let _memoriaMes  = '';
 let _memoriaEstadosFiltro = ['todos']; // array de estados seleccionados
+let _memoriaAgenteId = 'todos'; // agente seleccionado para el filtro admin
+
+// Paginación para la vista de agente
+const _AGENTE_PAGE_SIZE = 15;
+let _agenteStoragePage = 1;
+let _agenteStorageItems = [];
 
 const _ESTADOS_LABELS = {
   todos:        { label: 'Todos',          emoji: '🗂️',  color: '#6366f1' },
@@ -36,7 +46,208 @@ const _ESTADOS_LABELS = {
   spam:         { label: 'SPAM',           emoji: '🚫',  color: '#94a3b8' },
 };
 
-// ── UI PRINCIPAL ──────────────────────────────────────────────────────────────
+// ── UI AGENTE (solo lectura) ──────────────────────────────────────────────────
+function _renderMemoriasAgente() {
+  const wrap = document.getElementById('memorias-wrap');
+  if (!wrap) return;
+
+  wrap.innerHTML = `
+    <div class="config-card">
+      <div class="config-card-title">🗄️ Mis respaldos</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">
+        Aquí puedes ver los respaldos mensuales de tus registros guardados por el administrador.
+      </div>
+
+      <!-- Selector de mes -->
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px;">
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Filtrar por mes</label>
+          <select class="filter-select" id="agente-mem-mes" style="min-width:220px;font-size:14px;" onchange="_cargarRespaldosAgente()">
+            <option value="">Todos los meses</option>
+            ${_buildMesesOptions()}
+          </select>
+        </div>
+        <button class="btn-secondary" onclick="_cargarRespaldosAgente()">🔄 Actualizar</button>
+      </div>
+
+      <!-- Lista de archivos -->
+      <div id="agente-storage-list" style="overflow-y:auto;max-height:540px;">
+        <div style="color:var(--text3);font-size:13px;">Cargando...</div>
+      </div>
+      <!-- Paginación -->
+      <div id="agente-storage-pagination" style="display:flex;justify-content:center;gap:6px;margin-top:14px;"></div>
+    </div>
+
+    <!-- MODAL PREVISUALIZACIÓN CSV -->
+    <div class="modal-overlay" id="mem-csv-modal">
+      <div class="modal" style="max-width:90vw;width:90vw;max-height:85vh;">
+        <div class="modal-header">
+          <div class="modal-title" id="mem-csv-modal-title">📋 Vista previa</div>
+          <button class="modal-close" onclick="document.getElementById('mem-csv-modal').classList.remove('open')">×</button>
+        </div>
+        <div class="modal-body" style="overflow-y:auto;max-height:calc(85vh - 80px);">
+          <div id="mem-csv-modal-body"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  _cargarRespaldosAgente();
+}
+
+function _buildMesesOptions() {
+  const hoy = new Date();
+  const meses = [];
+  for (let i = 0; i < 24; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    if (d < new Date(2026, 0, 1)) break;
+    const valor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const label = d.toLocaleDateString('es-BO', { month: 'long', year: 'numeric' })
+      .replace(/^\w/, c => c.toUpperCase());
+    meses.push(`<option value="${valor}">${label}</option>`);
+  }
+  return meses.join('');
+}
+
+async function _cargarRespaldosAgente() {
+  const listEl = document.getElementById('agente-storage-list');
+  const pagEl  = document.getElementById('agente-storage-pagination');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="color:var(--text3);font-size:13px;">Cargando...</div>';
+  if (pagEl) pagEl.innerHTML = '';
+
+  try {
+    // Los archivos del agente están en agentes/{nombre}/
+    const agenteCarpeta = `agentes/${currentUser.nombre}`;
+    const { data, error } = await db.storage.from(MEMORIAS_BUCKET)
+      .list(agenteCarpeta, { sortBy: { column: 'name', order: 'desc' } });
+
+    if (error) throw error;
+
+    const mesFiltro = document.getElementById('agente-mem-mes')?.value || '';
+    let archivos = (data || []).filter(f => f.name.endsWith('.csv') || f.name.endsWith('.pdf'));
+
+    if (mesFiltro) {
+      archivos = archivos.filter(f => f.name.startsWith(mesFiltro));
+    }
+
+    _agenteStorageItems = archivos;
+    _agenteStoragePage = 1;
+    _renderAgenteStoragePage();
+  } catch(e) {
+    listEl.innerHTML = `<p style="color:var(--text3);font-size:13px;">Sin respaldos disponibles.</p>`;
+  }
+}
+
+function _renderAgenteStoragePage() {
+  const listEl = document.getElementById('agente-storage-list');
+  const pagEl  = document.getElementById('agente-storage-pagination');
+  const items  = _agenteStorageItems;
+  const total  = items.length;
+  const pages  = Math.ceil(total / _AGENTE_PAGE_SIZE) || 1;
+  if (_agenteStoragePage > pages) _agenteStoragePage = 1;
+  const page   = items.slice((_agenteStoragePage - 1) * _AGENTE_PAGE_SIZE, _agenteStoragePage * _AGENTE_PAGE_SIZE);
+  const agenteCarpeta = `agentes/${currentUser.nombre}`;
+
+  if (total === 0) {
+    listEl.innerHTML = '<p style="color:var(--text3);font-size:13px;">Sin respaldos guardados aún.</p>';
+    if (pagEl) pagEl.innerHTML = '';
+    return;
+  }
+
+  listEl.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      ${page.map(f => {
+        const isPdf = f.name.endsWith('.pdf');
+        const base  = f.name.replace(/\.(csv|pdf)$/, '');
+        // Nombre puede ser "2026-03" o "2026-03_vendido" etc
+        const partes = base.split('_');
+        const [yr, mo] = partes[0].split('-');
+        const fechaLabel = yr && mo ? new Date(parseInt(yr), parseInt(mo)-1, 1)
+          .toLocaleDateString('es-BO',{month:'long',year:'numeric'})
+          .replace(/^\w/,c=>c.toUpperCase()) : base;
+        const sufijo = partes.slice(1).join('_');
+        const size = f.metadata?.size ? `${(f.metadata.size/1024).toFixed(1)} KB` : '';
+        const icon = isPdf ? '📄' : '📊';
+        const badge = isPdf
+          ? `<span style="background:rgba(99,102,241,0.15);border:1px solid #6366f1;color:#a5b4fc;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">PDF</span>`
+          : `<span style="background:rgba(34,211,164,0.15);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">CSV</span>`;
+        const sufijoLabel = sufijo
+          ? `<span style="font-size:10px;color:var(--text3);"> · ${sufijo.replace(/-/g,', ')}</span>`
+          : '';
+        return `
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:20px;">${icon}</span>
+            <div>
+              <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;">
+                <span style="font-weight:600;font-size:14px;">${fechaLabel}</span>
+                ${badge}
+                ${sufijoLabel}
+              </div>
+              <div style="font-size:11px;color:var(--text3);">${f.name}${size ? ' · ' + size : ''}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            ${isPdf
+              ? `<button class="icon-btn" onclick="_verPDFStorageAgente('${agenteCarpeta}/${f.name}')" title="Ver">👁️</button>`
+              : `<button class="icon-btn" onclick="_verCSVStorageAgente('${agenteCarpeta}/${f.name}','${f.name}')" title="Ver">👁️</button>`}
+            <button class="icon-btn" onclick="_descargarStorageAgente('${agenteCarpeta}/${f.name}','${f.name}')" title="Descargar">💾</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  // Paginación
+  if (pagEl) {
+    if (pages <= 1) { pagEl.innerHTML = ''; return; }
+    let html = `<button class="page-btn" onclick="_goAgentePage(${_agenteStoragePage-1})" ${_agenteStoragePage===1?'disabled':''}>‹</button>`;
+    for (let i = 1; i <= pages; i++) {
+      html += `<button class="page-btn ${i===_agenteStoragePage?'active':''}" onclick="_goAgentePage(${i})">${i}</button>`;
+    }
+    html += `<button class="page-btn" onclick="_goAgentePage(${_agenteStoragePage+1})" ${_agenteStoragePage===pages?'disabled':''}>›</button>`;
+    pagEl.innerHTML = html;
+  }
+}
+
+function _goAgentePage(p) {
+  _agenteStoragePage = p;
+  _renderAgenteStoragePage();
+}
+
+async function _verCSVStorageAgente(path, nombre) {
+  try {
+    // path incluye la carpeta, pero storage.download necesita la ruta relativa al bucket
+    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
+    if (error) throw error;
+    const text = await data.text();
+    _mostrarCSVEnModal(text, nombre);
+  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
+}
+
+async function _verPDFStorageAgente(path) {
+  try {
+    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
+    if (error) throw error;
+    const url = URL.createObjectURL(data);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
+}
+
+async function _descargarStorageAgente(path, nombre) {
+  try {
+    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
+    if (error) throw error;
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(data);
+    a.download = nombre;
+    a.click();
+    toast('💾 Descargado', 'success');
+  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
+}
+
+// ── UI PRINCIPAL (Admin) ──────────────────────────────────────────────────────
 function _renderMemoriasUI() {
   const wrap = document.getElementById('memorias-wrap');
   if (!wrap) return;
@@ -73,20 +284,35 @@ function _renderMemoriasUI() {
       </span>`;
   }).join('');
 
+  // Selector de agentes para admin
+  const agentesOptions = `
+    <option value="todos">👥 Todos los agentes</option>
+    ${(allAgents || []).filter(a => a.rol === 'agente').map(a =>
+      `<option value="${a.id}" data-nombre="${a.nombre}">👤 ${a.nombre}</option>`
+    ).join('')}
+  `;
+
   wrap.innerHTML = `
     <!-- SECCIÓN 1: CREAR RESPALDO -->
     <div class="config-card" id="memoria-seccion-crear">
       <div class="config-card-title">📦 Crear respaldo mensual</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">
-        Selecciona el mes y los estados a incluir. Puedes exportar como CSV plano o PDF con diseño.
+        Selecciona el mes, agente y los estados a incluir. Puedes exportar como CSV plano o PDF con diseño.
+        Al guardar en Supabase, el archivo se guarda en la carpeta del agente correspondiente.
       </div>
 
-      <!-- Fila: mes + botón preview -->
+      <!-- Fila: mes + agente + botón preview -->
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px;">
         <div>
           <label style="display:block;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Mes</label>
           <select class="filter-select" id="mem-mes-selector" style="min-width:220px;font-size:14px;" onchange="_onMemMesChange()">
             ${meses.map(m => `<option value="${m.valor}">${m.label}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Agente</label>
+          <select class="filter-select" id="mem-agente-selector" style="min-width:200px;font-size:14px;" onchange="_onMemAgenteChange()">
+            ${agentesOptions}
           </select>
         </div>
         <button class="btn-save" onclick="_generarPreviewMemoria()" id="mem-btn-preview">
@@ -149,6 +375,19 @@ function _renderMemoriasUI() {
           <input type="file" accept=".csv" style="display:none;" onchange="_importarCSVLocal(this)">
         </label>
       </div>
+
+      <!-- Filtro por agente en la lista guardada -->
+      <div style="margin-bottom:12px;">
+        <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;display:block;">Ver respaldos de:</label>
+        <select class="filter-select" id="mem-storage-agente-filtro" style="min-width:200px;font-size:14px;" onchange="_cargarRespaldosStorage()">
+          <option value="todos">👥 Todos los agentes</option>
+          ${(allAgents || []).filter(a => a.rol === 'agente').map(a =>
+            `<option value="${a.nombre}">👤 ${a.nombre}</option>`
+          ).join('')}
+          <option value="_raiz">📁 Raíz (sin agente)</option>
+        </select>
+      </div>
+
       <div id="mem-storage-list">
         <div style="color:var(--text3);font-size:13px;">Cargando...</div>
       </div>
@@ -210,12 +449,24 @@ function _renderMemoriasUI() {
   `;
 }
 
+// ── HELPERS AGENTE SELECTOR ───────────────────────────────────────────────────
+function _getAgenteSeleccionado() {
+  const sel = document.getElementById('mem-agente-selector');
+  if (!sel || sel.value === 'todos') return null;
+  const opt = sel.options[sel.selectedIndex];
+  return { id: sel.value, nombre: opt.dataset.nombre };
+}
+
+function _onMemAgenteChange() {
+  // Resetear preview al cambiar de agente
+  _onMemMesChange();
+}
+
 // ── TOGGLE ESTADO FILTRO ──────────────────────────────────────────────────────
 function _toggleEstadoFiltro(estado) {
   if (estado === 'todos') {
     _memoriaEstadosFiltro = ['todos'];
   } else {
-    // Quitar 'todos' si estaba
     _memoriaEstadosFiltro = _memoriaEstadosFiltro.filter(e => e !== 'todos');
     if (_memoriaEstadosFiltro.includes(estado)) {
       _memoriaEstadosFiltro = _memoriaEstadosFiltro.filter(e => e !== estado);
@@ -237,13 +488,11 @@ function _toggleEstadoFiltro(estado) {
     chip.style.color = isActive ? v.color : 'var(--text2)';
   });
 
-  // Resetear preview si ya hay datos
   if (_memoriaData.length > 0) {
     _actualizarPreviewConFiltro();
   }
 }
 
-// Aplica filtro de estado a _memoriaData y redibuja stats + tabla
 function _actualizarPreviewConFiltro() {
   const filtrados = _getDataFiltrada();
   _renderPreviewStats(filtrados);
@@ -252,8 +501,17 @@ function _actualizarPreviewConFiltro() {
 }
 
 function _getDataFiltrada() {
-  if (_memoriaEstadosFiltro.includes('todos')) return _memoriaData;
-  return _memoriaData.filter(r => _memoriaEstadosFiltro.includes(r.estado));
+  let data = _memoriaData;
+
+  // Filtro por agente (ya aplicado en el fetch, pero doble check)
+  const agente = _getAgenteSeleccionado();
+  if (agente) {
+    data = data.filter(r => r.agente === agente.nombre);
+  }
+
+  // Filtro por estado
+  if (_memoriaEstadosFiltro.includes('todos')) return data;
+  return data.filter(r => _memoriaEstadosFiltro.includes(r.estado));
 }
 
 // ── GENERAR PREVIEW ───────────────────────────────────────────────────────────
@@ -281,7 +539,9 @@ async function _generarPreviewMemoria() {
     const hasta    = new Date(year, month, 1);
     const hastaStr = `${hasta.getFullYear()}-${String(hasta.getMonth()+1).padStart(2,'0')}-01`;
 
-    const { data: ventasData, error } = await db.from('ventas')
+    const agente = _getAgenteSeleccionado();
+
+    let query = db.from('ventas')
       .select(`
         id, created_at, fecha, estado, intentos, notas,
         monto_total, descuento_pct, archivado,
@@ -293,6 +553,12 @@ async function _generarPreviewMemoria() {
       .lt('fecha', hastaStr)
       .order('fecha', { ascending: true });
 
+    // Si se seleccionó un agente específico, filtrar por él
+    if (agente) {
+      query = query.eq('agente_id', agente.id);
+    }
+
+    const { data: ventasData, error } = await query;
     if (error) throw error;
 
     // Aplanar
@@ -322,9 +588,13 @@ async function _generarPreviewMemoria() {
 
     const filtrados = _getDataFiltrada();
 
+    // Mostrar info de agente seleccionado
+    const agenteLabel = agente ? `👤 ${agente.nombre}` : '👥 Todos los agentes';
+    const agenteInfo = document.createElement('div');
+
     if (filtrados.length === 0) {
       document.getElementById('mem-preview-stats').innerHTML =
-        `<div style="color:var(--text3);font-size:13px;padding:8px 0;">Sin registros en este período con los estados seleccionados.</div>`;
+        `<div style="color:var(--text3);font-size:13px;padding:8px 0;">Sin registros en este período con los filtros seleccionados.</div>`;
       document.getElementById('mem-preview-table-wrap').innerHTML = '';
       document.getElementById('mem-preview-wrap').style.display = '';
       _deshabilitarBotonesExportar();
@@ -332,7 +602,7 @@ async function _generarPreviewMemoria() {
     }
 
     _habilitarBotonesExportar();
-    _renderPreviewStats(filtrados);
+    _renderPreviewStats(filtrados, agenteLabel);
     document.getElementById('mem-preview-table-wrap').innerHTML =
       _buildPreviewTable(filtrados.slice(0, 20), filtrados.length > 20);
     document.getElementById('mem-preview-wrap').style.display = '';
@@ -342,6 +612,7 @@ async function _generarPreviewMemoria() {
     const [d1, d2] = _getRangoMes(mes);
     document.getElementById('mem-limpiar-info').innerHTML = `
       <b style="color:var(--red);">Se eliminarán ${ventasUnicasTotal} registros de ventas</b> del mes completo
+      ${agente ? `(agente: <b>${agente.nombre}</b>)` : '(todos los agentes)'}
       (<b>${d1.toLocaleDateString('es-BO')}</b> al <b>${new Date(d2.getTime()-1).toLocaleDateString('es-BO')}</b>).
       También se limpiarán sus items y los leads del mismo período.
     `;
@@ -370,7 +641,7 @@ function _habilitarBotonesExportar() {
   });
 }
 
-function _renderPreviewStats(filtrados) {
+function _renderPreviewStats(filtrados, agenteLabel) {
   const ventasUnicas  = new Set(filtrados.map(r => r.venta_id)).size;
   const totalUnidades = filtrados.reduce((s, r) => s + (parseInt(r.cantidad) || 0), 0);
   const montoTotal    = [...new Set(filtrados.map(r => r.venta_id))]
@@ -382,6 +653,7 @@ function _renderPreviewStats(filtrados) {
   const tieneVendidos = filtrados.some(r => r.estado === 'vendido');
 
   document.getElementById('mem-preview-stats').innerHTML = `
+    ${agenteLabel ? `<div style="width:100%;font-size:12px;color:var(--accent2);font-weight:600;margin-bottom:4px;">📁 ${agenteLabel}</div>` : ''}
     <div class="stat-card" style="flex:1;min-width:110px;padding:12px 16px;">
       <div class="stat-value" style="font-size:22px;color:var(--accent2);">${ventasUnicas}</div>
       <div class="stat-label">REGISTROS</div>
@@ -453,10 +725,10 @@ async function _exportarCSVStorage() {
   try {
     const csv  = _buildCSV(filtrados);
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-    const path = `${_memoriaMes}${_sufijoDeFiltro()}.csv`;
+    const path = _buildStoragePath('csv');
     const { error } = await db.storage.from(MEMORIAS_BUCKET).upload(path, blob, { upsert: true, contentType: 'text/csv' });
     if (error) throw error;
-    toast('☁️ CSV guardado en Supabase', 'success');
+    toast(`☁️ CSV guardado en Supabase → ${path}`, 'success');
     await _cargarRespaldosStorage();
   } catch(e) {
     toast('❌ Error subiendo: ' + e.message, 'error');
@@ -465,13 +737,23 @@ async function _exportarCSVStorage() {
   }
 }
 
+// ── PATH BUILDER ──────────────────────────────────────────────────────────────
+function _buildStoragePath(ext) {
+  const agente = _getAgenteSeleccionado();
+  const fileName = `${_memoriaMes}${_sufijoDeFiltro()}.${ext}`;
+  if (agente) {
+    return `agentes/${agente.nombre}/${fileName}`;
+  }
+  // Si es "todos los agentes", guardar en raíz
+  return fileName;
+}
+
 function _sufijoDeFiltro() {
   if (_memoriaEstadosFiltro.includes('todos')) return '';
   return '_' + _memoriaEstadosFiltro.join('-');
 }
 
 // ── PDF ───────────────────────────────────────────────────────────────────────
-// Genera el PDF como Uint8Array usando canvas + jsPDF (cargado dinámicamente)
 async function _cargarJsPDF() {
   if (window.jspdf) return window.jspdf.jsPDF;
   return new Promise((resolve, reject) => {
@@ -492,11 +774,10 @@ async function _construirPDF() {
   const W     = doc.internal.pageSize.getWidth();
   const H     = doc.internal.pageSize.getHeight();
 
-  // ── Paleta ──
   const C = {
     bg:      [10,  10,  20],
     surface: [20,  20,  38],
-    accent:  [99,  102, 241],  // indigo
+    accent:  [99,  102, 241],
     green:   [34,  211, 164],
     yellow:  [251, 191, 36],
     red:     [248, 113, 113],
@@ -520,35 +801,30 @@ async function _construirPDF() {
     spam:          C.text2,
   };
 
-  // ── Helpers ──
   const setFill  = c => doc.setFillColor(c[0], c[1], c[2]);
   const setStroke= c => doc.setDrawColor(c[0], c[1], c[2]);
   const setTextC = c => doc.setTextColor(c[0], c[1], c[2]);
   const rect     = (x,y,w,h,r=0) => r ? doc.roundedRect(x,y,w,h,r,r,'F') : doc.rect(x,y,w,h,'F');
 
-  // ── Fondo oscuro ──
   setFill(C.bg); rect(0, 0, W, H);
-
-  // ── Header band ──
   setFill(C.surface); rect(0, 0, W, 22);
-  // Acento izquierdo
   setFill(C.accent); rect(0, 0, 4, 22);
 
-  // Logo
   doc.setFont('helvetica','bold');
   doc.setFontSize(14);
   setTextC(C.white);
   doc.text('LIT CRM', 9, 14);
   doc.setFontSize(8);
   setTextC(C.accent);
-  // Convertir accent a hex para el círculo
   doc.text('PRO', 28, 10);
 
-  // Título
   const [year, month] = _memoriaMes.split('-').map(Number);
   const mesLabel = new Date(year, month-1, 1).toLocaleDateString('es-BO', { month:'long', year:'numeric' }).replace(/^\w/,c=>c.toUpperCase());
   const filtroLabel = _memoriaEstadosFiltro.includes('todos') ? 'Todos los estados' :
     _memoriaEstadosFiltro.map(e => _ESTADOS_LABELS[e]?.label || e).join(', ');
+
+  const agente = _getAgenteSeleccionado();
+  const agenteLabel = agente ? `Agente: ${agente.nombre}` : 'Todos los agentes';
 
   doc.setFont('helvetica','bold');
   doc.setFontSize(13);
@@ -556,14 +832,12 @@ async function _construirPDF() {
   doc.text(`Memoria — ${mesLabel}`, W/2, 10, { align:'center' });
   doc.setFontSize(7);
   setTextC(C.text2);
-  doc.text(`Filtro: ${filtroLabel}`, W/2, 16, { align:'center' });
+  doc.text(`Filtro: ${filtroLabel} · ${agenteLabel}`, W/2, 16, { align:'center' });
 
-  // Fecha generación
   doc.setFontSize(7);
   setTextC(C.text2);
   doc.text(`Generado: ${new Date().toLocaleString('es-BO')}`, W-6, 10, { align:'right' });
 
-  // ── Stats cards ──
   const ventasUnicas  = new Set(filtrados.map(r => r.venta_id)).size;
   const totalUnidades = filtrados.reduce((s,r) => s+(parseInt(r.cantidad)||0), 0);
   const montoTotal    = [...new Set(filtrados.map(r=>r.venta_id))]
@@ -596,15 +870,13 @@ async function _construirPDF() {
     sx += cardW + cardGap;
   });
 
-  // ── Tabla ──
   const tableTop = sy + cardH + 6;
   const cols = ['Fecha','Cliente','Celular','Ubicación','Producto','Cant.','Monto','Estado','Agente','Notas'];
   const keys = ['fecha_registro','cliente','celular','ubicacion','producto','cantidad','monto_total','estado','agente','notas'];
-  const colW = [18, 32, 22, 30, 28, 10, 18, 22, 22, 50]; // suma ~252 ≈ landscape A4 interior
+  const colW = [18, 32, 22, 30, 28, 10, 18, 22, 22, 50];
   const rowH  = 7;
   const thH   = 8;
 
-  // Header de tabla
   setFill(C.surface);
   rect(6, tableTop, W-12, thH);
   setFill(C.accent);
@@ -619,7 +891,6 @@ async function _construirPDF() {
     cx += colW[i];
   });
 
-  // Filas
   let y = tableTop + thH;
   let page = 1;
 
@@ -627,11 +898,10 @@ async function _construirPDF() {
     if (y + rowH > H - 10) {
       doc.addPage();
       setFill(C.bg); rect(0, 0, W, H);
-      // mini header en páginas siguientes
       setFill(C.surface); rect(0,0,W,10);
       setFill(C.accent);  rect(0,0,4,10);
       doc.setFont('helvetica','bold'); doc.setFontSize(7); setTextC(C.text2);
-      doc.text(`LIT CRM · Memoria ${mesLabel} · pág. ${++page}`, W/2, 7, {align:'center'});
+      doc.text(`LIT CRM · Memoria ${mesLabel} · ${agenteLabel} · pág. ${++page}`, W/2, 7, {align:'center'});
       y = 14;
     }
 
@@ -639,7 +909,6 @@ async function _construirPDF() {
     setFill(isEven ? C.surface : C.bg);
     rect(6, y, W-12, rowH);
 
-    // Línea izquierda de estado
     const ec = estadoColor[row.estado] || C.text2;
     setFill(ec); rect(6, y, 1.5, rowH);
 
@@ -661,7 +930,6 @@ async function _construirPDF() {
       cx += colW[i];
     });
 
-    // Separador
     setStroke(C.border);
     doc.setLineWidth(0.1);
     doc.line(6, y + rowH, W-6, y + rowH);
@@ -669,14 +937,13 @@ async function _construirPDF() {
     y += rowH;
   });
 
-  // ── Footer ──
   const totalPages = doc.internal.getNumberOfPages();
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p);
     setFill(C.surface); rect(0, H-8, W, 8);
     setFill(C.accent);  rect(0, H-1, W, 1);
     doc.setFont('helvetica','normal'); doc.setFontSize(6); setTextC(C.text2);
-    doc.text(`LIT CRM · ${mesLabel} · ${filtroLabel}`, 8, H-3);
+    doc.text(`LIT CRM · ${mesLabel} · ${filtroLabel} · ${agenteLabel}`, 8, H-3);
     doc.text(`Pág. ${p} / ${totalPages}`, W-8, H-3, {align:'right'});
   }
 
@@ -684,7 +951,6 @@ async function _construirPDF() {
 }
 
 function _truncate(str, maxMm) {
-  // Estimación rápida: ~0.42 mm por carácter a 6pt
   const max = Math.floor(maxMm / 0.42);
   if (!str) return '';
   return str.length > max ? str.slice(0, max-1) + '…' : str;
@@ -713,10 +979,10 @@ async function _exportarPDFStorage() {
     if (!doc) return;
     const pdfBytes = doc.output('arraybuffer');
     const blob     = new Blob([pdfBytes], { type: 'application/pdf' });
-    const path     = `${_memoriaMes}${_sufijoDeFiltro()}.pdf`;
+    const path     = _buildStoragePath('pdf');
     const { error } = await db.storage.from(MEMORIAS_BUCKET).upload(path, blob, { upsert: true, contentType: 'application/pdf' });
     if (error) throw error;
-    toast('☁️ PDF guardado en Supabase', 'success');
+    toast(`☁️ PDF guardado → ${path}`, 'success');
     await _cargarRespaldosStorage();
   } catch(e) {
     toast('❌ Error subiendo PDF: ' + e.message, 'error'); console.error(e);
@@ -725,24 +991,67 @@ async function _exportarPDFStorage() {
   }
 }
 
-// ── STORAGE LIST ──────────────────────────────────────────────────────────────
+// ── STORAGE LIST (Admin) ──────────────────────────────────────────────────────
 async function _cargarRespaldosStorage() {
   const listEl = document.getElementById('mem-storage-list');
   if (!listEl) return;
+
+  const filtroAgente = document.getElementById('mem-storage-agente-filtro')?.value || 'todos';
+
   try {
-    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).list('', { sortBy: { column: 'name', order: 'desc' } });
-    if (error) throw error;
-    const archivos = (data || []).filter(f => f.name.endsWith('.csv') || f.name.endsWith('.pdf'));
+    let archivos = [];
+
+    if (filtroAgente === 'todos') {
+      // Cargar raíz + todas las carpetas de agentes
+      const [{ data: raizData }, { data: carpetasData }] = await Promise.all([
+        db.storage.from(MEMORIAS_BUCKET).list('', { sortBy: { column: 'name', order: 'desc' } }),
+        db.storage.from(MEMORIAS_BUCKET).list('agentes', { sortBy: { column: 'name', order: 'asc' } }),
+      ]);
+
+      // Archivos en raíz
+      const raizArchivos = (raizData || [])
+        .filter(f => f.name.endsWith('.csv') || f.name.endsWith('.pdf'))
+        .map(f => ({ ...f, _path: f.name, _agenteLabel: '📁 Raíz' }));
+
+      // Archivos dentro de agentes/
+      const carpetas = (carpetasData || []).filter(f => !f.name.includes('.'));
+      const carpetaPromises = carpetas.map(c =>
+        db.storage.from(MEMORIAS_BUCKET).list(`agentes/${c.name}`, { sortBy: { column: 'name', order: 'desc' } })
+          .then(({ data }) => (data || [])
+            .filter(f => f.name.endsWith('.csv') || f.name.endsWith('.pdf'))
+            .map(f => ({ ...f, _path: `agentes/${c.name}/${f.name}`, _agenteLabel: `👤 ${c.name}` }))
+          )
+      );
+      const carpetaResults = await Promise.all(carpetaPromises);
+      const agentesArchivos = carpetaResults.flat();
+
+      archivos = [...agentesArchivos.sort((a,b) => b.name.localeCompare(a.name)), ...raizArchivos];
+
+    } else if (filtroAgente === '_raiz') {
+      const { data } = await db.storage.from(MEMORIAS_BUCKET).list('', { sortBy: { column: 'name', order: 'desc' } });
+      archivos = (data || [])
+        .filter(f => f.name.endsWith('.csv') || f.name.endsWith('.pdf'))
+        .map(f => ({ ...f, _path: f.name, _agenteLabel: '📁 Raíz' }));
+    } else {
+      // Agente específico
+      const { data } = await db.storage.from(MEMORIAS_BUCKET)
+        .list(`agentes/${filtroAgente}`, { sortBy: { column: 'name', order: 'desc' } });
+      archivos = (data || [])
+        .filter(f => f.name.endsWith('.csv') || f.name.endsWith('.pdf'))
+        .map(f => ({ ...f, _path: `agentes/${filtroAgente}/${f.name}`, _agenteLabel: `👤 ${filtroAgente}` }));
+    }
+
     if (archivos.length === 0) {
       listEl.innerHTML = '<p style="color:var(--text3);font-size:13px;">Sin respaldos guardados aún.</p>';
       return;
     }
+
     listEl.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:8px;">
         ${archivos.map(f => {
           const isPdf = f.name.endsWith('.pdf');
           const base  = f.name.replace(/\.(csv|pdf)$/, '');
-          const [yr, mo] = base.split('-');
+          const [yr, mo] = base.split('_')[0].split('-');
           const fechaLabel = yr && mo ? new Date(parseInt(yr), parseInt(mo)-1, 1)
             .toLocaleDateString('es-BO',{month:'long',year:'numeric'})
             .replace(/^\w/,c=>c.toUpperCase()) : base;
@@ -751,22 +1060,27 @@ async function _cargarRespaldosStorage() {
           const badge = isPdf
             ? `<span style="background:rgba(99,102,241,0.15);border:1px solid #6366f1;color:#a5b4fc;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">PDF</span>`
             : `<span style="background:rgba(34,211,164,0.15);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">CSV</span>`;
+          const agenteBadge = f._agenteLabel
+            ? `<span style="background:var(--surface2);border:1px solid var(--border);color:var(--text2);font-size:10px;padding:2px 7px;border-radius:10px;">${f._agenteLabel}</span>`
+            : '';
           return `
           <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;">
             <div style="display:flex;align-items:center;gap:10px;">
               <span style="font-size:20px;">${icon}</span>
               <div>
-                <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;">
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;flex-wrap:wrap;">
                   <span style="font-weight:600;font-size:14px;">${fechaLabel}</span>
                   ${badge}
+                  ${agenteBadge}
                 </div>
-                <div style="font-size:11px;color:var(--text3);">${f.name}${size ? ' · ' + size : ''}</div>
+                <div style="font-size:11px;color:var(--text3);">${f._path}${size ? ' · ' + size : ''}</div>
               </div>
             </div>
             <div style="display:flex;gap:6px;">
-              ${isPdf ? `<button class="icon-btn" onclick="_verPDFStorage('${f.name}')" title="Ver">👁️</button>` :
-                        `<button class="icon-btn" onclick="_verRespaldoStorage('${f.name}')" title="Ver">👁️</button>`}
-              <button class="icon-btn" onclick="_descargarRespaldoStorage('${f.name}')" title="Descargar">💾</button>
+              ${isPdf
+                ? `<button class="icon-btn" onclick="_verPDFStorage('${f._path}')" title="Ver">👁️</button>`
+                : `<button class="icon-btn" onclick="_verRespaldoStorage('${f._path}')" title="Ver">👁️</button>`}
+              <button class="icon-btn" onclick="_descargarRespaldoStorage('${f._path}','${f.name}')" title="Descargar">💾</button>
             </div>
           </div>`;
         }).join('')}
@@ -776,18 +1090,18 @@ async function _cargarRespaldosStorage() {
   }
 }
 
-async function _verRespaldoStorage(nombre) {
+async function _verRespaldoStorage(path) {
   try {
-    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(nombre);
+    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
     if (error) throw error;
     const text = await data.text();
-    _mostrarCSVEnModal(text, nombre);
+    _mostrarCSVEnModal(text, path.split('/').pop());
   } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
 }
 
-async function _verPDFStorage(nombre) {
+async function _verPDFStorage(path) {
   try {
-    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(nombre);
+    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
     if (error) throw error;
     const url = URL.createObjectURL(data);
     window.open(url, '_blank');
@@ -795,13 +1109,13 @@ async function _verPDFStorage(nombre) {
   } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
 }
 
-async function _descargarRespaldoStorage(nombre) {
+async function _descargarRespaldoStorage(path, nombre) {
   try {
-    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(nombre);
+    const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
     if (error) throw error;
     const a    = document.createElement('a');
     a.href     = URL.createObjectURL(data);
-    a.download = nombre;
+    a.download = nombre || path.split('/').pop();
     a.click();
     toast('💾 Descargado', 'success');
   } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
@@ -874,7 +1188,6 @@ async function _ejecutarLimpieza() {
   btn.textContent = '⏳ Limpiando...'; btn.disabled = true;
 
   try {
-    // Obtener IDs por fecha (consistente con el preview)
     const { data: ventasDelMes, error: e1 } = await db.from('ventas')
       .select('id').gte('fecha', desdeStr).lt('fecha', hastaStr);
     if (e1) throw e1;
@@ -887,7 +1200,6 @@ async function _ejecutarLimpieza() {
       if (e3) throw e3;
     }
 
-    // Leads del mismo período por created_at
     const { error: e4 } = await db.from('leads')
       .delete().gte('created_at', desde.toISOString()).lt('created_at', hasta.toISOString());
     if (e4) throw e4;
