@@ -615,3 +615,20 @@ td.td-actions { white-space: nowrap; }
   0%, 100% { transform:scale(1); opacity:1; }
   50%       { transform:scale(1.15); opacity:0.85; }
 }
+
+/* BOTÓN AÑADIR ITEM */
+.btn-add-item-dashed {
+  background: var(--surface2);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 8px 16px;
+  color: var(--text2);
+  font-size: 13px;
+  cursor: pointer;
+  width: 100%;
+  transition: border-color 0.2s, color 0.2s;
+}
+.btn-add-item-dashed:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
