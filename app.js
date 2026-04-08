@@ -293,7 +293,6 @@ async function initApp() {
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
   iniciarChequeoRecordatorios();
   _cargarLeadsPendientes();
-  setTimeout(initZadarmaWidget, 1500);
 }
 
 // FIX #13 — flag para registrar el listener una sola vez por sesión completa de la app

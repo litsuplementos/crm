@@ -33,7 +33,7 @@
   --scrollbar-thumb: #d1d5db;
 }
 
-/* ── TEMA DÍA — menta #7ECFB8 / dorado #FEDD6E / rosado #F4A8A0 ── */
+/* TEMA DÍA */
 [data-theme="day"] {
   --bg: #eef9f5;
   --surface: #ffffff;
@@ -67,7 +67,7 @@
   --scrollbar-thumb: #aadece;
 }
 
-/* ── TEMA NOCHE ── */
+/* TEMA NOCHE */
 [data-theme="night"] {
   --bg: #1f1f26; --surface: #13131a; --surface2: #1c1c28; --surface3: #252535;
   --border: #2a2a3d; --accent: #7c5cfc; --accent2: #a78bfa;
@@ -85,21 +85,19 @@
   --scrollbar-thumb: #2a2a3d;
 }
 
-/* ── BASE ── */
+/* BASE */
 * { box-sizing: border-box; margin: 0; padding: 0 }
 body {
   font-family: 'DM Sans', 'Noto Color Emoji', sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
-  
-  transition: background 0.3s, color 0.3s;
 }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 
-/* ── THEME TOGGLE ── */
+/* THEME TOGGLE */
 #theme-toggle {
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -110,7 +108,6 @@ body {
   font-family: 'DM Sans', 'Noto Color Emoji', sans-serif;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
   white-space: nowrap;
 }
 #theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
@@ -120,12 +117,12 @@ body {
   to   { transform: translateY(0);     opacity: 1; }
 }
 
-/* ── LOGIN ── */
+/* LOGIN */
 #login-screen {
   min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
   background: var(--login-radial), var(--bg);
-  padding: 20px; transition: background 0.3s;
+  padding: 20px;
 }
 .login-box {
   background: var(--surface); border: 1px solid var(--border);
@@ -151,7 +148,7 @@ body {
   width: 100%; background: var(--surface2); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 11px 14px; color: var(--text);
   font-family: 'DM Sans', sans-serif; font-size: 15px;
-  transition: border-color 0.2s, box-shadow 0.2s; outline: none;
+  outline: none;
 }
 .form-group input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 .btn-primary {
@@ -159,7 +156,7 @@ body {
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   border: none; border-radius: var(--radius-sm); padding: 13px;
   color: white; font-family: 'Syne', 'Noto Color Emoji', sans-serif; font-weight: 700; font-size: 15px;
-  cursor: pointer; transition: opacity 0.2s, transform 0.1s;
+  cursor: pointer;
   box-shadow: 0 3px 10px var(--accent-glow);
 }
 .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
@@ -169,7 +166,7 @@ body {
   color: var(--red); font-size: 13px; margin-bottom: 14px; display: none;
 }
 
-/* ── APP SHELL ── */
+/* APP SHELL */
 #app { display: none; flex-direction: column; min-height: 100vh; }
 
 .topbar {
@@ -177,7 +174,6 @@ body {
   padding: 0 22px; height: 58px;
   display: flex; align-items: center; justify-content: space-between;
   position: sticky; top: 0; z-index: 100;
-  transition: background 0.3s, border-color 0.3s;
 }
 .topbar-left { display: flex; align-items: center; gap: 10px; }
 .topbar-logo { font-family: 'Syne', 'Noto Color Emoji', sans-serif; font-weight: 800; font-size: 19px; letter-spacing: -0.5px; }
@@ -194,10 +190,9 @@ body {
   background: var(--green-bg); border: 1px solid var(--green);
   border-radius: 20px; padding: 5px 13px;
   color: var(--green); font-size: 12px; font-weight: 600;
-  cursor: pointer; transition: all 0.2s;
+  cursor: pointer;
 }
 .sync-btn:hover { filter: brightness(1.08); }
-.sync-btn svg { transition: transform 0.5s; flex-shrink: 0; }
 .sync-btn.syncing svg { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -215,25 +210,23 @@ body {
 .logout-btn {
   background: none; border: 1px solid var(--border); border-radius: 20px;
   padding: 5px 12px; color: var(--text3); font-size: 12px;
-  cursor: pointer; transition: all 0.2s;
+  cursor: pointer;
 }
 .logout-btn:hover { color: var(--red); border-color: var(--red); }
 
-/* ── NAV TABS ── */
+/* NAV TABS */
 .nav-tabs {
   background: var(--surface); border-bottom: 1px solid var(--border);
   display: flex; padding: 0 22px;
   overflow-x: auto; gap: 0;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  transition: background 0.3s;
 }
 .nav-tabs::-webkit-scrollbar { display: none; }
 .nav-tab {
   padding: 13px 18px; font-size: 14px; font-weight: 500;
   color: var(--text3); cursor: pointer;
   border-bottom: 2px solid transparent; white-space: nowrap;
-  transition: all 0.2s; flex-shrink: 0;
 }
 .nav-tab:hover { color: var(--text2); }
 .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
@@ -479,7 +472,7 @@ td.td-actions { white-space: nowrap; }
 .quick-chip {
   padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;
   cursor: pointer; border: 1px solid var(--border); background: var(--surface2);
-  color: var(--text2); transition: all 0.15s;
+  color: var(--text2);
 }
 .quick-chip:hover, .quick-chip.active { background: var(--accent); border-color: var(--accent); color: white; }
 .quick-chip.green:hover, .quick-chip.green.active  { background: var(--green); border-color: var(--green); color: white; }
@@ -608,12 +601,12 @@ td.td-actions { white-space: nowrap; }
 /* ── RANIMACIONES LEADS ── */
 @keyframes leadSlideIn {
   from { opacity:0; transform:translateY(-6px); }
-  to   { opacity:1; transform:translateY(0); }
+  to { opacity:1; transform:translateY(0); }
 }
 
 @keyframes leadsPulse {
   0%, 100% { transform:scale(1); opacity:1; }
-  50%       { transform:scale(1.15); opacity:0.85; }
+  50% { transform:scale(1.15); opacity:0.85; }
 }
 
 /* BOTÓN AÑADIR ITEM */
@@ -626,7 +619,6 @@ td.td-actions { white-space: nowrap; }
   font-size: 13px;
   cursor: pointer;
   width: 100%;
-  transition: border-color 0.2s, color 0.2s;
 }
 .btn-add-item-dashed:hover {
   border-color: var(--accent);
