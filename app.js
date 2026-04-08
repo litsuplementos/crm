@@ -75,6 +75,7 @@ let allProductos = [];
 let selectedAgentId  = 'all';
 let currentPage = 1;
 const PAGE_SIZE = 15;
+let totalVentasCount = 0;
 let mostrarArchivados = false;
 let _vendidosEditablesCache = null;
 let filtroTiempo = 'mes';
@@ -562,7 +563,7 @@ async function loadVentas() {
                              producto_interes, notas, faltas, flag ),
         agente:agente_id   ( id, nombre ),
         venta_items ( id, cantidad, subtotal, producto_id, productos ( id, nombre ))
-      `)
+      `, { count: 'exact' })
       .order('archivado', { ascending: true })
       .order('id', { ascending: false });
 
@@ -572,20 +573,22 @@ async function loadVentas() {
       query = query.eq('agente_id', selectedAgentId);
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) throw error;
     ventas = data || [];
+    totalVentasCount = count || 0;
 
     ventasIndex = {};
     ventas.forEach(v => ventasIndex[v.id] = v);
     dashboardCache.invalidate();
-    filteredCache.invalidate(); // FIX #6
-    _cityFilterDirty = true;   // FIX #5 — nuevos datos, reconstruir filtro de ciudad
+    filteredCache.invalidate();
+    _cityFilterDirty = true;
 
   } catch(e) {
     toast('❌ Error: ' + e.message, 'error');
     ventas = [];
     ventasIndex = {};
+    totalVentasCount = 0;
   }
 }
 
@@ -968,7 +971,6 @@ function getFiltered() {
 }
 
 function renderVentas() {
-  // FIX #5 — populateCityFilter solo reconstruye si los datos cambiaron
   populateCityFilter();
   const filtered = getFiltered();
   const total = filtered.length;
@@ -977,36 +979,55 @@ function renderVentas() {
   const page = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const isAdmin = currentUser?.rol === 'admin';
 
-  document.getElementById('ventas-count').textContent = `${total} ${mostrarArchivados ? 'archivados' : 'activos'} encontrados`;
-  const totalUnidades = filtered.reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0);
-  document.getElementById('table-count').textContent = `${total} registros · ${totalUnidades} unidades`;
+  document.getElementById('ventas-count').textContent =
+    `${total} ${mostrarArchivados ? 'archivados' : 'activos'} encontrados`;
+  const totalUnidades = filtered.reduce(
+    (sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0
+  );
+  document.getElementById('table-count').textContent =
+    `${total} registros · ${totalUnidades} unidades`;
 
-  document.getElementById('ventas-tbody').innerHTML = page.map(v => {
-    const prodNombres = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
-    const prodCell    = prodNombres.length > 0
-      ? prodNombres.map(n => prodChip(n)).join(' ')
-      : '<span style="color:var(--text3);font-size:12px;">—</span>';
-    const ubicacion   = v.cliente?.ubicacion || '';
-    return `
-    <tr data-venta-id="${v.id}" style="${v.archivado ? 'opacity:0.6;' : ''}">
-      <td style="color:var(--text2);font-size:12px;">${v.fecha || ''}${v.archivado ? ' 🔒' : ''}</td>
-      <td class="td-name">${v.cliente?.nombre || '<span style="color:var(--text3)">s/n</span>'} ${flagBadge(v.cliente)}</td>
-      <td class="td-phone">
-        <a href="tel:${v.cliente?.celular}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;">${v.cliente?.celular || ''}</a>
-      </td>
-      <td>${prodCell}</td>
-      <td>${v.monto_total ? montoChip(v.monto_total) : ''}</td>
-      <td style="max-width:160px;white-space:normal;word-break:break-word;font-size:13px;color:var(--text2);">${ubicacion}</td>
-      <td>${statusBadge(v.estado)}${v.estado === 'rellamada' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}${v.estado === 'sin_respuesta' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}</td>
-      <td style="min-width:280px;max-width:260px;overflow:hidden;white-space:normal;color:var(--text2);font-size:12px;" title="${v.notas || ''}">${v.notas || ''}${v.comprobante_url ? ` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>` : ''}</td>
-      ${isAdmin ? `<td style="font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>` : ''}
-      <td class="td-actions" onclick="event.stopPropagation()">
-        <button class="icon-btn" onclick="openVentaModal(${v.id})">✏️</button>
-        <button class="icon-btn danger" onclick="deleteVenta(${v.id})">🗑️</button>
-      </td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text2);">Sin resultados</td></tr>';
+  // Fragment para un solo reflow
+  const tbody = document.getElementById('ventas-tbody');
+  const fragment = document.createDocumentFragment();
 
+  if (page.length === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="10" style="text-align:center;padding:40px;color:var(--text2);">Sin resultados</td>';
+    fragment.appendChild(tr);
+  } else {
+    for (const v of page) {
+      const prodNombres = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
+      const prodCell = prodNombres.length > 0
+        ? prodNombres.map(n => prodChip(n)).join(' ')
+        : '<span style="color:var(--text3);font-size:12px;">—</span>';
+      const ubicacion = v.cliente?.ubicacion || '';
+
+      const tr = document.createElement('tr');
+      tr.dataset.ventaId = v.id;
+      if (v.archivado) tr.style.opacity = '0.6';
+
+      tr.innerHTML = `
+        <td style="color:var(--text2);font-size:12px;">${v.fecha || ''}${v.archivado ? ' 🔒' : ''}</td>
+        <td class="td-name">${v.cliente?.nombre || '<span style="color:var(--text3)">s/n</span>'} ${flagBadge(v.cliente)}</td>
+        <td class="td-phone">
+          <a href="tel:${v.cliente?.celular}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;">${v.cliente?.celular || ''}</a>
+        </td>
+        <td>${prodCell}</td>
+        <td>${v.monto_total ? montoChip(v.monto_total) : ''}</td>
+        <td style="max-width:160px;white-space:normal;word-break:break-word;font-size:13px;color:var(--text2);">${ubicacion}</td>
+        <td>${statusBadge(v.estado)}${v.estado === 'rellamada' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}${v.estado === 'sin_respuesta' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}</td>
+        <td style="min-width:280px;max-width:260px;overflow:hidden;white-space:normal;color:var(--text2);font-size:12px;" title="${v.notas || ''}">${v.notas || ''}${v.comprobante_url ? ` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>` : ''}</td>
+        ${isAdmin ? `<td style="font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>` : ''}
+        <td class="td-actions" onclick="event.stopPropagation()">
+          <button class="icon-btn" onclick="openVentaModal(${v.id})">✏️</button>
+          <button class="icon-btn danger" onclick="deleteVenta(${v.id})">🗑️</button>
+        </td>`;
+      fragment.appendChild(tr);
+    }
+  }
+
+  tbody.replaceChildren(fragment);
   document.getElementById('th-agente').style.display = isAdmin ? '' : 'none';
   renderPagination(totalPages);
 }
@@ -1023,7 +1044,12 @@ function renderPagination(totalPages) {
   html += `<button class="page-btn" onclick="goPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>›</button>`;
   document.getElementById('pagination').innerHTML = html;
 }
-function goPage(p) { currentPage = p; renderVentas(); window.scrollTo(0, 200); }
+
+function goPage(p) {
+  currentPage = p;
+  renderVentas();
+  document.getElementById('view-ventas').scrollTo({ top: 0, behavior: 'instant' });
+}
 
 function setArchivoFiltro(archivado) {
   mostrarArchivados = archivado;
