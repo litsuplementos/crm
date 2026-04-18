@@ -1198,32 +1198,8 @@ async function _construirPDF() {
   // Helper: partir texto en líneas que caben en maxMm
   function splitText(text, maxMm, fontSize) {
     doc.setFontSize(fontSize);
-    const maxChars = Math.floor(maxMm / 0.38);
     if (!text) return [''];
-    const words = text.split(' ');
-    const lines = [];
-    let line = '';
-    for (const w of words) {
-      const test = line ? line + ' ' + w : w;
-      if (test.length <= maxChars) {
-        line = test;
-      } else {
-        if (line) lines.push(line);
-        // si la palabra sola es muy larga, cortarla
-        if (w.length > maxChars) {
-          let chunk = '';
-          for (const ch of w) {
-            if ((chunk + ch).length <= maxChars) chunk += ch;
-            else { lines.push(chunk); chunk = ch; }
-          }
-          line = chunk;
-        } else {
-          line = w;
-        }
-      }
-    }
-    if (line) lines.push(line);
-    return lines.length ? lines : [''];
+    return doc.splitTextToSize(text, maxMm);
   }
 
   let y = tableTop + thH;
