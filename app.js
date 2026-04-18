@@ -757,7 +757,7 @@ function renderDashboard() {
     .reduce((sum, v) => sum + (parseFloat(v.monto_total) || 0), 0);
   const enviados  = ventasFiltradas.filter(v => v.estado === 'enviado').length;
   const interesados = ventasFiltradas.filter(v => v.estado === 'interesado').length;
-  const seguimiento = ventasFiltradas.filter(v => ['seguimiento', 'rellamada', 'agendar'].includes(v.estado)).length;
+  const seguimiento = ventasFiltradas.filter(v => v.estado === 'seguimiento').length;
   const sinResp = ventasFiltradas.filter(v => v.estado === 'sin_respuesta').length;
 
   document.getElementById('stats-grid').innerHTML = `
@@ -779,8 +779,11 @@ function renderDashboard() {
       <div class="stat-value" style="color:var(--yellow);">${interesados}</div><div class="stat-label">INTERESADOS</div>
     </div>
 
-    <div class="stat-card"><div class="stat-icon" style="background:rgba(96,165,250,0.12);">🔄</div>
-      <div class="stat-value" style="color:var(--blue);">${seguimiento}</div><div class="stat-label">EN SEGUIMIENTO</div></div>
+    <div class="stat-card" onclick="openStatModal('seguimiento')" style="cursor:pointer;">
+      <div class="stat-icon" style="background:rgba(96,165,250,0.12);">🔄</div>
+      <div class="stat-value" style="color:var(--blue);">${seguimiento}</div>
+      <div class="stat-label">EN SEGUIMIENTO</div>
+    </div>
 
     <div class="stat-card" onclick="openStatModal('sin_respuesta')" style="cursor:pointer;">
       <div class="stat-icon" style="background:var(--red-bg);">📵</div>
@@ -2354,7 +2357,7 @@ function closeStatModal() {
 
 function renderStatModal() {
   const estado = statModalEstado;
-  const labels = { vendido: '✅ Vendidos', interesado: '🌟 Interesados', sin_respuesta: '📵 Sin respuesta' };
+  const labels = { vendido: '✅ Vendidos', interesado: '🌟 Interesados', sin_respuesta: '📵 Sin respuesta', seguimiento: '🔄 En seguimiento', rellamada: '🔁 Rellamadas', agendar: '📅 Agendar' };
   document.getElementById('stat-modal-title').textContent = labels[estado] || estado;
 
   const filtered = ventas.filter(v => v.estado === estado && ventasEnFiltroTiempo(v));
@@ -2369,7 +2372,9 @@ function renderStatModal() {
     resumenTexto = `${total} registro${total !== 1 ? 's' : ''} con estado Interesado`;
   } else if (estado === 'sin_respuesta') {
     resumenTexto = `${total} registro${total !== 1 ? 's' : ''} con estado Sin respuesta`;
-  }
+  } else {
+    resumenTexto = `${total} registro${total !== 1 ? 's' : ''} — ${labels[estado] || estado}`;
+  }  
 
   const periodoTexto = describeFiltroTiempo();
   const pages = Math.ceil(total / STAT_PAGE_SIZE) || 1;
