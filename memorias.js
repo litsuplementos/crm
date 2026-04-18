@@ -852,26 +852,34 @@ async function _generarPreviewMemoria() {
     // Aplanar
     _memoriaData = [];
     for (const v of (ventasData || [])) {
-      const items = v.venta_items?.length > 0 ? v.venta_items : [null];
-      for (const it of items) {
-        _memoriaData.push({
-          fecha_creacion: v.created_at ? v.created_at.slice(0, 10) : '',
-          fecha_registro: v.fecha || '',
-          cliente:        v.cliente?.nombre || 's/n',
-          celular:        v.cliente?.celular || '',
-          ubicacion:      v.cliente?.ubicacion || '',
-          producto:       it?.productos?.nombre || '—',
-          cantidad:       it?.cantidad ?? '',
-          subtotal:       it?.subtotal ?? '',
-          monto_total:    v.monto_total ?? '',
-          descuento_pct:  v.descuento_pct ?? 0,
-          estado:         v.estado || '',
-          archivado:      v.archivado ? 'Sí' : 'No',
-          notas:          v.notas || '',
-          agente:         v.agente?.nombre || '',
-          venta_id:       v.id,
-        });
-      }
+      const items = v.venta_items || [];
+      const productosStr = items.length > 0
+        ? items.map(it => {
+            const n = it?.productos?.nombre || '—';
+            const c = it?.cantidad ? `x${it.cantidad}` : '';
+            return c ? `${n} ${c}` : n;
+          }).join(' / ')
+        : '—';
+      const cantidadTotal = items.reduce((s, it) => s + (it?.cantidad || 0), 0);
+      const subtotalTotal = items.reduce((s, it) => s + (parseFloat(it?.subtotal) || 0), 0);
+
+      _memoriaData.push({
+        fecha_creacion: v.created_at ? v.created_at.slice(0, 10) : '',
+        fecha_registro: v.fecha || '',
+        cliente:        v.cliente?.nombre || 's/n',
+        celular:        v.cliente?.celular || '',
+        ubicacion:      v.cliente?.ubicacion || '',
+        producto:       productosStr,
+        cantidad:       cantidadTotal || '',
+        subtotal:       subtotalTotal > 0 ? subtotalTotal.toFixed(2) : '',
+        monto_total:    v.monto_total ?? '',
+        descuento_pct:  v.descuento_pct ?? 0,
+        estado:         v.estado || '',
+        archivado:      v.archivado ? 'Sí' : 'No',
+        notas:          v.notas || '',
+        agente:         v.agente?.nombre || '',
+        venta_id:       v.id,
+      });
     }
 
     const filtrados = _getDataFiltrada();
@@ -1062,177 +1070,262 @@ async function _construirPDF() {
   const W     = doc.internal.pageSize.getWidth();
   const H     = doc.internal.pageSize.getHeight();
 
+  // Paleta BLANCA
   const C = {
-    bg:      [10,  10,  20],
-    surface: [20,  20,  38],
-    accent:  [99,  102, 241],
-    green:   [34,  211, 164],
-    yellow:  [251, 191, 36],
-    red:     [248, 113, 113],
-    blue:    [96,  165, 250],
-    text:    [230, 230, 255],
-    text2:   [140, 140, 180],
-    border:  [40,  40,  65],
-    white:   [255, 255, 255],
+    bg:       [255, 255, 255],
+    surface:  [248, 248, 252],
+    surface2: [238, 238, 248],
+    accent:   [99,  102, 241],
+    green:    [16,  150, 100],
+    yellow:   [180, 130,  10],
+    red:      [200,  60,  60],
+    blue:     [50,  120, 210],
+    text:     [20,   20,  40],
+    text2:    [80,   80, 110],
+    text3:    [140, 140, 170],
+    border:   [210, 210, 230],
+    white:    [255, 255, 255],
   };
 
   const estadoColor = {
     vendido:       C.green,
-    rellamada:     [167,139,250],
+    rellamada:     [120, 80, 200],
     seguimiento:   C.blue,
     interesado:    C.yellow,
-    agendar:       [251,146,60],
+    agendar:       [200, 100, 20],
     sin_respuesta: C.red,
-    no_interesado: C.text2,
+    no_interesado: C.text3,
     enviado:       C.blue,
     cancelado:     C.red,
-    spam:          C.text2,
+    spam:          C.text3,
   };
 
-  const setFill  = c => doc.setFillColor(c[0], c[1], c[2]);
-  const setStroke= c => doc.setDrawColor(c[0], c[1], c[2]);
-  const setTextC = c => doc.setTextColor(c[0], c[1], c[2]);
-  const rect     = (x,y,w,h,r=0) => r ? doc.roundedRect(x,y,w,h,r,r,'F') : doc.rect(x,y,w,h,'F');
+  const setFill   = c => doc.setFillColor(c[0], c[1], c[2]);
+  const setStroke = c => doc.setDrawColor(c[0], c[1], c[2]);
+  const setTextC  = c => doc.setTextColor(c[0], c[1], c[2]);
 
-  setFill(C.bg); rect(0, 0, W, H);
-  setFill(C.surface); rect(0, 0, W, 22);
-  setFill(C.accent); rect(0, 0, 4, 22);
+  // Fondo blanco
+  setFill(C.bg); doc.rect(0, 0, W, H, 'F');
 
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(14);
+  // Header bar
+  setFill(C.accent); doc.rect(0, 0, W, 18, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
   setTextC(C.white);
-  doc.text('LIT CRM', 9, 14);
-  doc.setFontSize(8);
-  setTextC(C.accent);
-  doc.text('PRO', 28, 10);
+  doc.text('LIT CRM', 8, 12);
+  doc.setFontSize(7);
+  doc.text('PRO', 26, 8);
 
   const [year, month] = _memoriaMes.split('-').map(Number);
-  const mesLabel = new Date(year, month-1, 1).toLocaleDateString('es-BO', { month:'long', year:'numeric' }).replace(/^\w/,c=>c.toUpperCase());
+  const mesLabel = new Date(year, month - 1, 1)
+    .toLocaleDateString('es-BO', { month: 'long', year: 'numeric' })
+    .replace(/^\w/, c => c.toUpperCase());
   const filtroLabel = _memoriaEstadosFiltro.includes('todos') ? 'Todos los estados' :
     _memoriaEstadosFiltro.map(e => _ESTADOS_LABELS[e]?.label || e).join(', ');
-
   const agente = _getAgenteSeleccionado();
   const agenteLabel = agente ? `Agente: ${agente.nombre}` : 'Todos los agentes';
 
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
   setTextC(C.white);
-  doc.text(`Memoria — ${mesLabel}`, W/2, 10, { align:'center' });
+  doc.text(`Memoria — ${mesLabel}`, W / 2, 11, { align: 'center' });
   doc.setFontSize(7);
-  setTextC(C.text2);
-  doc.text(`Filtro: ${filtroLabel} · ${agenteLabel}`, W/2, 16, { align:'center' });
-
+  doc.setFont('helvetica', 'normal');
+  setTextC([220, 220, 255]);
+  doc.text(`${filtroLabel} · ${agenteLabel}`, W / 2, 16, { align: 'center' });
   doc.setFontSize(7);
-  setTextC(C.text2);
-  doc.text(`Generado: ${new Date().toLocaleString('es-BO')}`, W-6, 10, { align:'right' });
+  setTextC([220, 220, 255]);
+  doc.text(`Generado: ${new Date().toLocaleString('es-BO')}`, W - 6, 12, { align: 'right' });
 
+  // Stats
   const ventasUnicas  = new Set(filtrados.map(r => r.venta_id)).size;
-  const totalUnidades = filtrados.reduce((s,r) => s+(parseInt(r.cantidad)||0), 0);
-  const montoTotal    = [...new Set(filtrados.map(r=>r.venta_id))]
-    .filter(id => filtrados.find(r=>r.venta_id===id)?.estado==='vendido')
-    .reduce((s,id) => s+(parseFloat(filtrados.find(r=>r.venta_id===id)?.monto_total)||0), 0);
-  const tieneVendidos = filtrados.some(r => r.estado==='vendido');
+  const totalUnidades = filtrados.reduce((s, r) => s + (parseInt(r.cantidad) || 0), 0);
+  const montoTotal    = [...new Set(filtrados.map(r => r.venta_id))]
+    .filter(id => filtrados.find(r => r.venta_id === id)?.estado === 'vendido')
+    .reduce((s, id) => {
+      const row = filtrados.find(r => r.venta_id === id);
+      return s + (parseFloat(row?.monto_total) || 0);
+    }, 0);
+  const tieneVendidos = filtrados.some(r => r.estado === 'vendido');
 
   const stats = [
-    { label:'REGISTROS', value: ventasUnicas, color: C.accent },
-    { label:'UNIDADES',  value: totalUnidades,  color: C.blue  },
-    ...(tieneVendidos ? [{ label:'MONTO VENDIDO', value:`Bs.${montoTotal.toFixed(0)}`, color:C.green }] : []),
-    { label:'FILAS CSV', value: filtrados.length, color: C.text2 },
+    { label: 'REGISTROS',    value: ventasUnicas,              color: C.accent },
+    { label: 'UNIDADES',     value: totalUnidades,             color: C.blue   },
+    ...(tieneVendidos ? [{ label: 'MONTO VENDIDO', value: `Bs.${montoTotal.toFixed(0)}`, color: C.green }] : []),
+    { label: 'FILAS',        value: filtrados.length,          color: C.text2  },
   ];
 
-  const cardW = 40, cardH = 18, cardGap = 6;
-  const statsStartX = 6;
-  let sx = statsStartX;
-  const sy = 26;
+  const cardW = 38, cardH = 16, cardGap = 5;
+  let sx = 6;
+  const sy = 22;
 
   stats.forEach(st => {
-    setFill(C.surface); doc.roundedRect(sx, sy, cardW, cardH, 2, 2, 'F');
-    setFill(st.color);  doc.roundedRect(sx, sy, 3, cardH, 1, 1, 'F');
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(14);
+    setFill(C.surface2); doc.roundedRect(sx, sy, cardW, cardH, 2, 2, 'F');
+    setStroke(C.border);  doc.setLineWidth(0.3); doc.roundedRect(sx, sy, cardW, cardH, 2, 2, 'S');
+    setFill(st.color);    doc.roundedRect(sx, sy, 3, cardH, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
     setTextC(st.color);
-    doc.text(String(st.value), sx + 7, sy + 11);
+    doc.text(String(st.value), sx + 7, sy + 10);
     doc.setFontSize(6);
-    setTextC(C.text2);
-    doc.text(st.label, sx + 7, sy + 16);
+    setTextC(C.text3);
+    doc.text(st.label, sx + 7, sy + 14.5);
     sx += cardW + cardGap;
   });
 
+  // Columnas: anchos en mm, wrap activado
   const tableTop = sy + cardH + 6;
-  const cols = ['Fecha','Cliente','Celular','Ubicación','Producto','Cant.','Monto','Estado','Agente','Notas'];
-  const keys = ['fecha_registro','cliente','celular','ubicacion','producto','cantidad','monto_total','estado','agente','notas'];
-  const colW = [18, 32, 22, 30, 28, 10, 18, 22, 22, 50];
-  const rowH  = 7;
-  const thH   = 8;
+  const cols   = ['Fecha',      'Cliente',   'Celular',   'Ubicación', 'Productos',        'Und.', 'Monto',  'Estado',    'Agente',    'Notas'           ];
+  const keys   = ['fecha_registro','cliente','celular',   'ubicacion', 'producto',         'cantidad','monto_total','estado','agente',  'notas'           ];
+  const colW   = [18,            28,          20,          30,          42,                  8,       16,       22,          20,          52                ];
+  const BASE_ROW_H = 7;   // altura mínima de fila
+  const LINE_H     = 3.8; // altura por línea extra
 
-  setFill(C.surface);
-  rect(6, tableTop, W-12, thH);
+  // Dibujar cabecera
+  const thH = 9;
   setFill(C.accent);
-  rect(6, tableTop, W-12, 1.2);
-
+  doc.rect(6, tableTop, W - 12, thH, 'F');
   let cx = 6;
-  doc.setFont('helvetica','bold');
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.5);
-  setTextC(C.accent);
+  setTextC(C.white);
   cols.forEach((c, i) => {
-    doc.text(c.toUpperCase(), cx + 2, tableTop + 5.5);
+    doc.text(c.toUpperCase(), cx + 2, tableTop + 6);
     cx += colW[i];
   });
 
+  // Helper: partir texto en líneas que caben en maxMm
+  function splitText(text, maxMm, fontSize) {
+    doc.setFontSize(fontSize);
+    const maxChars = Math.floor(maxMm / 0.38);
+    if (!text) return [''];
+    const words = text.split(' ');
+    const lines = [];
+    let line = '';
+    for (const w of words) {
+      const test = line ? line + ' ' + w : w;
+      if (test.length <= maxChars) {
+        line = test;
+      } else {
+        if (line) lines.push(line);
+        // si la palabra sola es muy larga, cortarla
+        if (w.length > maxChars) {
+          let chunk = '';
+          for (const ch of w) {
+            if ((chunk + ch).length <= maxChars) chunk += ch;
+            else { lines.push(chunk); chunk = ch; }
+          }
+          line = chunk;
+        } else {
+          line = w;
+        }
+      }
+    }
+    if (line) lines.push(line);
+    return lines.length ? lines : [''];
+  }
+
   let y = tableTop + thH;
-  let page = 1;
+  let pageNum = 1;
+  const MARGIN_BOTTOM = 12;
+
+  const drawPageHeader = () => {
+    setFill(C.bg); doc.rect(0, 0, W, H, 'F');
+    setFill(C.surface2); doc.rect(0, 0, W, 10, 'F');
+    setFill(C.accent);   doc.rect(0, 0, 4, 10, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7); setTextC(C.text2);
+    doc.text(`LIT CRM · Memoria ${mesLabel} · ${agenteLabel} · pág. ${++pageNum}`, W / 2, 7, { align: 'center' });
+
+    // Re-dibujar cabecera de tabla
+    setFill(C.accent); doc.rect(6, 13, W - 12, thH, 'F');
+    cx = 6;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); setTextC(C.white);
+    cols.forEach((c, i) => { doc.text(c.toUpperCase(), cx + 2, 13 + 6); cx += colW[i]; });
+    y = 13 + thH;
+  };
 
   filtrados.forEach((row, ri) => {
-    if (y + rowH > H - 10) {
+    // Calcular altura necesaria para esta fila (basado en columnas con wrap)
+    const wrapCols = [
+      { key: 'cliente',        w: colW[1] },
+      { key: 'ubicacion',      w: colW[3] },
+      { key: 'producto',       w: colW[4] },
+      { key: 'notas',          w: colW[9] },
+    ];
+    let maxLines = 1;
+    wrapCols.forEach(({ key, w }) => {
+      const lines = splitText(String(row[key] || ''), w - 3, 6.2);
+      if (lines.length > maxLines) maxLines = lines.length;
+    });
+    const rowH = Math.max(BASE_ROW_H, BASE_ROW_H + (maxLines - 1) * LINE_H);
+
+    // ¿Cabe en la página?
+    if (y + rowH > H - MARGIN_BOTTOM) {
       doc.addPage();
-      setFill(C.bg); rect(0, 0, W, H);
-      setFill(C.surface); rect(0,0,W,10);
-      setFill(C.accent);  rect(0,0,4,10);
-      doc.setFont('helvetica','bold'); doc.setFontSize(7); setTextC(C.text2);
-      doc.text(`LIT CRM · Memoria ${mesLabel} · ${agenteLabel} · pág. ${++page}`, W/2, 7, {align:'center'});
-      y = 14;
+      drawPageHeader();
     }
 
+    // Fondo de fila alternado
     const isEven = ri % 2 === 0;
     setFill(isEven ? C.surface : C.bg);
-    rect(6, y, W-12, rowH);
+    doc.rect(6, y, W - 12, rowH, 'F');
 
-    const ec = estadoColor[row.estado] || C.text2;
-    setFill(ec); rect(6, y, 1.5, rowH);
+    // Barra de color de estado a la izquierda
+    const ec = estadoColor[row.estado] || C.text3;
+    setFill(ec); doc.rect(6, y, 1.5, rowH, 'F');
 
+    // Borde inferior
+    setStroke(C.border); doc.setLineWidth(0.15);
+    doc.line(6, y + rowH, W - 6, y + rowH);
+
+    // Contenido de celdas
     cx = 6;
-    doc.setFont('helvetica','normal');
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.2);
+
     keys.forEach((k, i) => {
       let val = String(row[k] ?? '');
       if (k === 'monto_total' && val) val = `Bs.${parseFloat(val).toFixed(0)}`;
-      if (k === 'estado') {
+
+      const cellX = cx + 3;
+      const cellW = colW[i] - 3;
+
+      if (['cliente', 'ubicacion', 'producto', 'notas'].includes(k)) {
+        // Columnas con wrap
+        const lines = splitText(val, cellW, 6.2);
+        if (k === 'estado') {
+          setTextC(ec);
+        } else {
+          setTextC(k === 'cliente' ? C.text : C.text2);
+        }
+        lines.forEach((line, li) => {
+          doc.text(line, cellX, y + 5 + li * LINE_H);
+        });
+      } else if (k === 'estado') {
         setTextC(ec);
-        const eLabel = _ESTADOS_LABELS[val]?.label || val;
-        doc.text(_truncate(eLabel, colW[i]-3), cx + 3, y + 5);
-        setTextC(C.text);
+        const eLabel = _ESTADOS_LABELS[val]?.label?.replace(/[^\x00-\x7F]/g, '').trim() || val;
+        doc.text(_truncate(eLabel, cellW), cellX, y + 5);
       } else {
-        setTextC(C.text);
-        doc.text(_truncate(val, colW[i]-3), cx + 3, y + 5);
+        setTextC(C.text2);
+        doc.text(_truncate(val, cellW), cellX, y + 5);
       }
+
       cx += colW[i];
     });
-
-    setStroke(C.border);
-    doc.setLineWidth(0.1);
-    doc.line(6, y + rowH, W-6, y + rowH);
 
     y += rowH;
   });
 
+  // Footer en todas las páginas
   const totalPages = doc.internal.getNumberOfPages();
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p);
-    setFill(C.surface); rect(0, H-8, W, 8);
-    setFill(C.accent);  rect(0, H-1, W, 1);
-    doc.setFont('helvetica','normal'); doc.setFontSize(6); setTextC(C.text2);
-    doc.text(`LIT CRM · ${mesLabel} · ${filtroLabel} · ${agenteLabel}`, 8, H-3);
-    doc.text(`Pág. ${p} / ${totalPages}`, W-8, H-3, {align:'right'});
+    setFill(C.surface2); doc.rect(0, H - 8, W, 8, 'F');
+    setStroke(C.accent);  doc.setLineWidth(0.5); doc.line(0, H - 8, W, H - 8);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6); setTextC(C.text3);
+    doc.text(`LIT CRM · ${mesLabel} · ${filtroLabel} · ${agenteLabel}`, 8, H - 3);
+    doc.text(`Pág. ${p} / ${totalPages}`, W - 8, H - 3, { align: 'right' });
   }
 
   return doc;
