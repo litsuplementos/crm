@@ -1224,14 +1224,16 @@ async function _construirPDF() {
   filtrados.forEach((row, ri) => {
     // Calcular altura necesaria para esta fila (basado en columnas con wrap)
     const wrapCols = [
-      { key: 'cliente',        w: colW[1] },
-      { key: 'ubicacion',      w: colW[3] },
-      { key: 'producto',       w: colW[4] },
-      { key: 'notas',          w: colW[9] },
+      { key: 'cliente',   w: colW[1] - 3 },
+      { key: 'ubicacion', w: colW[3] - 3 },
+      { key: 'producto',  w: colW[4] - 3 },
+      { key: 'agente',    w: colW[8] - 3 },
+      { key: 'notas',     w: colW[9] - 3 },
     ];
+    doc.setFontSize(6.2);
     let maxLines = 1;
     wrapCols.forEach(({ key, w }) => {
-      const lines = splitText(String(row[key] || ''), w - 3, 6.2);
+      const lines = splitText(String(row[key] || ''), w, 6.2);
       if (lines.length > maxLines) maxLines = lines.length;
     });
     const rowH = Math.max(BASE_ROW_H, BASE_ROW_H + (maxLines - 1) * LINE_H);
@@ -1267,7 +1269,7 @@ async function _construirPDF() {
       const cellX = cx + 3;
       const cellW = colW[i] - 3;
 
-      if (['cliente', 'ubicacion', 'producto', 'notas'].includes(k)) {
+      if (['cliente', 'ubicacion', 'producto', 'notas', 'agente'].includes(k)) {
         // Columnas con wrap
         const lines = splitText(val, cellW, 6.2);
         if (k === 'estado') {
