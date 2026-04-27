@@ -2085,45 +2085,6 @@ function renderComprobantePreview(url, locked = false) {
     : `<div style="margin-top:8px;position:relative;display:inline-block;"><img src="${url}" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);" onerror="this.style.display='none'">${btnEliminarImg}</div>`;
 }
 
-// FIX #11 — exportCSV con revoke de blob URL
-function exportCSV() {
-  const isAdmin = currentUser?.rol === 'admin';
-  const headers = [
-    'ID', 'Fecha', 'Nombre', 'Celular', 'Productos', 'Monto (Bs.)',
-    'Ubicación', 'Estado', 'Intentos', 'Notas',
-    ...(isAdmin ? ['Agente'] : [])
-  ];
-  const rows = ventas.map(v => [
-    v.id,
-    v.fecha,
-    v.cliente?.nombre || '',
-    v.cliente?.celular || '',
-    (v.venta_items || []).map(it => {
-      const pn = it.productos?.nombre || '';
-      const cant = it.cantidad || 1;
-      const sub = it.subtotal ? ` (Bs.${parseFloat(it.subtotal).toFixed(0)})` : '';
-      return `${pn} x${cant}${sub}`;
-    }).join(' + '),
-    v.monto_total || '',
-    v.cliente?.ubicacion || '',
-    v.estado || '',
-    v.intentos || 1,
-    v.notas || '',
-    ...(isAdmin ? [v.agente?.nombre || ''] : [])
-  ].map(x => `"${(x || '').toString().replace(/"/g, '""')}"`).join(','));
-
-  const csv = [headers.join(','), ...rows].join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `LIT_CRM_${currentUser.nombre}_${new Date().toISOString().split('T')[0]}.csv`;
-  a.click();
-  // FIX #11 — revocar blob URL inmediatamente después del click
-  setTimeout(() => URL.revokeObjectURL(url), 100);
-  toast('📥 CSV exportado', 'success');
-}
-
 document.addEventListener('click', e => {
   if (!e.target.closest('.smart-input-row'))
     document.querySelectorAll('.dropdown-list').forEach(d => d.style.display = 'none');

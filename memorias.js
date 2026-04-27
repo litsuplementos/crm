@@ -1238,7 +1238,6 @@ async function _construirPDF() {
     });
     const rowH = Math.max(BASE_ROW_H, BASE_ROW_H + (maxLines - 1) * LINE_H);
 
-    // ¿Cabe en la página?
     if (y + rowH > H - MARGIN_BOTTOM) {
       doc.addPage();
       drawPageHeader();
