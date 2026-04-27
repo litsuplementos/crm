@@ -75,6 +75,224 @@
 
   <div class="main">
 
+    <!-- VISTA -->
+    <div class="view" id="view-nuevo-registro">
+      <div style="display:grid;grid-template-columns:1fr 1fr;height:calc(100vh - 116px);overflow:hidden;">
+    
+        <!-- ══ COLUMNA IZQUIERDA: FORMULARIO ══ -->
+        <div style="overflow-y:auto;border-right:1px solid var(--border);display:flex;flex-direction:column;">
+    
+          <!-- Header de la columna -->
+          <div style="padding:18px 24px 14px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div id="nr-page-title" style="font-family:'Syne',sans-serif;font-weight:700;font-size:18px;">Nuevo Registro</div>
+              <div id="nr-page-subtitle" style="font-size:12px;color:var(--text3);margin-top:2px;">Completa los datos del cliente</div>
+            </div>
+            <button onclick="cerrarNuevoRegistro()"
+              style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:13px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:6px;">
+              Volver
+            </button>
+          </div>
+    
+          <!-- Cuerpo del formulario -->
+          <div style="padding:20px 24px;flex:1;">
+    
+            <!-- IDs ocultos (reutilizados por saveVenta) -->
+            <input type="hidden" id="nr-edit-venta-id" value="">
+            <input type="hidden" id="nr-cliente-id" value="">
+    
+            <!-- Banner archivado (nunca visible en nuevo registro, solo por compatibilidad) -->
+            <div id="nr-archived-banner" style="display:none;"></div>
+    
+            <!-- Fecha + Celular -->
+            <div class="field-row" style="margin-bottom:12px;">
+              <div class="field" style="margin-bottom:0;">
+                <label>Fecha</label>
+                <input class="smart-input" type="date" id="nr-fecha">
+              </div>
+              <div class="field" style="margin-bottom:0;">
+                <label>Celular</label>
+                <input class="smart-input" type="tel" id="nr-celular" placeholder="70000000" oninput="onNrCelularInput()">
+                <div id="nr-celular-suggestion" style="display:none;margin-top:6px;padding:8px 12px;font-size:12px;border-radius:6px;cursor:default;border:1px solid rgba(34,211,164,0.3);"></div>
+              </div>
+            </div>
+    
+            <!-- Info box cliente existente -->
+            <div id="nr-cliente-info-box" style="margin-bottom:12px;display:none;"></div>
+    
+            <!-- Nombre -->
+            <div class="field">
+              <label>Nombre del Cliente</label>
+              <input class="smart-input" id="nr-nombre" placeholder="Nombre completo o s/n">
+            </div>
+    
+            <!-- Productos -->
+            <div class="field">
+              <label>Productos <span style="color:var(--text3);font-weight:400;font-size:10px;">(añade uno o más)</span></label>
+              <div id="nr-items-wrap" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
+              <button type="button" id="nr-btn-add-item" onclick="addNrItem()" class="btn-add-item-dashed">
+                + Añadir producto
+              </button>
+            </div>
+    
+            <!-- Monto -->
+            <div class="field">
+              <label>Monto Total <span style="color:var(--text3);font-weight:400;font-size:10px;">(Bs.)</span></label>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:16px;font-weight:700;color:var(--text2);">Bs.</span>
+                <input class="smart-input" type="number" id="nr-monto" placeholder="0.00" min="0" step="0.01"
+                  style="flex:1;font-size:16px;font-weight:700;color:var(--green);"
+                  oninput="recalcNrDescuento()">
+                <div id="nr-monto-tag" style="font-size:11px;color:var(--text3);white-space:nowrap;"></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+                <span style="font-size:13px;color:var(--text2);">Descuento</span>
+                <input class="smart-input" type="number" id="nr-descuento" placeholder="0" min="0" max="100" step="1"
+                  style="width:80px;text-align:center;" oninput="aplicarNrDescuento()">
+                <span style="font-size:13px;color:var(--text2);">%</span>
+                <span id="nr-descuento-tag" style="font-size:12px;color:var(--red);font-weight:600;"></span>
+              </div>
+            </div>
+    
+            <!-- Ubicación -->
+            <div class="field">
+              <label>Ubicación <span style="color:var(--text3);font-weight:400;font-size:10px;">(selecciona o escribe)</span></label>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
+                <select class="smart-input" id="nr-sel-departamento" style="font-size:12px;padding:8px 10px;" onchange="onNrDepChange()"><option value="">— Departamento —</option></select>
+                <select class="smart-input" id="nr-sel-provincia" disabled style="font-size:12px;padding:8px 10px;" onchange="onNrProvChange()"><option value="">— Provincia —</option></select>
+                <select class="smart-input" id="nr-sel-municipio" disabled style="font-size:12px;padding:8px 10px;" onchange="onNrMunChange()"><option value="">— Municipio —</option></select>
+              </div>
+              <input class="smart-input" id="nr-ubicacion" placeholder="O escribe la ubicación directamente...">
+            </div>
+    
+            <!-- Dirección -->
+            <div class="field">
+              <label>Dirección Residencial <span style="color:var(--text3);font-weight:400;font-size:10px;">(Enter para ver en mapa)</span></label>
+              <input class="smart-input" id="nr-direccion" placeholder="Ej: Av. Cañoto 456..." onkeydown="onNrDireccionKeydown(event)">
+              <div id="nr-maps-preview"></div>
+            </div>
+    
+            <!-- Agente (solo admin) -->
+            <div class="field" id="nr-agente-field" style="display:none;">
+              <label>Asignar a Agente</label>
+              <select class="smart-input" id="nr-agente"></select>
+            </div>
+    
+            <!-- Estado -->
+            <input type="hidden" id="nr-estado" value="interesado">
+            <div class="field">
+              <label>Estado</label>
+              <div class="quick-chips" id="nr-quick-chips">
+                <span class="quick-chip"        data-estado="rellamada"     onclick="setNrEstado('rellamada',this)">🔁 Rellamada</span>
+                <span class="quick-chip"        data-estado="seguimiento"   onclick="setNrEstado('seguimiento',this)">🔄 Seguimiento</span>
+                <span class="quick-chip yellow active" data-estado="interesado"    onclick="setNrEstado('interesado',this)">🌟 Interesado</span>
+                <span class="quick-chip"        data-estado="agendar"       onclick="setNrEstado('agendar',this)">📅 Agendar</span>
+                <span class="quick-chip red"    data-estado="sin_respuesta" onclick="setNrEstado('sin_respuesta',this)">📵 Sin respuesta</span>
+                <span class="quick-chip"        data-estado="no_interesado" onclick="setNrEstado('no_interesado',this)">👎 No interesado</span>
+                <span class="quick-chip"        data-estado="enviado"       onclick="setNrEstado('enviado',this)">📦 Enviado</span>
+                <span class="quick-chip green"  data-estado="vendido"       onclick="setNrEstado('vendido',this)">✅ Vendido</span>
+                <span class="quick-chip red"    data-estado="cancelado"     onclick="setNrEstado('cancelado',this)">❌ Cancelado</span>
+                <span class="quick-chip red"    data-estado="spam"          onclick="setNrEstado('spam',this)">🚫 SPAM</span>
+              </div>
+            </div>
+    
+            <!-- Intentos rellamada -->
+            <div class="field" id="nr-intentos-rellamada-field" style="display:none;">
+              <label>Intentos de llamada <span style="color:var(--text3);font-weight:400;font-size:10px;">(máx. 3)</span></label>
+              <input class="smart-input" type="number" id="nr-intentos-rellamada" value="1" min="1" max="20"
+                style="width:120px;" oninput="onNrIntentosChange()">
+              <div id="nr-intentos-rellamada-warning" style="display:none;font-size:12px;margin-top:6px;padding:6px 10px;border-radius:6px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);"></div>
+            </div>
+    
+            <!-- Intentos sin respuesta -->
+            <div class="field" id="nr-intentos-sinresp-field" style="display:none;">
+              <label>Mensajes sin respuesta <span style="color:var(--text3);font-weight:400;font-size:10px;">(máx. 4)</span></label>
+              <input class="smart-input" type="number" id="nr-intentos-sinresp" value="1" min="1" max="20"
+                style="width:120px;" oninput="onNrIntentosChange()">
+              <div id="nr-intentos-sinresp-warning" style="display:none;font-size:12px;margin-top:6px;padding:6px 10px;border-radius:6px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);"></div>
+            </div>
+    
+            <input type="hidden" id="nr-intentos" value="1">
+    
+            <!-- Notas -->
+            <div class="field">
+              <label>Notas</label>
+              <textarea class="textarea" id="nr-notas" placeholder="Detalles, próxima llamada..."></textarea>
+            </div>
+    
+            <!-- Recordatorio -->
+            <div class="field">
+              <label>Recordatorio <span style="color:var(--text3);font-weight:400;font-size:10px;">(fecha y hora)</span></label>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input class="smart-input" type="datetime-local" id="nr-recordatorio" style="flex:1;">
+                <button type="button" onclick="_activarSonido(this)"
+                  style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--text2);cursor:pointer;white-space:nowrap;">
+                  🔔 Activar sonido
+                </button>
+              </div>
+            </div>
+    
+            <!-- Comprobante -->
+            <div class="field">
+              <label>Comprobante <span style="color:var(--text3);font-weight:400;font-size:11px;">(imagen o PDF, máx 5MB)</span></label>
+              <input type="file" id="nr-comprobante" accept="image/jpeg,image/png,image/webp,application/pdf"
+                style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 14px;color:var(--text2);font-size:13px;cursor:pointer;"
+                onchange="const f=this.files[0],w=document.getElementById('nr-comprobante-preview');if(!f)return;if(f.type==='application/pdf'){w.innerHTML='<div style=\'margin-top:8px;font-size:13px;color:var(--accent2)\'>📄 '+f.name+'</div>';return;}const r=new FileReader();r.onload=e=>{const img=document.createElement('img');img.src=e.target.result;img.style.cssText='max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);margin-top:8px';w.innerHTML='';w.appendChild(img)};r.readAsDataURL(f)">
+              <div id="nr-comprobante-preview"></div>
+            </div>
+    
+            <!-- Acciones -->
+            <div style="display:flex;gap:9px;justify-content:space-between;align-items:center;padding-top:8px;padding-bottom:24px;">
+              <button id="nr-delete-btn" onclick="nrDeleteVenta()"
+                style="display:none;background:var(--red-bg);border:1px solid var(--red);border-radius:var(--radius-sm);
+                        padding:9px 16px;color:var(--red);font-size:14px;font-weight:700;cursor:pointer;">
+                🗑️ Eliminar
+              </button>
+              <div style="display:flex;gap:9px;margin-left:auto;">
+                <button class="btn-secondary" onclick="cerrarNuevoRegistro()">Cancelar</button>
+                <button class="btn-save" id="nr-save-btn" onclick="saveNuevoRegistro()">💾 Guardar Registro</button>
+              </div>
+            </div>
+    
+          </div>
+        </div>
+    
+        <!-- ══ COLUMNA DERECHA: GUÍA ══ -->
+        <div style="overflow-y:auto;display:flex;flex-direction:column;background:var(--surface2);height:calc(100vh - 116px);box-sizing:border-box;">
+    
+          <!-- Header columna guía -->
+          <div style="padding:18px 24px 14px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:18px;">Guía de Atención</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px;" id="nr-guia-subtitle">Selecciona un producto para ver la guía</div>
+            </div>
+            <!-- Botón editar guía — solo admin, visible cuando hay producto seleccionado -->
+            <button id="nr-guia-edit-btn" style="display:none;"
+              onclick="abrirEditorGuiaDesdeNr()"
+              class="icon-btn">✏️ Editar guía</button>
+          </div>
+    
+          <!-- Contenido de la guía -->
+          <div id="nr-guia-panel" style="flex:1; margin-right:16px; padding:0;">
+    
+            <!-- Estado vacío — sin producto seleccionado -->
+            <div id="nr-guia-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;min-height:300px;color:var(--text3);text-align:center;padding:40px;">
+              <div style="font-size:48px;margin-bottom:16px;">📋</div>
+              <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Sin producto seleccionado</div>
+              <div style="font-size:13px;line-height:1.6;">Selecciona un producto en el formulario<br>para ver aquí la guía de atención al cliente.</div>
+            </div>
+    
+            <!-- Contenido dinámico — se llena con _renderGuiaNr() -->
+            <div id="nr-guia-content" style="display:none;overflow-y:auto;">
+              <div id="nr-guia-col1-body" class="guia-view-content"></div>
+            </div>
+    
+          </div>
+        </div>
+    
+      </div>
+    </div>
+
     <!-- DASHBOARD -->
     <div class="view active" id="view-dashboard"><div class="view-scroll-wrap">
       <div class="section-header">
@@ -142,15 +360,19 @@
     <!-- REGISTROS / VENTAS -->
     <div class="view" id="view-ventas"><div class="view-scroll-wrap">
       <div class="section-header">
-        <div>
-          <div class="section-title">Registros</div>
-          <div class="section-sub" id="ventas-count">Cargando...</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div>
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div class="section-title" style="margin:0;">Registros</div>
+              <div style="display:flex;gap:0;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;">
+                <button id="tab-activos" onclick="setArchivoFiltro(false)" class="archivo-tab archivo-tab-active">📋 Activos</button>
+                <button id="tab-archivados" onclick="setArchivoFiltro(true)" class="archivo-tab">🔒 Archivados</button>
+              </div>
+            </div>
+            <div class="section-sub" id="ventas-count">Cargando...</div>
+          </div>
         </div>
-        <button class="add-btn" onclick="openVentaModal()">+ Nuevo Registro</button>
-      </div>
-      <div style="display:flex;gap:0;margin-bottom:16px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;width:fit-content;">
-        <button id="tab-activos" onclick="setArchivoFiltro(false)" class="archivo-tab archivo-tab-active">📋 Activos</button>
-        <button id="tab-archivados" onclick="setArchivoFiltro(true)" class="archivo-tab">🔒 Archivados</button>
+        <button class="add-btn" onclick="showNuevoRegistro()">+ Nuevo Registro</button>
       </div>
       <div class="toolbar">
         <input class="search-box" type="text" id="search-input" placeholder="🔍  Nombre, celular, producto, notas..." oninput="debouncedRenderVentas()">
@@ -184,7 +406,7 @@
             <tr>
               <th>Fecha</th><th>Cliente</th><th>Celular</th><th>Productos</th>
               <th>Monto</th><th>Lugar</th><th>Estado</th><th>Notas</th>
-              <th id="th-agente" style="display:none;">Agente</th><th></th>
+              <th id="th-agente" style="display:none;">Agente</th>
             </tr>
           </thead>
           <tbody id="ventas-tbody"></tbody>
@@ -277,170 +499,6 @@
       <div id="memorias-wrap"></div>
     </div></div>
 
-  </div>
-</div>
-
-<!-- MODAL VENTA/REGISTRO -->
-<div class="modal-overlay" id="venta-modal">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title" id="modal-title">Nuevo Registro</div>
-      <button class="modal-close" onclick="closeVentaModal()">×</button>
-    </div>
-    <div class="modal-body">
-      <input type="hidden" id="edit-venta-id">
-      <input type="hidden" id="f-cliente-id">
-
-      <div id="archived-banner" style="display:none;background:rgba(90,90,122,0.2);border:1px solid rgba(90,90,122,0.4);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--text2);">
-        <!-- El contenido se genera dinámicamente desde JS -->
-      </div>
-
-      <div class="field-row">
-        <div class="field">
-          <label>Fecha</label>
-          <input class="smart-input" type="date" id="f-fecha">
-        </div>
-        <div class="field">
-          <label>Celular</label>
-          <input class="smart-input" type="tel" id="f-celular" placeholder="70000000" oninput="onCelularInput()">
-          <div id="celular-suggestion" style="display:none;margin-top:6px;padding:8px 12px;font-size:12px;border-radius:6px;cursor:default;border:1px solid rgba(34,211,164,0.3);"></div>
-        </div>
-      </div>
-
-      <div id="cliente-info-box" style="margin-bottom:12px;display:none;"></div>
-
-      <div class="field">
-        <label>Nombre del Cliente</label>
-        <input class="smart-input" id="f-nombre" placeholder="Nombre completo o s/n">
-      </div>
-
-      <!-- ITEMS DE VENTA (multi-producto) -->
-      <div class="field">
-        <label>Productos <span style="color:var(--text3);font-weight:400;font-size:10px;">(añade uno o más)</span></label>
-        <div id="venta-items-wrap" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
-        <button type="button" id="btn-add-item" onclick="addVentaItem()" class="btn-add-item-dashed">
-          + Añadir producto
-        </button>
-      </div>
-
-      <!-- MONTO TOTAL -->
-      <div class="field">
-        <label>Monto Total <span style="color:var(--text3);font-weight:400;font-size:10px;">(Bs. + Subtotales + Descuentos)</span></label>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:16px;font-weight:700;color:var(--text2);">Bs.</span>
-          <input class="smart-input" type="number" id="f-monto" placeholder="0.00" min="0" step="0.01"
-            style="flex:1;font-size:16px;font-weight:700;color:var(--green);"
-            oninput="recalcDescuento()">
-          <div id="monto-tag" style="font-size:11px;color:var(--text3);white-space:nowrap;"></div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
-          <span style="font-size:13px;color:var(--text2);">Descuento</span>
-          <input class="smart-input" type="number" id="f-descuento" placeholder="0" min="0" max="100" step="1"
-            style="width:80px;text-align:center;" oninput="aplicarDescuento()">
-          <span style="font-size:13px;color:var(--text2);">%</span>
-          <span id="descuento-tag" style="font-size:12px;color:var(--red);font-weight:600;"></span>
-        </div>
-      </div>
-
-      <div class="field">
-        <label>Ubicación <span style="color:var(--text3);font-weight:400;font-size:10px;">(selecciona o escribe directamente)</span></label>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
-          <select class="smart-input" id="sel-departamento" style="font-size:12px;padding:8px 10px;"><option value="">— Departamento —</option></select>
-          <select class="smart-input" id="sel-provincia" disabled style="font-size:12px;padding:8px 10px;"><option value="">— Provincia —</option></select>
-          <select class="smart-input" id="sel-municipio" disabled style="font-size:12px;padding:8px 10px;"><option value="">— Municipio —</option></select>
-        </div>
-        <input class="smart-input" id="f-ubicacion" placeholder="O escribe la ubicación directamente...">
-      </div>
-
-      <div class="field">
-        <label>Dirección Residencial <span style="color:var(--text3);font-weight:400;font-size:10px;">(presiona Enter para ver en mapa)</span></label>
-        <input class="smart-input" id="f-direccion" placeholder="Ej: Av. Cañoto 456, Barrio Equipetrol..." onkeydown="onDireccionKeydown(event)">
-        <div id="maps-preview"></div>
-      </div>
-
-      <div class="field" id="agente-field" style="display:none;">
-        <label>Asignar a Agente</label>
-        <select class="smart-input" id="f-agente"></select>
-      </div>
-
-      <input type="hidden" id="f-estado" value="rellamada">
-      <div class="field">
-        <label>Estado</label>
-        <div class="quick-chips">
-          <span class="quick-chip active" data-estado="rellamada"     onclick="setEstado('rellamada',this)">🔁 Rellamada</span>
-          <span class="quick-chip"        data-estado="seguimiento"   onclick="setEstado('seguimiento',this)">🔄 Seguimiento</span>
-          <span class="quick-chip yellow" data-estado="interesado"    onclick="setEstado('interesado',this)">🌟 Interesado</span>
-          <span class="quick-chip"        data-estado="agendar"       onclick="setEstado('agendar',this)">📅 Agendar</span>
-          <span class="quick-chip red"    data-estado="sin_respuesta" onclick="setEstado('sin_respuesta',this)">📵 Sin respuesta</span>
-          <span class="quick-chip"        data-estado="no_interesado" onclick="setEstado('no_interesado',this)">👎 No interesado</span>
-          <span class="quick-chip"        data-estado="enviado"       onclick="setEstado('enviado',this)">📦 Enviado</span>
-          <span class="quick-chip green"  data-estado="vendido"       onclick="setEstado('vendido',this)">✅ Vendido</span>
-          <span class="quick-chip red"    data-estado="cancelado"     onclick="setEstado('cancelado',this)">❌ Cancelado</span>
-          <span class="quick-chip red"    data-estado="spam"          onclick="setEstado('spam',this)">🚫 SPAM</span>
-        </div>
-      </div>
-
-      <!-- Intentos de Rellamada: llamadas activas realizadas por el agente (máx 3) -->
-      <div class="field" id="intentos-rellamada-field" style="display:none;">
-        <label>
-          Intentos de llamada
-          <span style="color:var(--text3);font-weight:400;font-size:10px;">(máx. 3 — llamadas realizadas por el agente)</span>
-        </label>
-        <input class="smart-input" type="number" id="f-intentos-rellamada" value="1" min="1" max="20"
-          style="width:120px;" oninput="onIntentosChange()">
-        <div id="intentos-rellamada-warning"
-          style="display:none;font-size:12px;margin-top:6px;padding:6px 10px;border-radius:6px;
-                 background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);"></div>
-      </div>
-
-      <!-- Intentos Sin respuesta: mensajes escritos que el cliente ignoró (máx 4) -->
-      <div class="field" id="intentos-sinresp-field" style="display:none;">
-        <label>
-          Mensajes sin respuesta
-          <span style="color:var(--text3);font-weight:400;font-size:10px;">(máx. 4 — mensajes escritos ignorados por el cliente)</span>
-        </label>
-        <input class="smart-input" type="number" id="f-intentos-sinresp" value="1" min="1" max="20"
-          style="width:120px;" oninput="onIntentosChange()">
-        <div id="intentos-sinresp-warning"
-          style="display:none;font-size:12px;margin-top:6px;padding:6px 10px;border-radius:6px;
-                 background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);"></div>
-      </div>
-
-      <!-- Campo unificado oculto que el JS sigue usando internamente -->
-      <input type="hidden" id="f-intentos" value="1">
-
-      <div class="field">
-        <label>Notas <span style="color:var(--text3);font-weight:400;font-size:11px;">(texto libre)</span></label>
-        <textarea class="textarea" id="f-notas" placeholder="Detalles, dirección de entrega, próxima llamada..."></textarea>
-      </div>
-
-      <div class="field">
-        <label>Recordatorio <span style="color:var(--text3);font-weight:400;font-size:10px;">(fecha y hora para alertarte)</span></label>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input class="smart-input" type="datetime-local" id="f-recordatorio" style="flex:1;">
-          <button type="button" id="btn-activar-sonido" onclick="_activarSonido(this)"
-            style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;
-                  padding:8px 12px;font-size:12px;color:var(--text2);cursor:pointer;white-space:nowrap;
-                  transition:all 0.2s;">
-            🔔 Activar sonido
-          </button>
-        </div>
-        <div id="sonido-status" style="font-size:11px;color:var(--text3);margin-top:4px;display:none;"></div>
-      </div>
-
-      <div class="field">
-        <label>Comprobante <span style="color:var(--text3);font-weight:400;font-size:11px;">(imagen o PDF, máx 5MB)</span></label>
-        <input type="file" id="f-comprobante" accept="image/jpeg,image/png,image/webp,application/pdf"
-          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 14px;color:var(--text2);font-size:13px;cursor:pointer;"
-          onchange="const f=this.files[0],w=document.getElementById('comprobante-preview');if(!f)return;if(f.type==='application/pdf'){w.innerHTML='<div style=\'margin-top:8px;font-size:13px;color:var(--accent2)\'>📄 '+f.name+'</div>';return;}const r=new FileReader();r.onload=e=>{const img=document.createElement('img');img.src=e.target.result;img.style.cssText='max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);margin-top:8px';w.innerHTML='';w.appendChild(img)};r.readAsDataURL(f)">
-        <div id="comprobante-preview"></div>
-      </div>
-
-      <div class="modal-actions">
-        <button class="btn-secondary" onclick="closeVentaModal()">Cancelar</button>
-        <button class="btn-save" onclick="saveVenta()">💾 Guardar</button>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -660,12 +718,13 @@
 </div>
 <script src="app.js"></script>
 <script src="guia.js"></script>
+<script src="nuevo-registro.js"></script>
 <script src="leads.js"></script>
 <script src="memorias.js"></script>
 <script>
   initTheme();
   initializeSession();
 </script>
-
+<script src="sidebar.js"></script>
 </body>
 </html>

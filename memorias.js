@@ -2,7 +2,7 @@
 
 const MEMORIAS_BUCKET = 'memorias';
 
-// ── INIT ─────────────────────────────────────────────────────────────────────
+// INIT
 async function renderMemorias() {
   await _ensureBucket();
   if (currentUser?.rol === 'admin') {
@@ -21,13 +21,13 @@ async function _ensureBucket() {
   }
 }
 
-// ── ESTADO INTERNO ────────────────────────────────────────────────────────────
+// ESTADO INTERNO
 let _memoriaData = [];
 let _memoriaMes  = '';
 let _memoriaEstadosFiltro = ['todos']; // array de estados seleccionados
 let _memoriaAgenteId = 'todos'; // agente seleccionado para el filtro admin
 
-// ── ESTADO PERSISTENTE DEL CSV (agente) ──────────────────────────────────────
+//  ESTADO PERSISTENTE DEL CSV (agente)
 let _agenteCSVAbierto = null;      // path del archivo abierto
 let _agenteCSVData    = null;      // { headers: [], rows: [] } parseado
 let _agenteCSVBusqueda = '';
@@ -38,20 +38,20 @@ let _agenteStoragePage = 1;
 let _agenteStorageItems = [];
 
 const _ESTADOS_LABELS = {
-  todos:        { label: 'Todos',          emoji: '🗂️',  color: '#6366f1' },
-  vendido:      { label: 'Vendido',        emoji: '✅',  color: '#22d3a4' },
-  rellamada:    { label: 'Rellamada',      emoji: '🔁',  color: '#a78bfa' },
-  seguimiento:  { label: 'Seguimiento',    emoji: '🔄',  color: '#60a5fa' },
-  interesado:   { label: 'Interesado',     emoji: '🌟',  color: '#fbbf24' },
-  agendar:      { label: 'Agendar',        emoji: '📅',  color: '#fb923c' },
-  sin_respuesta:{ label: 'Sin respuesta',  emoji: '📵',  color: '#f87171' },
-  no_interesado:{ label: 'No interesado',  emoji: '👎',  color: '#94a3b8' },
-  enviado:      { label: 'Enviado',        emoji: '📦',  color: '#60a5fa' },
-  cancelado:    { label: 'Cancelado',      emoji: '❌',  color: '#f87171' },
-  spam:         { label: 'SPAM',           emoji: '🚫',  color: '#94a3b8' },
+  todos: { label: 'Todos', emoji: '🗂️', color: '#6366f1' },
+  vendido: { label: 'Vendido', emoji: '✅', color: '#22d3a4' },
+  rellamada: { label: 'Rellamada',  emoji: '🔁', color: '#a78bfa' },
+  seguimiento: { label: 'Seguimiento', emoji: '🔄', color: '#60a5fa' },
+  interesado: { label: 'Interesado', emoji: '🌟', color: '#fbbf24' },
+  agendar: { label: 'Agendar', emoji: '📅', color: '#fb923c' },
+  sin_respuesta: { label: 'Sin respuesta', emoji: '📵', color: '#f87171' },
+  no_interesado: { label: 'No interesado', emoji: '👎', color: '#94a3b8' },
+  enviado: { label: 'Enviado', emoji: '📦', color: '#60a5fa' },
+  cancelado: { label: 'Cancelado', emoji: '❌', color: '#f87171' },
+  spam: { label: 'SPAM', emoji: '🚫', color: '#94a3b8' },
 };
 
-// ── HELPERS DE PARSEO CSV ─────────────────────────────────────────────────────
+// HELPERS DE PARSEO CSV
 function _parseCSV(text) {
   const lines = text.replace(/^\uFEFF/, '').trim().split('\n');
   if (lines.length < 2) return { headers: [], rows: [] };
@@ -77,17 +77,17 @@ function _parseCSV(text) {
 function _getColIndices(headers) {
   const h = headers.map(x => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''));
   return {
-    nombre:    h.findIndex(x => x.includes('cliente') || x.includes('nombre')),
-    celular:   h.findIndex(x => x.includes('celular')),
-    estado:    h.findIndex(x => x.includes('estado')),
-    producto:  h.findIndex(x => x.includes('producto')),
+    nombre: h.findIndex(x => x.includes('cliente') || x.includes('nombre')),
+    celular: h.findIndex(x => x.includes('celular')),
+    estado: h.findIndex(x => x.includes('estado')),
+    producto: h.findIndex(x => x.includes('producto')),
     ubicacion: h.findIndex(x => x.includes('ubicaci')),
-    monto:     h.findIndex(x => x.includes('monto')),
-    fecha:     h.findIndex(x => x.includes('fecha') && x.includes('reg')),
+    monto: h.findIndex(x => x.includes('monto')),
+    fecha: h.findIndex(x => x.includes('fecha') && x.includes('reg')),
   };
 }
 
-// ── CARGAR Y MOSTRAR CSV (agente) ─────────────────────────────────────────────
+// CARGAR Y MOSTRAR CSV (agente)
 async function _verCSVStorageAgente(path) {
   // Toggle: si ya está abierto, cerrar
   if (_agenteCSVAbierto === path) {
@@ -145,8 +145,8 @@ function _renderAgenteCSVPanel() {
   const busq = _agenteCSVBusqueda.toLowerCase().trim();
   const filtered = busq
     ? rows.filter(r => {
-        const nombre   = cols.nombre  >= 0 ? (r[cols.nombre]  || '').toLowerCase() : '';
-        const celular  = cols.celular >= 0 ? (r[cols.celular] || '').toLowerCase() : '';
+        const nombre = cols.nombre >= 0 ? (r[cols.nombre]  || '').toLowerCase() : '';
+        const celular = cols.celular >= 0 ? (r[cols.celular] || '').toLowerCase() : '';
         return nombre.includes(busq) || celular.includes(busq);
       })
     : rows;
@@ -318,32 +318,29 @@ function _onAgenteCSVBusqueda(valor) {
   _renderAgenteCSVPanel();
 }
 
-// ── REGISTRAR DESDE MEMORIA ───────────────────────────────────────────────────
+// REGISTRAR DESDE MEMORIA
 async function _registrarDesdeMemoria(celular, nombre, producto, ubicacion) {
-  // 1. Ir a la pestaña de ventas
-  showViewDirect('ventas');
+  // 1. Abrir nuevo registro
+  showNuevoRegistro();
 
-  // 2. Pequeño delay para que el DOM de ventas esté activo
-  await new Promise(r => setTimeout(r, 60));
+  // 2. Esperar a que el DOM esté listo
+  await new Promise(r => setTimeout(r, 150));
 
-  // 3. Abrir modal nuevo
-  await openVentaModal();
+  // 3. Pre-llenar campos
+  const celInput = document.getElementById('nr-celular');
+  const nomInput = document.getElementById('nr-nombre');
+  const ubInput  = document.getElementById('nr-ubicacion');
 
-  // 4. Otro pequeño delay para que el modal esté listo
-  await new Promise(r => setTimeout(r, 80));
-
-  // 5. Pre-llenar campos
-  const celInput = document.getElementById('f-celular');
-  const nomInput = document.getElementById('f-nombre');
-  const ubInput  = document.getElementById('f-ubicacion');
-
-  if (celInput) { celInput.value = celular; await onCelularInput(); }
+  if (celInput && celular) {
+    celInput.value = celular;
+    onNrCelularInput(); // dispara la búsqueda de cliente existente
+  }
   if (nomInput && nombre) nomInput.value = nombre;
   if (ubInput  && ubicacion) ubInput.value = ubicacion;
 
-  // 6. Pre-seleccionar producto si existe en catálogo
+  // 4. Pre-seleccionar producto si existe en catálogo
   if (producto) {
-    await new Promise(r => setTimeout(r, 200)); // esperar que onCelularInput termine
+    await new Promise(r => setTimeout(r, 400)); // esperar que onNrCelularInput termine
     const matchProd = allProductos.find(p =>
       p.activo && (
         p.nombre.toLowerCase().includes(producto.toLowerCase()) ||
@@ -351,10 +348,10 @@ async function _registrarDesdeMemoria(celular, nombre, producto, ubicacion) {
       )
     );
     if (matchProd) {
-      const firstSel = document.querySelector('#venta-items-wrap .item-producto');
+      const firstSel = document.querySelector('#nr-items-wrap .nr-item-producto');
       if (firstSel && !firstSel.value) {
         firstSel.value = matchProd.id;
-        onItemProductoChange(firstSel);
+        onNrItemProductoChange(firstSel);
       }
     }
   }
@@ -362,8 +359,7 @@ async function _registrarDesdeMemoria(celular, nombre, producto, ubicacion) {
   toast(`📋 Datos precargados desde memoria — ${nombre || celular}`, 'success');
 }
 
-// ── UI AGENTE (solo lectura) ──────────────────────────────────────────────────
-// REEMPLAZAR _renderMemoriasAgente completo:
+// UI AGENTE (solo lectura)
 function _renderMemoriasAgente() {
   const wrap = document.getElementById('memorias-wrap');
   if (!wrap) return;
@@ -548,7 +544,7 @@ async function _descargarStorageAgente(path, nombre) {
   } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
 }
 
-// ── UI PRINCIPAL (Admin) ──────────────────────────────────────────────────────
+// UI PRINCIPAL (Admin)
 function _renderMemoriasUI() {
   const wrap = document.getElementById('memorias-wrap');
   if (!wrap) return;
@@ -737,7 +733,7 @@ function _renderMemoriasUI() {
   `;
 }
 
-// ── HELPERS AGENTE SELECTOR ───────────────────────────────────────────────────
+// HELPERS AGENTE SELECTOR
 function _getAgenteSeleccionado() {
   const sel = document.getElementById('mem-agente-selector');
   if (!sel || sel.value === 'todos') return null;
@@ -750,7 +746,7 @@ function _onMemAgenteChange() {
   _onMemMesChange();
 }
 
-// ── TOGGLE ESTADO FILTRO ──────────────────────────────────────────────────────
+// TOGGLE ESTADO FILTRO
 function _toggleEstadoFiltro(estado) {
   if (estado === 'todos') {
     _memoriaEstadosFiltro = ['todos'];
@@ -802,7 +798,7 @@ function _getDataFiltrada() {
   return data.filter(r => _memoriaEstadosFiltro.includes(r.estado));
 }
 
-// ── GENERAR PREVIEW ───────────────────────────────────────────────────────────
+// GENERAR PREVIEW
 function _onMemMesChange() {
   document.getElementById('mem-preview-wrap').style.display = 'none';
   _memoriaData = [];
@@ -993,7 +989,7 @@ function _buildPreviewTable(rows, truncated) {
     </table>`;
 }
 
-// ── CSV ───────────────────────────────────────────────────────────────────────
+// CSV
 function _buildCSV(rows) {
   const cols    = ['fecha_creacion','fecha_registro','cliente','celular','ubicacion','producto','cantidad','subtotal','monto_total','descuento_pct','estado','archivado','notas','agente'];
   const headers = ['Fecha Creacion','Fecha Registro','Cliente','Celular','Ubicacion','Producto','Cantidad','Subtotal','Monto Total','Descuento %','Estado','Archivado','Notas','Agente'];
@@ -1033,7 +1029,7 @@ async function _exportarCSVStorage() {
   }
 }
 
-// ── PATH BUILDER ──────────────────────────────────────────────────────────────
+// PATH BUILDER
 function _buildStoragePath(ext) {
   const agente = _getAgenteSeleccionado();
   const fileName = `${_memoriaMes}${_sufijoDeFiltro()}.${ext}`;
@@ -1049,7 +1045,7 @@ function _sufijoDeFiltro() {
   return '_' + _memoriaEstadosFiltro.join('-');
 }
 
-// ── PDF ───────────────────────────────────────────────────────────────────────
+// PDF
 async function _cargarJsPDF() {
   if (window.jspdf) return window.jspdf.jsPDF;
   return new Promise((resolve, reject) => {
@@ -1373,7 +1369,7 @@ async function _exportarPDFStorage() {
   }
 }
 
-// ── STORAGE LIST (Admin) ──────────────────────────────────────────────────────
+// STORAGE LIST (Admin)
 async function _cargarRespaldosStorage() {
   const listEl = document.getElementById('mem-storage-list');
   if (!listEl) return;

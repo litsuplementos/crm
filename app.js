@@ -80,9 +80,6 @@ let mostrarArchivados = false;
 let _vendidosEditablesCache = null;
 let filtroTiempo = 'mes';
 
-// FIX #14 — flag de geo como variable de módulo, no propiedad del elemento DOM
-let _geoSelectorsInitialized = false;
-
 // Debounce mejorado
 let _searchTimer;
 let _filterTimer;
@@ -228,11 +225,14 @@ function doLogout() {
   // FIX #1 — limpiar intervalos y timers antes de resetear estado
   clearInterval(_recordatorioTimer);
   clearInterval(_bipInterval);
-  clearTimeout(celularTimer);
+  clearTimeout(_nrCelTimer);
   _recordatorioTimer = null;
   _bipInterval = null;
   _vendidosEditablesCache = null;
-  celularTimer = null;
+  _nrCelTimer = null;
+  _nrGeoInit = false;
+  _bipAudio = null;
+  _bipActivo = false;
 
   // FIX #3 — suspender AudioContext en lugar de crear uno nuevo en la próxima sesión
   if (_audioCtx && _audioCtx.state !== 'closed') {
@@ -285,8 +285,7 @@ async function initApp() {
 
   _setupEventDelegationOnce();
   renderDashboard();
-  _geoSelectorsInitialized = false;
-  initGeoSelectors();
+  _nrGeoInit = false;
   renderVentas();
   populateProductoFilter();
   setArchivoFiltro(false);
@@ -305,7 +304,7 @@ function _setupEventDelegationOnce() {
     const btn = e.target.closest('button');
     if (!btn) {
       const row = e.target.closest('tr[data-venta-id]');
-      if (row) openVentaModal(parseInt(row.dataset.ventaId));
+      if (row) showNuevoRegistro(parseInt(row.dataset.ventaId));
     }
   }, { passive: true });
   _eventDelegationRegistered = true;
@@ -690,6 +689,7 @@ function showView(name) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
   event.target.classList.add('active');
+  if (name === 'nuevo-registro') { showNuevoRegistro(); return; }
   if (name === 'ventas') renderVentas();
   if (name === 'dashboard') renderDashboard();
   if (name === 'leads') renderLeads();
@@ -1020,11 +1020,7 @@ function renderVentas() {
         <td style="max-width:160px;white-space:normal;word-break:break-word;font-size:13px;color:var(--text2);">${ubicacion}</td>
         <td>${statusBadge(v.estado)}${v.estado === 'rellamada' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}${v.estado === 'sin_respuesta' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}</td>
         <td style="min-width:280px;max-width:260px;overflow:hidden;white-space:normal;color:var(--text2);font-size:12px;" title="${v.notas || ''}">${v.notas || ''}${v.comprobante_url ? ` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>` : ''}</td>
-        ${isAdmin ? `<td style="font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>` : ''}
-        <td class="td-actions" onclick="event.stopPropagation()">
-          <button class="icon-btn" onclick="openVentaModal(${v.id})">✏️</button>
-          <button class="icon-btn danger" onclick="deleteVenta(${v.id})">🗑️</button>
-        </td>`;
+        ${isAdmin ? `<td style="font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>` : ''}`;
       fragment.appendChild(tr);
     }
   }
@@ -1081,818 +1077,6 @@ function setArchivoFiltro(archivado) {
     opciones.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
 
   renderVentas();
-}
-
-// VENTA ITEMS — multi-producto
-function addVentaItem(data) {
-  const wrap = document.getElementById('venta-items-wrap');
-  const idx  = Date.now();
-  const row = document.createElement('div');
-  row.dataset.idx = idx;
-  row.style.cssText = 'background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;position:relative;';
-  // FIX #10 — filtrar solo activos al construir el select del modal
-  const productosActivos = allProductos.filter(p => p.activo);
-  row.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 90px auto;gap:8px;align-items:end;margin-bottom:8px;">
-      <div>
-        <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px;">Producto</div>
-        <select class="smart-input item-producto" onchange="onItemProductoChange(this)" style="width:100%;">
-          <option value="">— Seleccionar —</option>
-          ${productosActivos.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
-        </select>
-      </div>
-      <div>
-        <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px;">Cantidad</div>
-        <input class="smart-input item-cantidad" type="number" min="1" max="99"
-          value="${data?.cantidad || 1}" style="text-align:center;" oninput="onItemCantidadChange(this)">
-      </div>
-      <button type="button" onclick="removeVentaItem(this)"
-        style="background:var(--red-bg);border:1px solid var(--red);border-radius:6px;padding:8px 10px;color:var(--red);cursor:pointer;margin-top:18px;">✕</button>
-    </div>
-    <div class="item-promos-wrap" style="display:none;margin-bottom:8px;">
-      <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Promoción</div>
-      <div class="item-promos-chips" style="display:flex;flex-wrap:wrap;gap:5px;"></div>
-      <input type="hidden" class="item-promo-index" value="">
-    </div>
-    <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">
-      <span style="font-size:12px;color:var(--text3);" class="item-subtotal-label"></span>
-      <span style="font-size:14px;font-weight:700;color:var(--green);" class="item-subtotal-display" data-value="0">Bs. 0</span>
-    </div>
-  `;
-  wrap.appendChild(row);
-  if (data?.producto_id) {
-    const sel = row.querySelector('.item-producto');
-    sel.value = data.producto_id;
-    onItemProductoChange(sel, data);
-  }
-  recalcMonto();
-}
-
-function removeVentaItem(btn) {
-  btn.closest('[data-idx]').remove();
-  recalcMonto();
-}
-
-function onItemProductoChange(sel, preData) {
-  const row = sel.closest('[data-idx]');
-  const pid = parseInt(sel.value);
-  const prod = allProductos.find(p => p.id === pid);
-  const promosWrap = row.querySelector('.item-promos-wrap');
-  const promosChips = row.querySelector('.item-promos-chips');
-  const promoIdx = row.querySelector('.item-promo-index');
-  const cantInput = row.querySelector('.item-cantidad');
-  promoIdx.value = '';
-  if (!prod) {
-    promosWrap.style.display = 'none';
-    const display = row.querySelector('.item-subtotal-display');
-    display.textContent = 'Bs. 0';
-    display.dataset.value = '0';
-    row.querySelector('.item-subtotal-label').textContent = '';
-    recalcMonto();
-    return;
-  }
-  const promos = prod.promociones || [];
-  if (promos.length > 0) {
-    promosWrap.style.display = '';
-    promosChips.innerHTML = promos.map((pr, i) => `
-      <span class="quick-chip item-promo-chip"
-        data-promo="${i}" data-precio="${pr.precio_total}" data-cantidad="${pr.cantidad}"
-        onclick="selectItemPromo(this)"
-        style="background:var(--yellow-bg);border-color:var(--yellow);color:var(--yellow);">
-        🏷️ ${pr.etiqueta}
-      </span>`).join('');
-  } else {
-    promosWrap.style.display = 'none';
-  }
-  if (preData?.promo_index !== undefined && preData.promo_index !== null && promos[preData.promo_index]) {
-    const chip = promosChips.querySelector(`[data-promo="${preData.promo_index}"]`);
-    if (chip) {
-      chip.classList.add('active');
-      chip.style.background = 'var(--yellow)';
-      chip.style.color = '#1a1a00';
-    }
-    promoIdx.value = preData.promo_index;
-    cantInput.value = promos[preData.promo_index].cantidad;
-  }
-  if (preData?.subtotal && promoIdx.value === '') {
-    const display = row.querySelector('.item-subtotal-display');
-    display.textContent = `Bs. ${parseFloat(preData.subtotal).toFixed(2)}`;
-    display.dataset.value = preData.subtotal;
-    row.querySelector('.item-subtotal-label').textContent = '';
-    recalcMonto();
-    return;
-  }
-  updateItemSubtotal(row);
-}
-
-function selectItemPromo(chip) {
-  const row = chip.closest('[data-idx]');
-  const promoIdx = row.querySelector('.item-promo-index');
-  const idx = parseInt(chip.dataset.promo);
-  const allChips = row.querySelectorAll('.item-promo-chip');
-  const cantInput = row.querySelector('.item-cantidad');
-  if (promoIdx.value !== '' && parseInt(promoIdx.value) === idx) {
-    promoIdx.value = '';
-    allChips.forEach(c => {
-      c.classList.remove('active');
-      c.style.background = 'var(--yellow-bg)';
-      c.style.color = 'var(--yellow)';
-      c.style.borderColor = 'var(--yellow)';
-    });
-    updateItemSubtotal(row);
-    return;
-  }
-  promoIdx.value = idx;
-  allChips.forEach(c => {
-    c.classList.remove('active');
-    c.style.background = 'var(--yellow-bg)';
-    c.style.color = 'var(--yellow)';
-    c.style.borderColor = 'var(--yellow)';
-  });
-  chip.classList.add('active');
-  chip.style.background = 'var(--yellow)';
-  chip.style.color = '#1a1a00';
-  chip.style.borderColor = 'var(--yellow)';
-  cantInput.value = chip.dataset.cantidad;
-  updateItemSubtotal(row);
-}
-
-function onItemCantidadChange(input) {
-  const row = input.closest('[data-idx]');
-  const promoIdx = row.querySelector('.item-promo-index');
-  if (promoIdx.value !== '') {
-    promoIdx.value = '';
-    row.querySelectorAll('.item-promo-chip').forEach(c => {
-      c.classList.remove('active');
-      c.style.background = 'var(--yellow-bg)';
-      c.style.color = 'var(--yellow)';
-      c.style.borderColor = 'var(--yellow)';
-    });
-  }
-  updateItemSubtotal(row);
-}
-
-function updateItemSubtotal(row) {
-  const pid = parseInt(row.querySelector('.item-producto').value);
-  const prod = allProductos.find(p => p.id === pid);
-  const cant = parseInt(row.querySelector('.item-cantidad').value) || 1;
-  const promoIdxV = row.querySelector('.item-promo-index').value;
-  const display = row.querySelector('.item-subtotal-display');
-  const label = row.querySelector('.item-subtotal-label');
-  if (!prod) {
-    display.textContent = 'Bs. 0';
-    display.dataset.value = '0';
-    label.textContent = '';
-    recalcMonto();
-    return;
-  }
-  let subtotal;
-  if (promoIdxV !== '' && prod.promociones?.[parseInt(promoIdxV)]) {
-    const promo = prod.promociones[parseInt(promoIdxV)];
-    subtotal = promo.precio_total;
-    label.textContent = `promo: ${promo.etiqueta}`;
-  } else {
-    subtotal = prod.precio_base * cant;
-    label.textContent = `Bs.${prod.precio_base} × ${cant}`;
-  }
-  display.textContent = `Bs. ${subtotal.toFixed(2)}`;
-  display.dataset.value = subtotal;
-  recalcMonto();
-}
-
-function recalcMonto() {
-  let total = 0;
-  document.querySelectorAll('#venta-items-wrap [data-idx]').forEach(row => {
-    total += parseFloat(row.querySelector('.item-subtotal-display')?.dataset.value || 0);
-  });
-  const count = document.querySelectorAll('#venta-items-wrap [data-idx]').length;
-  if (total > 0) {
-    document.getElementById('f-monto').value = total.toFixed(2);
-    document.getElementById('f-monto')._baseValue = total;
-    const pct = parseFloat(document.getElementById('f-descuento')?.value) || 0;
-    if (pct > 0) {
-      const descuento = total * pct / 100;
-      document.getElementById('f-monto').value = (total - descuento).toFixed(2);
-      document.getElementById('descuento-tag').textContent = `− Bs. ${descuento.toFixed(2)}`;
-    }
-    const totalUnits = Array.from(document.querySelectorAll('#venta-items-wrap [data-idx]'))
-      .reduce((sum, row) => sum + (parseInt(row.querySelector('.item-cantidad')?.value) || 1), 0);
-    document.getElementById('monto-tag').textContent = `${count} producto${count !== 1 ? 's' : ''} · ${totalUnits} und.`;
-  } else {
-    document.getElementById('f-monto').value = '';
-    document.getElementById('monto-tag').textContent = '';
-  }
-}
-
-function aplicarDescuento() {
-  const pct = parseFloat(document.getElementById('f-descuento').value) || 0;
-  const montoInput = document.getElementById('f-monto');
-  const base = parseFloat(montoInput._baseValue) || 0;
-  if (base <= 0) return;
-  const descuento = base * pct / 100;
-  const final = base - descuento;
-  montoInput.value = final.toFixed(2);
-  document.getElementById('descuento-tag').textContent = pct > 0 ? `− Bs. ${descuento.toFixed(2)}` : '';
-}
-
-function recalcDescuento() {
-  const montoInput = document.getElementById('f-monto');
-  montoInput._baseValue = parseFloat(montoInput.value) || 0;
-  document.getElementById('f-descuento').value = '';
-  document.getElementById('descuento-tag').textContent = '';
-}
-
-function getVentaItemsData() {
-  const items = [];
-  document.querySelectorAll('#venta-items-wrap [data-idx]').forEach(row => {
-    const pid = parseInt(row.querySelector('.item-producto').value);
-    const cant = parseInt(row.querySelector('.item-cantidad').value) || 1;
-    const sub = parseFloat(row.querySelector('.item-subtotal-display')?.dataset.value || 0);
-    if (pid && sub > 0) items.push({ producto_id: pid, cantidad: cant, subtotal: sub });
-  });
-  return items;
-}
-
-function clearVentaItems() {
-  document.getElementById('venta-items-wrap').innerHTML = '';
-  document.getElementById('f-monto').value = '';
-  document.getElementById('f-monto')._baseValue = 0;
-  document.getElementById('f-descuento').value = '0';
-  document.getElementById('descuento-tag').textContent = '';
-  document.getElementById('monto-tag').textContent = '';
-}
-
-function toggleIntentosField(estado) {
-  const rellamadaWrap = document.getElementById('intentos-rellamada-field');
-  const sinrespWrap   = document.getElementById('intentos-sinresp-field');
-  if (rellamadaWrap) rellamadaWrap.style.display = (estado === 'rellamada')     ? '' : 'none';
-  if (sinrespWrap)   sinrespWrap.style.display   = (estado === 'sin_respuesta') ? '' : 'none';
-  if (estado === 'rellamada') {
-    document.getElementById('f-intentos').value =
-      document.getElementById('f-intentos-rellamada').value || 1;
-  } else if (estado === 'sin_respuesta') {
-    document.getElementById('f-intentos').value =
-      document.getElementById('f-intentos-sinresp').value || 1;
-  } else {
-    document.getElementById('f-intentos').value = 1;
-  }
-}
-
-function onIntentosChange() {
-  const estado = document.getElementById('f-estado').value;
-
-  if (estado === 'rellamada') {
-    const val  = parseInt(document.getElementById('f-intentos-rellamada').value) || 1;
-    const warn = document.getElementById('intentos-rellamada-warning');
-    document.getElementById('f-intentos').value = val;
-    if (!warn) return;
-    if (val >= MAX_RELLAMADAS) {
-      warn.textContent = '⚠️ Al guardar se marcará como No interesado y se archivará.';
-      warn.style.display = ''; warn.style.color = 'var(--red)';
-    } else if (val === MAX_RELLAMADAS - 1) {
-      warn.textContent = `⚠️ Próximo intento (${MAX_RELLAMADAS}) cerrará el ciclo.`;
-      warn.style.display = ''; warn.style.color = 'var(--yellow)';
-    } else {
-      warn.style.display = 'none';
-    }
-
-  } else if (estado === 'sin_respuesta') {
-    const val  = parseInt(document.getElementById('f-intentos-sinresp').value) || 1;
-    const warn = document.getElementById('intentos-sinresp-warning');
-    document.getElementById('f-intentos').value = val;
-    if (!warn) return;
-    if (val >= MAX_SIN_RESPUESTA) {
-      warn.textContent = '⚠️ Al guardar se marcará como No interesado y se archivará.';
-      warn.style.display = ''; warn.style.color = 'var(--red)';
-    } else if (val === MAX_SIN_RESPUESTA - 1) {
-      warn.textContent = `⚠️ Próximo mensaje sin respuesta (${MAX_SIN_RESPUESTA}) cerrará el ciclo.`;
-      warn.style.display = ''; warn.style.color = 'var(--yellow)';
-    } else {
-      warn.style.display = 'none';
-    }
-  }
-}
-
-function _loadIntentosEditar(estado, intentos) {
-  const val = intentos || 1;
-  if (estado === 'rellamada') {
-    document.getElementById('f-intentos-rellamada').value = val;
-    document.getElementById('f-intentos-sinresp').value   = 1;
-  } else if (estado === 'sin_respuesta') {
-    document.getElementById('f-intentos-sinresp').value   = val;
-    document.getElementById('f-intentos-rellamada').value = 1;
-  } else {
-    document.getElementById('f-intentos-rellamada').value = 1;
-    document.getElementById('f-intentos-sinresp').value   = 1;
-  }
-  document.getElementById('f-intentos').value = val;
-  toggleIntentosField(estado);
-  onIntentosChange();
-}
-
-function _resetIntentos() {
-  document.getElementById('f-intentos-rellamada').value = 1;
-  document.getElementById('f-intentos-sinresp').value = 1;
-  document.getElementById('f-intentos').value = 1;
-  toggleIntentosField('interesado');
-}
-
-function _leerIntentos(estado) {
-  if (estado === 'rellamada')    return parseInt(document.getElementById('f-intentos-rellamada').value) || 1;
-  if (estado === 'sin_respuesta') return parseInt(document.getElementById('f-intentos-sinresp').value) || 1;
-  return 1;
-}
-
-// MODAL VENTA
-let celularTimer = null;
-
-async function onCelularInput() {
-  clearTimeout(celularTimer);
-  celularTimer = null;
-  const cel = document.getElementById('f-celular').value.trim();
-  const sugg = document.getElementById('celular-suggestion');
-  sugg.style.display = 'none';
-  document.getElementById('cliente-info-box').style.display = 'none';
-  if (cel.length < 6) return;
-
-  celularTimer = setTimeout(async () => {
-    celularTimer = null;
-
-    // Query 1: cliente por celular
-    const { data: clienteData } = await db.from('clientes')
-      .select('id, nombre, ubicacion, producto_interes, notas, faltas, flag')
-      .eq('celular', cel).maybeSingle();
-
-    // Query 2: solo si hay cliente, buscar ciclo activo por cliente_id (ya lo tenemos)
-    const cicloDelCliente = clienteData
-      ? await db.from('ventas')
-          .select('id, estado, fecha, venta_items( productos:producto_id(nombre) )')
-          .eq('cliente_id', clienteData.id)
-          .eq('agente_id', currentUser.id)
-          .eq('archivado', false)
-          .order('id', { ascending: false })
-          .limit(1).maybeSingle()
-          .then(r => r.data)
-      : null;
-
-    if (clienteData) {
-      document.getElementById('f-cliente-id').value = clienteData.id;
-      document.getElementById('f-nombre').value = clienteData.nombre || '';
-      document.getElementById('f-ubicacion').value = clienteData.ubicacion || '';
-
-      if (clienteData.producto_interes) {
-        const matchProd = allProductos.find(p =>
-          p.nombre.toLowerCase().includes(clienteData.producto_interes.toLowerCase()) ||
-          clienteData.producto_interes.toLowerCase().includes(p.nombre.toLowerCase())
-        );
-        if (matchProd) {
-          const firstSel = document.querySelector('#venta-items-wrap .item-producto');
-          if (firstSel && !firstSel.value) {
-            firstSel.value = matchProd.id;
-            onItemProductoChange(firstSel);
-          }
-        }
-      }
-
-      sugg.style.display = 'none';
-      const infoBox = document.getElementById('cliente-info-box');
-      infoBox.style.display = '';
-
-      const cicloProds = cicloDelCliente
-        ? (cicloDelCliente.venta_items || []).map(it => it.productos?.nombre).filter(Boolean).join(', ')
-        : '';
-
-      const cicloWarning = cicloDelCliente ? `
-        <div style="background:rgba(251,191,36,0.15);border:2px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-bottom:8px;">
-          <div style="color:var(--yellow);font-size:13px;font-weight:700;margin-bottom:6px;">⚠️ Ya tienes un registro activo con este cliente</div>
-          <div style="color:var(--text2);font-size:12px;margin-bottom:8px;">${cicloProds || '—'} · ${ESTADOS[cicloDelCliente.estado]?.label || cicloDelCliente.estado} · ${cicloDelCliente.fecha || ''}</div>
-          <div style="color:var(--text3);font-size:11px;margin-bottom:8px;">No puedes crear un registro nuevo. Actualiza el existente.</div>
-          <button onclick="closeVentaModal();setTimeout(()=>openVentaModal(${cicloDelCliente.id}),50)"
-            style="background:var(--yellow);border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;color:#0a0a0f;cursor:pointer;width:100%;">
-            → Ir al registro existente
-          </button>
-        </div>` : '';
-
-      const spamBanner = clienteData.flag === 'spam' ? `
-        <div style="background:rgba(248,113,113,0.15);border:2px solid var(--red);border-radius:8px;padding:12px 16px;margin-bottom:8px;">
-          <div style="color:var(--red);font-weight:700;font-size:14px;margin-bottom:4px;">🚫 ¡SPAM! Este cliente solo molesta, no compra.</div>
-          <div style="color:var(--text2);font-size:12px;">Tiene ${clienteData.faltas} cancelación(es) registrada(s).</div>
-        </div>` : '';
-
-      infoBox.innerHTML = spamBanner + cicloWarning + `
-        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;">
-          <div style="color:var(--accent2);font-weight:600;margin-bottom:4px;">👤 Cliente registrado ${flagBadge(clienteData)}</div>
-          ${clienteData.faltas > 0 && clienteData.flag !== 'spam' ? `<div style="color:var(--orange);font-size:11px;">❌ ${clienteData.faltas} cancelación(es)</div>` : ''}
-          ${clienteData.notas ? `<div style="color:var(--text2);margin-top:4px;">${clienteData.notas}</div>` : ''}
-        </div>`;
-
-      const saveBtn = document.querySelector('#venta-modal .btn-save');
-      if (saveBtn) {
-        saveBtn.disabled = !!cicloDelCliente;
-        saveBtn.style.opacity = cicloDelCliente ? '0.4' : '';
-        saveBtn.style.cursor = cicloDelCliente ? 'not-allowed' : '';
-        saveBtn.title = cicloDelCliente ? 'Debes ir al registro existente antes de crear uno nuevo' : '';
-      }
-    } else {
-      document.getElementById('f-cliente-id').value = '';
-      sugg.textContent = '✨ Registro nuevo: Se creará el perfil al guardar';
-      sugg.style.background = 'var(--green-bg)';
-      sugg.style.borderColor = 'rgba(34,211,164,0.3)';
-      sugg.style.color = 'var(--green)';
-      sugg.style.display = 'block';
-
-      const saveBtn = document.querySelector('#venta-modal .btn-save');
-      if (saveBtn) {
-        saveBtn.disabled = false;
-        saveBtn.style.opacity = '';
-        saveBtn.style.cursor = '';
-        saveBtn.title = '';
-      }
-    }
-  }, 350);
-}
-
-async function openVentaModal(id) {
-  document.getElementById('venta-modal').classList.add('open');
-  document.querySelectorAll('.quick-chip').forEach(ch => {
-    ch.classList.remove('active', 'chip-disabled');
-    ch.title = '';
-  });
-  document.getElementById('celular-suggestion').style.display = 'none';
-  document.getElementById('cliente-info-box').style.display = 'none';
-  document.getElementById('f-comprobante').value = '';
-  renderComprobantePreview(null);
-
-  const af = document.getElementById('agente-field');
-  if (af) {
-    af.style.display = currentUser.rol === 'admin' ? '' : 'none';
-    if (currentUser.rol === 'admin') {
-      document.getElementById('f-agente').innerHTML =
-        allAgents.filter(a => a.rol === 'agente').map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
-    }
-  }
-
-  if (id) {
-    const v = ventasIndex[id];
-    if (!v) return;
-
-    // Lanzar getVendidosEditables en paralelo mientras preparamos el DOM
-    const vendidosEditablesPromise = getVendidosEditables();
-
-    const isArchivado = !!v.archivado;
-    const isAdmin = currentUser?.rol === 'admin';
-
-    // Preparar DOM que no depende del resultado del fetch
-    document.getElementById('edit-venta-id').value = id;
-    document.getElementById('f-fecha').value = v.fecha || '';
-    document.getElementById('f-celular').value = v.cliente?.celular || '';
-    document.getElementById('f-nombre').value = v.cliente?.nombre || '';
-    document.getElementById('f-cliente-id').value = v.cliente_id || '';
-    document.getElementById('f-ubicacion').value = v.cliente?.ubicacion || '';
-    document.getElementById('f-notas').value = v.notas || '';
-    document.getElementById('f-recordatorio').value = v.recordatorio ? v.recordatorio.slice(0, 16) : '';
-    document.getElementById('f-direccion').value = v.cliente?.direccion_residencial || '';
-    document.getElementById('f-monto').value = v.monto_total || '';
-    document.getElementById('monto-tag').textContent = '';
-
-    const descuentoGuardado = v.descuento_pct || 0;
-    clearVentaItems();
-    document.getElementById('f-descuento').value = descuentoGuardado;
-    document.getElementById('f-monto')._baseValue = parseFloat(v.monto_total) || 0;
-
-    const itemsExistentes = v.venta_items || [];
-    if (itemsExistentes.length > 0) {
-      itemsExistentes.forEach(it => addVentaItem({
-        producto_id: it.producto_id,
-        cantidad: it.cantidad,
-        subtotal: it.subtotal,
-      }));
-    } else {
-      addVentaItem();
-    }
-
-    _loadIntentosEditar(v.estado, v.intentos);
-    document.getElementById('f-estado').value = v.estado || 'interesado';
-    document.querySelector(`.quick-chip[data-estado="${v.estado}"]`)?.classList.add('active');
-
-    if (currentUser.rol === 'admin' && v.agente_id)
-      document.getElementById('f-agente').value = v.agente_id;
-
-    ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
-      const el = document.getElementById(sid);
-      if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
-    });
-
-    const mp = document.getElementById('maps-preview');
-    if (mp) mp.innerHTML = '';
-    if (v.cliente?.direccion_residencial) onDireccionKeydown({ key: 'Enter', preventDefault: () => {} });
-
-    // Ahora sí esperar el resultado del fetch (que ya estaba corriendo)
-    const vendidosEditables = await vendidosEditablesPromise;
-
-    const shouldLock = isArchivado && !isAdmin && !(v?.estado === 'vendido' && vendidosEditables);
-    const mensajeArchivado = (v?.estado === 'vendido' && vendidosEditables && !isAdmin)
-      ? '✏️ Registro archivado. Habilitado para hacer cambios.'
-      : '🔒 Registro archivado. Este ciclo de venta está cerrado. Sólo el administrador puede editarlo.';
-
-    document.getElementById('modal-title').textContent = isArchivado ? '🔒 Registro Archivado' : 'Editar Registro';
-
-    const archivedBanner = document.getElementById('archived-banner');
-    if (archivedBanner) {
-      archivedBanner.style.display = isArchivado ? '' : 'none';
-      archivedBanner.innerHTML = `<b style="color:var(--text);">${mensajeArchivado}</b>`;
-    }
-
-    const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas',
-                        'f-intentos-rellamada', 'f-intentos-sinresp', 'f-direccion', 'f-monto', 'f-recordatorio'];
-    lockFields.forEach(fid => {
-      const el = document.getElementById(fid);
-      if (el) el.disabled = shouldLock;
-    });
-
-    const fileInput = document.getElementById('f-comprobante');
-    if (fileInput) fileInput.disabled = shouldLock;
-
-    document.querySelectorAll('.quick-chip').forEach(ch => {
-      ch.style.pointerEvents = shouldLock ? 'none' : '';
-      ch.style.opacity = shouldLock ? '0.4' : '';
-    });
-
-    const addItemBtn = document.getElementById('btn-add-item');
-    if (addItemBtn) addItemBtn.style.display = shouldLock ? 'none' : '';
-
-    if (shouldLock) {
-      document.querySelectorAll('#venta-items-wrap select, #venta-items-wrap input, #venta-items-wrap button')
-        .forEach(el => el.disabled = true);
-    }
-
-    renderComprobantePreview(v.comprobante_url || null, shouldLock);
-
-    const saveBtn = document.querySelector('#venta-modal .btn-save');
-    if (saveBtn) {
-      saveBtn.style.display = shouldLock ? 'none' : '';
-      if (!shouldLock) {
-        saveBtn.disabled = false;
-        saveBtn.style.opacity = '';
-        saveBtn.style.cursor = '';
-        saveBtn.title = '';
-      }
-    }
-  } else {
-    document.getElementById('modal-title').textContent = 'Nuevo Registro';
-    document.getElementById('edit-venta-id').value = '';
-
-    const archivedBanner = document.getElementById('archived-banner');
-    if (archivedBanner) archivedBanner.style.display = 'none';
-
-    const lockFields = ['f-fecha', 'f-celular', 'f-nombre', 'f-ubicacion', 'f-notas',
-                        'f-intentos-rellamada', 'f-intentos-sinresp', 'f-direccion', 'f-monto'];
-    lockFields.forEach(fid => {
-      const el = document.getElementById(fid);
-      if (el) el.disabled = false;
-    });
-
-    const fileInput = document.getElementById('f-comprobante');
-    if (fileInput) fileInput.disabled = false;
-
-    document.querySelectorAll('.quick-chip').forEach(ch => {
-      ch.style.pointerEvents = '';
-      ch.style.opacity = '';
-    });
-
-    const addItemBtn = document.getElementById('btn-add-item');
-    if (addItemBtn) addItemBtn.style.display = '';
-
-    const saveBtn = document.querySelector('#venta-modal .btn-save');
-    if (saveBtn) {
-      saveBtn.style.display = '';
-      saveBtn.disabled = false;
-      saveBtn.style.opacity = '';
-      saveBtn.style.cursor = '';
-      saveBtn.title = '';
-    }
-
-    document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
-    document.getElementById('f-celular').value = '';
-    document.getElementById('f-nombre').value = '';
-    document.getElementById('f-cliente-id').value = '';
-    document.getElementById('f-ubicacion').value = '';
-    document.getElementById('f-notas').value = '';
-    document.getElementById('f-direccion').value = '';
-    document.getElementById('f-recordatorio').value = '';
-
-    const mpNew = document.getElementById('maps-preview');
-    if (mpNew) mpNew.innerHTML = '';
-
-    ['sel-departamento', 'sel-provincia', 'sel-municipio'].forEach(sid => {
-      const el = document.getElementById(sid);
-      if (el) { el.value = ''; if (sid !== 'sel-departamento') el.disabled = true; }
-    });
-
-    _resetIntentos();
-    document.getElementById('f-estado').value = 'interesado';
-    document.querySelector('.quick-chip[data-estado="interesado"]')?.classList.add('active');
-
-    if (currentUser.rol === 'admin' && allAgents.length > 0)
-      document.getElementById('f-agente').value = allAgents.find(a => a.rol === 'agente')?.id || '';
-
-    clearVentaItems();
-    addVentaItem();
-  }
-}
-
-function setEstado(value, el) {
-  if (el.classList.contains('chip-disabled') && currentUser?.rol !== 'admin') {
-    toast('⚠️ ' + (el.title || 'Estado no disponible'), 'error');
-    return;
-  }
-  document.querySelectorAll('.quick-chip').forEach(c => c.classList.remove('active'));
-  el.classList.add('active');
-  document.getElementById('f-estado').value = value;
-  toggleIntentosField(value);
-}
-
-function closeVentaModal() {
-  // FIX #2 — limpiar timer y resetear a null
-  clearTimeout(celularTimer);
-  celularTimer = null;
-  document.getElementById('venta-modal').classList.remove('open');
-}
-
-async function saveVenta() {
-  const ventaId = document.getElementById('edit-venta-id').value;
-  const celular = document.getElementById('f-celular').value.trim();
-  const nombre = document.getElementById('f-nombre').value.trim();
-  const clienteId = document.getElementById('f-cliente-id').value;
-  const estado = document.getElementById('f-estado').value;
-  const ubicacion = document.getElementById('f-ubicacion').value.trim();
-  const notas = document.getElementById('f-notas').value.trim();
-  const fecha = document.getElementById('f-fecha').value;
-  const monto = parseFloat(document.getElementById('f-monto').value) || null;
-  const descuentoPct = parseInt(document.getElementById('f-descuento')?.value) || 0;
-  const recordatorio = document.getElementById('f-recordatorio')?.value || null;
-  const direccion = document.getElementById('f-direccion')?.value?.trim() || null;
-  const agenteId = currentUser.rol === 'admin'
-    ? document.getElementById('f-agente')?.value || currentUser.id
-    : currentUser.id;
-
-  const intentos = _leerIntentos(estado);
-  if (!celular) { toast('⚠️ El celular es obligatorio', 'error'); return; }
-
-  const items = getVentaItemsData();
-  if (items.length === 0) { toast('⚠️ Añade al menos un producto con precio', 'error'); return; }
-
-  let estadoFinal = estado;
-
-  if (estado === 'rellamada' && intentos >= MAX_RELLAMADAS) {
-    const ok = confirm(`Este registro ya tiene ${intentos} intentos de llamada.\nAl guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`);
-    if (!ok) return;
-    estadoFinal = 'no_interesado';
-    toast('🔕 Marcado como No interesado (3 rellamadas)', 'error');
-  } else if (estado === 'rellamada' && intentos === MAX_RELLAMADAS - 1) {
-    toast(`⚠️ ${intentos}/${MAX_RELLAMADAS} intentos de llamada — próximo cierra el ciclo`, '');
-  }
-
-  if (estado === 'sin_respuesta' && intentos >= MAX_SIN_RESPUESTA) {
-    const ok = confirm(`Este cliente ya tiene ${intentos} mensajes sin respuesta.\nAl guardar se marcará como "No interesado" y se archivará.\n\n¿Confirmar?`);
-    if (!ok) return;
-    estadoFinal = 'no_interesado';
-    toast('🔕 Marcado como No interesado (4 sin respuesta)', 'error');
-  } else if (estado === 'sin_respuesta' && intentos === MAX_SIN_RESPUESTA - 1) {
-    toast(`⚠️ ${intentos}/${MAX_SIN_RESPUESTA} mensajes sin respuesta — próximo cierra el ciclo`, '');
-  }
-
-  const debeArchivar = ESTADOS_CIERRE.includes(estadoFinal);
-
-  const prodNombreParaPerfil = items
-    .map(it => allProductos.find(p => p.id === it.producto_id)?.nombre)
-    .filter(Boolean).join(', ');
-
-  const ventaData = {
-    agente_id: agenteId,
-    fecha,
-    notas,
-    monto_total: monto,
-    descuento_pct: descuentoPct,
-    recordatorio: recordatorio || null,
-    estado: estadoFinal,
-    intentos: ['rellamada', 'sin_respuesta'].includes(estado) ? intentos : 1,
-    archivado: debeArchivar,
-  };
-
-  try {
-    let cId = clienteId ? parseInt(clienteId) : null;
-    let savedId;
-
-    if (ventaId) {
-      // EDICIÓN: actualizar cliente + eliminar items viejos + actualizar venta, todo en paralelo
-      if (!cId) throw new Error('Cliente ID faltante en edición');
-      const [, , { error: errV }] = await Promise.all([
-        db.from('clientes').update({
-          nombre: nombre || 's/n',
-          ubicacion,
-          producto_interes: prodNombreParaPerfil || undefined,
-          direccion_residencial: direccion,
-        }).eq('id', cId),
-        db.from('venta_items').delete().eq('venta_id', parseInt(ventaId)),
-        db.from('ventas').update({ ...ventaData, cliente_id: cId }).eq('id', parseInt(ventaId)),
-      ]);
-      if (errV) throw errV;
-      savedId = parseInt(ventaId);
-      toast('✅ Registro actualizado', 'success');
-    } else {
-      // CREACIÓN: primero cliente (necesitamos su id), luego venta
-      if (!cId) {
-        const { data: newC, error: errC } = await db.from('clientes').insert({
-          celular,
-          nombre: nombre || 's/n',
-          ubicacion,
-          producto_interes: prodNombreParaPerfil || null,
-          direccion_residencial: direccion,
-        }).select().single();
-        if (errC) throw errC;
-        cId = newC.id;
-      } else {
-        await db.from('clientes').update({
-          nombre: nombre || 's/n',
-          ubicacion,
-          producto_interes: prodNombreParaPerfil || undefined,
-          direccion_residencial: direccion,
-        }).eq('id', cId);
-      }
-      const { data: saved, error: errVenta } = await db.from('ventas')
-        .insert({ ...ventaData, cliente_id: cId }).select().single();
-      if (errVenta) throw errVenta;
-      savedId = saved.id;
-      toast('✅ Registro agregado', 'success');
-    }
-
-    // Items + comprobante en paralelo
-    const itemsToInsert = items.map(it => ({ ...it, venta_id: savedId }));
-    const [{ error: errItems }, url] = await Promise.all([
-      db.from('venta_items').insert(itemsToInsert),
-      uploadComprobante(savedId),
-    ]);
-    if (errItems) throw errItems;
-    if (url) await db.from('ventas').update({ comprobante_url: url }).eq('id', savedId);
-
-    // Construir objeto actualizado en memoria en lugar de hacer SELECT
-    const ventaEnMemoria = ventasIndex[savedId];
-    const clienteActualizado = {
-      ...(ventaEnMemoria?.cliente || {}),
-      id: cId,
-      celular,
-      nombre: nombre || 's/n',
-      ubicacion,
-      direccion_residencial: direccion,
-      producto_interes: prodNombreParaPerfil || null,
-    };
-    const agenteObj = allAgents.find(a => a.id === agenteId) || ventaEnMemoria?.agente || { id: agenteId, nombre: currentUser.nombre };
-    const ventaActualizada = {
-      ...(ventaEnMemoria || {}),
-      id: savedId,
-      cliente_id: cId,
-      agente_id: agenteId,
-      fecha,
-      notas,
-      monto_total: monto,
-      descuento_pct: descuentoPct,
-      recordatorio: recordatorio || null,
-      recordatorio_visto: false,
-      estado: estadoFinal,
-      intentos: ['rellamada', 'sin_respuesta'].includes(estado) ? intentos : 1,
-      archivado: debeArchivar,
-      comprobante_url: url || ventaEnMemoria?.comprobante_url || null,
-      cliente: clienteActualizado,
-      agente: agenteObj,
-      venta_items: itemsToInsert.map((it, i) => ({
-        id: i,
-        venta_id: savedId,
-        producto_id: it.producto_id,
-        cantidad: it.cantidad,
-        subtotal: it.subtotal,
-        productos: { id: it.producto_id, nombre: allProductos.find(p => p.id === it.producto_id)?.nombre || '' },
-      })),
-    };
-
-    const idx = ventas.findIndex(v => v.id === savedId);
-    if (idx >= 0) {
-      ventas[idx] = ventaActualizada;
-    } else {
-      ventas.unshift(ventaActualizada);
-    }
-    ventasIndex[savedId] = ventaActualizada;
-
-    dashboardCache.invalidate();
-    filteredCache.invalidate();
-    _cityFilterDirty = true;
-    await onVentaGuardadaDesdeLeads();
-    closeVentaModal();
-    renderVentas();
-    renderDashboard();
-  } catch(e) {
-    toast('❌ Error: ' + e.message, 'error');
-  }
 }
 
 // ELIMINAR USUARIO
@@ -2032,58 +1216,7 @@ function deleteVenta(id) {
     } catch(e) { toast('❌ ' + e.message, 'error'); }
   };
 }
-
 function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); }
-
-// COMPROBANTE
-async function uploadComprobante(ventaId) {
-  const input = document.getElementById('f-comprobante');
-  const file = input?.files?.[0];
-  if (!file) return null;
-  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-  if (!allowed.includes(file.type)) { toast('⚠️ Solo JPG, PNG, WEBP o PDF', 'error'); return null; }
-  if (file.size > 5 * 1024 * 1024) { toast('⚠️ Máximo 5MB', 'error'); return null; }
-  const ext = file.name.split('.').pop();
-  const path = `${currentUser.id}/${ventaId}_${Date.now()}.${ext}`;
-  const { error } = await db.storage.from('comprobantes').upload(path, file, { upsert: true });
-  if (error) { toast('❌ Error subiendo: ' + error.message, 'error'); return null; }
-  const { data: u } = db.storage.from('comprobantes').getPublicUrl(path);
-  return u.publicUrl;
-}
-
-async function deleteComprobante(url, ventaId) {
-  if (!url || !confirm('¿Eliminar comprobante?')) return;
-  try {
-    const path = url.split('/comprobantes/')[1];
-    if (path) await db.storage.from('comprobantes').remove([path]);
-    const { error } = await db.from('ventas').update({ comprobante_url: null }).eq('id', ventaId);
-    if (error) throw error;
-    if (ventasIndex[ventaId]) {
-      ventasIndex[ventaId].comprobante_url = null;
-      const idx = ventas.findIndex(v => v.id === ventaId);
-      if (idx >= 0) ventas[idx].comprobante_url = null;
-    }
-    if (document.getElementById('edit-venta-id').value == ventaId) {
-      renderComprobantePreview(null);
-    }
-    toast('🗑️ Comprobante eliminado', 'success');
-    renderVentas();
-  } catch(e) {
-    toast('❌ Error eliminando comprobante: ' + e.message, 'error');
-  }
-}
-
-function renderComprobantePreview(url, locked = false) {
-  const wrap = document.getElementById('comprobante-preview');
-  if (!wrap) return;
-  if (!url) { wrap.innerHTML = ''; return; }
-  const isPdf = url.toLowerCase().includes('.pdf');
-  const btnEliminar = locked ? '' : `<button type="button" class="icon-btn danger" onclick="deleteComprobante('${url}',parseInt(document.getElementById('edit-venta-id').value))" style="font-size:11px;padding:3px 8px;">🗑️</button>`;
-  const btnEliminarImg = locked ? '' : `<button type="button" class="icon-btn danger" onclick="deleteComprobante('${url}',parseInt(document.getElementById('edit-venta-id').value))" style="position:absolute;top:4px;right:4px;font-size:11px;padding:3px 7px;background:var(--surface);">🗑️</button>`;
-  wrap.innerHTML = isPdf
-    ? `<div style="display:flex;align-items:center;gap:8px;margin-top:8px;"><a href="${url}" target="_blank" style="color:var(--accent2);font-size:13px;">📄 Ver PDF</a>${btnEliminar}</div>`
-    : `<div style="margin-top:8px;position:relative;display:inline-block;"><img src="${url}" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);" onerror="this.style.display='none'">${btnEliminarImg}</div>`;
-}
 
 document.addEventListener('click', e => {
   if (!e.target.closest('.smart-input-row'))
@@ -2200,61 +1333,6 @@ const BOLIVIA_GEO = {
   "Pando": { capital: "Cobija", provincias: { "Nicolás Suárez": { capital: "Cobija", municipios: ["Cobija","Bolpebra","Bella Flor","Porvenir","San Pedro"] }, "Manuripi": { capital: "Filadelfia", municipios: ["Filadelfia"] } } }
 };
 
-// FIX #14 — initGeoSelectors usa variable de módulo, no propiedad del elemento DOM
-function initGeoSelectors() {
-  if (_geoSelectorsInitialized) return;
-  const selDep = document.getElementById('sel-departamento');
-  const selProv = document.getElementById('sel-provincia');
-  const selMun = document.getElementById('sel-municipio');
-  if (!selDep) return;
-  _geoSelectorsInitialized = true;
-  selDep.innerHTML = '<option value="">— Departamento —</option>';
-  Object.keys(BOLIVIA_GEO).sort().forEach(dep => {
-    const o = document.createElement('option');
-    o.value = dep; o.textContent = dep;
-    selDep.appendChild(o);
-  });
-  function updateUbicacionInput() {
-    const dep = selDep.value, prov = selProv.value, mun = selMun.value;
-    const inp = document.getElementById('f-ubicacion');
-    if (!inp) return;
-    if (mun) inp.value = `${dep} - ${prov} - ${mun}`;
-    else if (prov) inp.value = `${dep} - ${prov}`;
-    else if (dep) inp.value = dep;
-    else inp.value = '';
-  }
-  selDep.onchange = () => {
-    const dep = selDep.value;
-    selProv.innerHTML = '<option value="">— Provincia —</option>';
-    selMun.innerHTML = '<option value="">— Municipio —</option>';
-    selProv.disabled = !dep;
-    selMun.disabled = true;
-    updateUbicacionInput();
-    if (!dep) return;
-    Object.keys(BOLIVIA_GEO[dep].provincias).sort().forEach(prov => {
-      const o = document.createElement('option');
-      o.value = prov; o.textContent = prov;
-      selProv.appendChild(o);
-    });
-  };
-  selProv.onchange = () => {
-    const dep = selDep.value, prov = selProv.value;
-    selMun.innerHTML = '<option value="">— Municipio —</option>';
-    selMun.disabled = !prov;
-    updateUbicacionInput();
-    if (!dep || !prov) return;
-    const provData = BOLIVIA_GEO[dep].provincias[prov];
-    const capDep = BOLIVIA_GEO[dep].capital;
-    provData.municipios.forEach(mun => {
-      const o = document.createElement('option');
-      o.value = mun;
-      o.textContent = mun === capDep ? mun + ' ★ (cap. departamental)' : mun === provData.capital ? mun + ' · (cap. provincial)' : mun;
-      selMun.appendChild(o);
-    });
-  };
-  selMun.onchange = () => { updateUbicacionInput(); };
-}
-
 function onDireccionKeydown(e) {
   if (e.key !== 'Enter') return;
   e.preventDefault();
@@ -2279,7 +1357,6 @@ function toast(msg, type = '') {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const modals = [
-      { id: 'venta-modal', closeFunc: closeVentaModal },
       { id: 'user-modal', closeFunc: closeUserModal },
       { id: 'delete-user-modal', closeFunc: closeDeleteUserModal },
       { id: 'delete-modal', closeFunc: closeDeleteModal },
@@ -2463,8 +1540,9 @@ async function getVendidosEditables() {
 let _recordatorioTimer = null;
 let _bipInterval = null;
 let _audioCtx = null;
+let _bipAudio = null;
+let _bipActivo = false; 
 
-// FIX #3 — reusar AudioContext entre sesiones; solo crear uno si no existe o fue cerrado
 function _getAudioCtx() {
   if (!_audioCtx || _audioCtx.state === 'closed') {
     _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -2475,30 +1553,56 @@ function _getAudioCtx() {
   return _audioCtx;
 }
 
+let _AUDIO_FILES = [];
+let _audioFilesLoaded = false;
+
+async function _loadAudioFiles() {
+  if (_audioFilesLoaded) return;
+  const found = [];
+  for (let i = 1; i <= 50; i++) {
+    const url = `resources/audio/Recordatorio${i}.mp3`;
+    try {
+      const res = await fetch(url, { method: 'HEAD' });
+      if (res.ok) found.push(url);
+      else break; // para en el primer número que no exista
+    } catch { break; }
+  }
+  _AUDIO_FILES = found.length > 0 ? found : [];
+  _audioFilesLoaded = true;
+}
+
 function _bip() {
+  if (!_bipActivo) return;
+  if (_AUDIO_FILES.length === 0) {
+    // sin archivos: reintentar en 5s por si aún están cargando
+    setTimeout(_bip, 5000);
+    return;
+  }
   try {
-    const ctx = _getAudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, ctx.currentTime);
-    gain.gain.setValueAtTime(0.4, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.3);
+    const archivo = _AUDIO_FILES[Math.floor(Math.random() * _AUDIO_FILES.length)];
+    _bipAudio = new Audio(archivo);
+    _bipAudio.volume = 0.8;
+    _bipAudio.addEventListener('ended', () => {
+      if (!_bipActivo) return;
+      setTimeout(_bip, 7000);
+    });
+    _bipAudio.addEventListener('error', () => {
+      if (!_bipActivo) return;
+      setTimeout(_bip, 1000);
+    });
+    _bipAudio.play().catch(() => {});
   } catch(e) {}
 }
 
 function _mostrarNotificacionRecordatorio(venta) {
+  _loadAudioFiles();
   clearInterval(_bipInterval);
   let banner = document.getElementById('recordatorio-banner');
   if (!banner) {
     banner = document.createElement('div');
     banner.id = 'recordatorio-banner';
     banner.style.cssText = `
-      position:fixed;top:0;left:0;right:0;z-index:9999;
+      position:fixed;bottom:0;left:0;right:0;z-index:9999;
       background:linear-gradient(135deg,var(--accent),var(--accent2));
       color:white;padding:14px 20px;
       display:flex;align-items:center;justify-content:space-between;
@@ -2536,13 +1640,15 @@ function _mostrarNotificacionRecordatorio(venta) {
   `;
   banner.style.display = 'flex';
 
+  _bipActivo = true;
   _bip();
-  _bipInterval = setInterval(_bip, 2000);
 }
 
 function _dismissRecordatorio() {
+  _bipActivo = false;
   clearInterval(_bipInterval);
   _bipInterval = null;
+  if (_bipAudio) { _bipAudio.pause(); _bipAudio.currentTime = 0; _bipAudio = null; }
   const banner = document.getElementById('recordatorio-banner');
   if (banner) banner.style.display = 'none';
 }

@@ -237,20 +237,16 @@ async function registrarLead(idx) {
   const lead = _leads[idx];
   if (!lead) return;
 
-  showViewDirect('ventas');
-  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-  document.querySelector('[data-view="ventas"]')?.classList.add('active');
-
-  await openVentaModal();
+  // Abrir la vista nuevo-registro directamente
+  showNuevoRegistro();
   await new Promise(r => setTimeout(r, 80));
 
-  const celularInput = document.getElementById('f-celular');
-  const nombreInput  = document.getElementById('f-nombre');
-  /*const notasInput   = document.getElementById('f-notas');*/
+  const celularInput = document.getElementById('nr-celular');
+  const nombreInput  = document.getElementById('nr-nombre');
 
   if (celularInput) {
     celularInput.value = lead.celular;
-    await onCelularInput();
+    await onNrCelularInput();
   }
 
   if (nombreInput && lead.nombre) {
@@ -258,34 +254,26 @@ async function registrarLead(idx) {
     if (!nombreInput.value) nombreInput.value = lead.nombre;
   }
 
-  // Poner el mensaje en notas si existe
-  /*if (notasInput && lead.mensaje && !notasInput.value) {
-    notasInput.value = lead.mensaje;
-  }*/
-
-  // Guardar ID del lead en la BD para marcarlo procesado al guardar
-  document.getElementById('venta-modal').dataset.leadDbId = lead.id;
-  document.getElementById('venta-modal').dataset.leadIdx = idx;
+  // Guardar referencia al lead para marcarlo procesado al guardar
+  window._leadPendienteDbId  = lead.id;
+  window._leadPendienteIdx   = idx;
 
   toast(`📋 Lead cargado: ${lead.celular}`, 'success');
 }
 
 // Hook: al guardar una venta, marcar lead como procesado
 async function onVentaGuardadaDesdeLeads() {
-  const modal = document.getElementById('venta-modal');
-  const leadDbId = modal?.dataset.leadDbId ? parseInt(modal.dataset.leadDbId) : null;
-  const idx = modal?.dataset.leadIdx !== undefined ? parseInt(modal.dataset.leadIdx) : null;
+  const leadDbId = window._leadPendienteDbId || null;
+  const idx      = window._leadPendienteIdx ?? null;
 
-  delete modal.dataset.leadDbId;
-  delete modal.dataset.leadIdx;
+  window._leadPendienteDbId = null;
+  window._leadPendienteIdx  = null;
 
-  if (!leadDbId || isNaN(leadDbId)) return;
+  if (!leadDbId) return;
 
-  // Marcar como procesado en Supabase
   const { error } = await db.from('leads').update({ procesado: true }).eq('id', leadDbId);
   if (error) console.error('Error marcando lead procesado:', error);
 
-  // Quitar de la lista en memoria
   if (idx !== null && !isNaN(idx)) {
     _leads.splice(idx, 1);
   } else {
