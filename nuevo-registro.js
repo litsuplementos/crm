@@ -447,13 +447,7 @@ function selectNrItemPromo(chip) {
 
 function onNrItemCantidadChange(input) {
   const row = input.closest('[data-idx]');
-  const promoIdx = row.querySelector('.nr-item-promo-index');
-  if (promoIdx.value !== '') {
-    promoIdx.value = '';
-    row.querySelectorAll('.nr-item-promo-chip').forEach(c => {
-      c.classList.remove('active'); c.style.background='var(--yellow-bg)'; c.style.color='var(--yellow)';
-    });
-  }
+  // Don't clear the active promo — just recalculate using it with the new quantity
   updateNrItemSubtotal(row);
 }
 
@@ -468,7 +462,10 @@ function updateNrItemSubtotal(row) {
   let sub;
   if (piV !== '' && prod.promociones?.[parseInt(piV)]) {
     const pr = prod.promociones[parseInt(piV)];
-    sub = pr.precio_total; lbl.textContent = `promo: ${pr.etiqueta}`;
+    // Multiply promo unit price by quantity
+    const precioUnitario = pr.precio_total / pr.cantidad;
+    sub = precioUnitario * cant;
+    lbl.textContent = `promo: Bs.${precioUnitario.toFixed(0)}/u × ${cant}`;
   } else {
     sub = prod.precio_base * cant; lbl.textContent = `Bs.${prod.precio_base} × ${cant}`;
   }

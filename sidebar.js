@@ -1,11 +1,7 @@
-/* ═══════════════════════════════════════════════
-   LIT CRM — sidebar.js
-   Inyecta el sidebar vertical y redirige la nav.
-   NO toca lógica de app.js ni otros módulos.
-   ═══════════════════════════════════════════════ */
+/* sidebar.js */
 
 (function () {
-  /* ── 1. Inyectar <link> al CSS del sidebar ── */
+  /* 1. Inyectar <link> al CSS del sidebar */
   (function injectCSS() {
     const link = document.createElement('link');
     link.rel  = 'stylesheet';
@@ -13,14 +9,14 @@
     document.head.appendChild(link);
   })();
 
-  /* ── 2. Esperar a que el DOM esté listo ── */
+  /* 2. Esperar a que el DOM esté listo */
   function init() {
     const app = document.getElementById('app');
     if (!app) { setTimeout(init, 50); return; }
     buildSidebar();
     wrapContentArea();
-    observeNavTabs();     // sincroniza sidebar con el sistema de pestañas original
-    observeUserData();    // sincroniza nombre/avatar
+    observeNavTabs(); // sincroniza sidebar con el sistema de pestañas original
+    observeUserData(); // sincroniza nombre/avatar
     syncSidebarWithUser();
     loadSidebarState();
   }
@@ -31,7 +27,7 @@
     init();
   }
 
-  /* ── 3. Definición de items del sidebar ── */
+  /* 3. Definición de items del sidebar */
   const NAV_ITEMS = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard',   view: 'dashboard',  always: true },
     { id: 'leads',     icon: '🎯', label: 'Leads',        view: 'leads',      tabId: 'tab-leads' },
@@ -43,7 +39,7 @@
     { id: 'memorias',  icon: '🗄️',  label: 'Memorias',    view: 'memorias',   always: true },
   ];
 
-  /* ── 4. Construir el DOM del sidebar ── */
+  /* 4. Construir el DOM del sidebar */
   function buildSidebar() {
     const app = document.getElementById('app');
 
@@ -91,7 +87,7 @@
     renderNavItems();
   }
 
-  /* ── 5. Renderizar items de nav ── */
+  /* 5. Renderizar items de nav */
   function renderNavItems() {
     const nav = document.getElementById('sidebar-nav');
     if (!nav) return;
@@ -121,7 +117,7 @@
     syncActiveItem();
   }
 
-  /* ── 6. Navegar desde sidebar ── */
+  /* 6. Navegar desde sidebar */
   function sidebarNavigate(viewName, clickedEl) {
     // Cerrar mobile sidebar si está abierto
     closeMobileSidebar();
@@ -147,7 +143,7 @@
     }
   }
 
-  /* ── 7. Wrapping del content area ── */
+  /* 7. Wrapping del content area */
   function wrapContentArea() {
     const app = document.getElementById('app');
     const topbar = app.querySelector('.topbar');
@@ -163,7 +159,7 @@
     contentArea.appendChild(mainEl);
   }
 
-  /* ── 8. Sincronizar item activo del sidebar ── */
+  /* 8. Sincronizar item activo del sidebar */
   function syncActiveItem() {
     const activeView = document.querySelector('.view.active');
     if (!activeView) return;
@@ -173,7 +169,7 @@
     });
   }
 
-  /* ── 9. Observar cambios en los tabs originales (cuando showView los activa) ── */
+  /* 9. Observar cambios en los tabs originales (cuando showView los activa) */
   function observeNavTabs() {
     // MutationObserver sobre .nav-tabs para detectar cambio de clase active
     const navTabs = document.querySelector('.nav-tabs');
@@ -203,7 +199,7 @@
     });
   }
 
-  /* ── 10. Sincronizar nombre y avatar del usuario ── */
+  /* 10. Sincronizar nombre y avatar del usuario */
   function observeUserData() {
     const nameEl = document.getElementById('user-name-top');
     const avatarEl = document.getElementById('user-avatar-top');
@@ -234,31 +230,7 @@
     setTimeout(renderNavItems, 100);
   }
 
-  /* ── 11. Sincronizar botón de tema con el toggle original ── */
-  // Parchear applyTheme para actualizar también el botón del sidebar
-  const _origApplyTheme = window.applyTheme;
-  if (_origApplyTheme) {
-    window.applyTheme = function(theme) {
-      _origApplyTheme(theme);
-      updateSidebarThemeBtn(theme);
-    };
-  }
-
-  function updateSidebarThemeBtn(theme) {
-    const btn = document.getElementById('sidebar-theme-btn');
-    if (!btn) return;
-    if (theme === 'night')      btn.innerHTML = '<span>☀️</span><span class="btn-label">Día</span>';
-    else if (theme === 'day')   btn.innerHTML = '<span>🌙</span><span class="btn-label">Noche</span>';
-    else                        btn.innerHTML = '<span>🌿</span><span class="btn-label">Menta</span>';
-  }
-
-  // Inicializar con el tema actual
-  setTimeout(() => {
-    const cur = document.documentElement.getAttribute('data-theme') || 'white';
-    updateSidebarThemeBtn(cur);
-  }, 0);
-
-  /* ── 12. Parchear syncData para animar el botón del sidebar ── */
+  /* ── 11. Parchear syncData para animar el botón del sidebar ── */
   const _origSyncData = window.syncData;
   if (_origSyncData) {
     window.syncData = async function() {
@@ -269,7 +241,7 @@
     };
   }
 
-  /* ── 13. Colapsar / expandir ── */
+  /* ── 12. Colapsar / expandir ── */
   const SIDEBAR_KEY = 'litcrm_sidebar_collapsed';
 
   function toggleSidebar() {
