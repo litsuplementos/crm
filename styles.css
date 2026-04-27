@@ -254,9 +254,9 @@ body {
 
 @media (min-width: 769px) {
   .view-scroll-wrap {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 26px 28px;
+    width: calc(100% - 32px);
+    margin-left: 16px;
+    margin-right: 16px;
   }
 }
 
