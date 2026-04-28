@@ -82,6 +82,16 @@
     const topbar = document.querySelector('.topbar');
     if (topbar) topbar.insertBefore(mobileBtn, topbar.firstChild);
 
+    window.addEventListener('resize', () => {
+      if (window.innerWidth <= 768) {
+        document.body.classList.remove('sidebar-collapsed');
+      } else {
+        document.body.classList.remove('sidebar-open');
+        if (localStorage.getItem(SIDEBAR_KEY) === '1') {
+          document.body.classList.add('sidebar-collapsed');
+        }
+      }
+    });
     renderNavItems();
   }
 
@@ -243,12 +253,22 @@
   const SIDEBAR_KEY = 'litcrm_sidebar_collapsed';
 
   function toggleSidebar() {
+    // En mobile, toggle abre/cierra como overlay en vez de colapsar
+    if (window.innerWidth <= 768) {
+      if (document.body.classList.contains('sidebar-open')) {
+        closeMobileSidebar();
+      } else {
+        openMobileSidebar();
+      }
+      return;
+    }
     const collapsed = document.body.classList.toggle('sidebar-collapsed');
     localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
   }
 
   function loadSidebarState() {
-    if (localStorage.getItem(SIDEBAR_KEY) === '1') {
+    // Solo aplicar estado colapsado en desktop
+    if (window.innerWidth > 768 && localStorage.getItem(SIDEBAR_KEY) === '1') {
       document.body.classList.add('sidebar-collapsed');
     }
   }
