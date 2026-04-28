@@ -219,17 +219,130 @@ const Objetivos = (() => {
     if (pct >= 0.25) return 'var(--orange)';
     return 'var(--red)';
   }
+
   function _minToTime(min) {
     return `${Math.floor(min/60).toString().padStart(2,'0')}:${(min%60).toString().padStart(2,'0')}`;
   }
+
   function _timeToMin(str) {
     const [h, m] = (str || '00:00').split(':').map(Number);
     return h * 60 + (m || 0);
   }
 
+  function _renderPanelRoscaAgentes(wrap) {
+    const hoy = new Date().toISOString().slice(0, 10);
+
+    // Calcular unidades vendidas hoy por cada agente
+    const agStats = allAgents
+      .filter(a => a.rol === 'agente')
+      .map(ag => {
+        const unidades = ventas
+          .filter(v => v.estado === 'vendido' && v.agente_id === ag.id &&
+            (v.updated_at ? v.updated_at.slice(0, 10) : v.fecha) === hoy)
+          .reduce((s, v) => s + (v.venta_items || []).reduce((ss, it) => ss + (it.cantidad || 1), 0), 0);
+        return { nombre: ag.nombre, unidades };
+      })
+      .filter(a => a.unidades > 0);
+
+    const totalUnidades = agStats.reduce((s, a) => s + a.unidades, 0);
+
+    if (totalUnidades === 0) {
+      wrap.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;
+                      text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);">
+            🎯 Objetivo del Día — Equipo
+          </div>
+        </div>
+        <div style="text-align:center;padding:32px 0;color:var(--text3);font-size:13px;">
+          Sin unidades vendidas hoy aún
+        </div>`;
+      return;
+    }
+
+    const colores = ['#6366f1','#22d3a4','#60a5fa','#fbbf24','#f472b6','#34d399','#a78bfa','#fb923c'];
+    const cx = 110, cy = 110, R = 90, r = 54, TAU = 2 * Math.PI;
+    let startAngle = -Math.PI / 2;
+    const segmentos = [];
+
+    agStats.forEach((ag, i) => {
+      const pct = ag.unidades / totalUnidades;
+      const angle = pct * TAU;
+      const end = startAngle + angle;
+      const gap = agStats.length > 1 ? 0.04 : 0;
+      const s = startAngle + gap / 2;
+      const e = end - gap / 2;
+      const x1 = cx + R * Math.cos(s), y1 = cy + R * Math.sin(s);
+      const x2 = cx + R * Math.cos(e), y2 = cy + R * Math.sin(e);
+      const x3 = cx + r * Math.cos(e), y3 = cy + r * Math.sin(e);
+      const x4 = cx + r * Math.cos(s), y4 = cy + r * Math.sin(s);
+      const large = angle - gap > Math.PI ? 1 : 0;
+      const path = `M${x1},${y1} A${R},${R} 0 ${large},1 ${x2},${y2} L${x3},${y3} A${r},${r} 0 ${large},0 ${x4},${y4} Z`;
+      segmentos.push({ path, color: colores[i % colores.length], ag, pct });
+      startAngle = end;
+    });
+
+    const paths = segmentos.map(seg =>
+      `<path d="${seg.path}" fill="${seg.color}" opacity="0.9" style="cursor:default;"></path>`
+    ).join('');
+
+    const leyenda = segmentos.map(seg => `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <div style="width:10px;height:10px;border-radius:3px;background:${seg.color};flex-shrink:0;"></div>
+        <span style="font-size:13px;color:var(--text);flex:1;font-weight:500;">${seg.ag.nombre}</span>
+        <span style="font-size:14px;font-weight:800;color:${seg.color};">${seg.ag.unidades}</span>
+        <span style="font-size:11px;color:var(--text3);">und.</span>
+      </div>`).join('');
+
+    wrap.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;
+                    text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);">
+          🎯 Objetivo del Día — Equipo
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+        <div style="position:relative;flex-shrink:0;">
+          <svg width="220" height="220" viewBox="0 0 220 220">
+            ${paths}
+            <circle cx="${cx}" cy="${cy}" r="${r - 4}" fill="var(--surface)"/>
+            <text x="${cx}" y="${cy - 10}" text-anchor="middle"
+              style="font-size:11px;fill:var(--text3);font-family:'DM Sans',sans-serif;font-weight:600;">
+              Hoy
+            </text>
+            <text x="${cx}" y="${cy + 8}" text-anchor="middle"
+              style="font-size:18px;fill:var(--text);font-family:'Syne',sans-serif;font-weight:700;">
+              ${totalUnidades}
+            </text>
+            <text x="${cx}" y="${cy + 24}" text-anchor="middle"
+              style="font-size:10px;fill:var(--text3);font-family:'DM Sans',sans-serif;">
+              unidades
+            </text>
+            <text x="${cx}" y="${cy + 38}" text-anchor="middle"
+              style="font-size:10px;fill:var(--text3);font-family:'DM Sans',sans-serif;">
+              meta: ${_meta} c/u
+            </text>
+          </svg>
+        </div>
+        <div style="flex:1;min-width:120px;">
+          ${leyenda}
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);
+                      font-size:11px;color:var(--text3);">
+            Meta individual: <b style="color:var(--text);">${_meta} unidades/día</b>
+          </div>
+        </div>
+      </div>`;
+  }
+
   function _renderPanel() {
     const wrap = document.getElementById('obj-panel-derecho');
     if (!wrap) return;
+
+    // ── ADMIN viendo TODOS los agentes → rosca por agente ──
+    if (currentUser?.rol === 'admin' && selectedAgentId === 'all') {
+      _renderPanelRoscaAgentes(wrap);
+      return;
+    }
 
     const unidades = _getUnidadesHoy();
     const pct = Math.min(1, _meta > 0 ? unidades / _meta : 0);
@@ -366,7 +479,7 @@ const Objetivos = (() => {
 
     _initialized = true;
     _lastUnidades = _getUnidadesHoy();
-    _emojisCaidosHoy = _ticksEsperados();
+    _emojisCaidosHoy = _ticksEsperados();    
 
     _renderPanel();
 
