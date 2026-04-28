@@ -69,7 +69,7 @@ body.sidebar-collapsed #sidebar {
   height: 52px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
-  overflow: hidden;
+  overflow: visible;
   white-space: nowrap;
 }
 
@@ -449,4 +449,8 @@ body.sidebar-collapsed .content-area {
 @media (min-width: 769px) {
   #mobile-sidebar-toggle { display: none !important; }
   .sidebar-overlay { display: none !important; }
+}
+
+#recordatorio-banner {
+  left: 0 !important;
 }

@@ -593,6 +593,28 @@ function onNrCelularInput() {
           ${cd.notas?`<div style="color:var(--text2);margin-top:4px;">${cd.notas}</div>`:''}
         </div>`;
 
+      // Detectar cliente fiel y precargar descuento
+      if (!ciclo) {
+        const { data: unidadesData } = await db.from('venta_items')
+          .select('cantidad, ventas!inner(cliente_id, estado)')
+          .eq('ventas.cliente_id', cd.id)
+          .eq('ventas.estado', 'vendido');
+        const totalUnidades = (unidadesData || []).reduce((s, it) => s + (it.cantidad || 1), 0);
+        if (totalUnidades >= _clientesFielesUmbral) {
+          const descInput = document.getElementById('nr-descuento');
+          if (descInput && (!descInput.value || descInput.value === '0')) {
+            descInput.value = _clientesFielesDescuento;
+            aplicarNrDescuento();
+            const sugg = document.getElementById('nr-celular-suggestion');
+            sugg.textContent = `⭐ Cliente fiel — ${totalUnidades} unidades compradas. Descuento del ${_clientesFielesDescuento}% aplicado.`;
+            sugg.style.background = 'var(--green-bg)';
+            sugg.style.borderColor = 'rgba(16,185,129,0.4)';
+            sugg.style.color = 'var(--green)';
+            sugg.style.display = 'block';
+          }
+        }
+      }
+
       const saveBtn = document.getElementById('nr-save-btn');
       if (saveBtn) {
         saveBtn.disabled = !!ciclo;
@@ -732,19 +754,22 @@ async function nrDeleteComprobante(url, ventaId) {
 
 // GUARDAR
 async function saveNuevoRegistro() {
-  const ventaId    = document.getElementById('nr-edit-venta-id').value;
-  const celular    = document.getElementById('nr-celular').value.trim();
-  const nombre     = document.getElementById('nr-nombre').value.trim();
+  const saveBtn = document.getElementById('nr-save-btn');
+  if (saveBtn?.disabled) return;
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Guardando...'; }
+  const ventaId = document.getElementById('nr-edit-venta-id').value;('nr-edit-venta-id').value;
+  const celular = document.getElementById('nr-celular').value.trim();
+  const nombre = document.getElementById('nr-nombre').value.trim();
   const clienteId  = document.getElementById('nr-cliente-id').value;
-  const estado     = document.getElementById('nr-estado').value;
-  const ubicacion  = document.getElementById('nr-ubicacion').value.trim();
-  const notas      = document.getElementById('nr-notas').value.trim();
-  const fecha      = document.getElementById('nr-fecha').value;
-  const monto      = parseFloat(document.getElementById('nr-monto').value) || null;
-  const descPct    = parseInt(document.getElementById('nr-descuento')?.value) || 0;
-  const recordat   = document.getElementById('nr-recordatorio')?.value || null;
-  const direccion  = document.getElementById('nr-direccion')?.value?.trim() || null;
-  const agenteId   = currentUser.rol==='admin'
+  const estado = document.getElementById('nr-estado').value;
+  const ubicacion = document.getElementById('nr-ubicacion').value.trim();
+  const notas = document.getElementById('nr-notas').value.trim();
+  const fecha = document.getElementById('nr-fecha').value;
+  const monto = parseFloat(document.getElementById('nr-monto').value) || null;
+  const descPct = parseInt(document.getElementById('nr-descuento')?.value) || 0;
+  const recordat = document.getElementById('nr-recordatorio')?.value || null;
+  const direccion = document.getElementById('nr-direccion')?.value?.trim() || null;
+  const agenteId = currentUser.rol==='admin'
     ? (document.getElementById('nr-agente')?.value || currentUser.id)
     : currentUser.id;
 
@@ -786,7 +811,6 @@ async function saveNuevoRegistro() {
     let savedId;
 
     if (ventaId) {
-      // EDICIÓN
       if (!cId) throw new Error('Cliente ID faltante en edición');
       const [,,{ error: errV }] = await Promise.all([
         db.from('clientes').update({ nombre:nombre||'s/n', ubicacion, producto_interes:prodNombre||undefined, direccion_residencial:direccion }).eq('id',cId),
@@ -813,13 +837,27 @@ async function saveNuevoRegistro() {
       toast('✅ Registro guardado','success');
     }
 
-    const toInsert = items.map(it=>({ ...it, venta_id:savedId }));
-    const [{ error:errI }, url] = await Promise.all([
+    const toInsert = items.map(it => ({ ...it, venta_id: savedId }));
+    const [{ error: errI }, url] = await Promise.all([
       db.from('venta_items').insert(toInsert),
       _uploadNrComprobante(savedId),
     ]);
     if (errI) throw errI;
-    if (url) await db.from('ventas').update({ comprobante_url:url }).eq('id',savedId);
+    if (url) await db.from('ventas').update({ comprobante_url: url }).eq('id', savedId);
+
+    // ── Historial acumulado: solo si la venta quedó como vendido ──
+    if (estadoFinal === 'vendido') {
+      const mesVenta = fecha.slice(0, 7); // 'YYYY-MM'
+      const totalUnidades = items.reduce((s, it) => s + (it.cantidad || 1), 0);
+      const montoFinal = monto || 0;
+      await db.rpc('upsert_cliente_historial', {
+        p_cliente_id: cId,
+        p_mes:        mesVenta,
+        p_unidades:   totalUnidades,
+        p_monto:      montoFinal,
+      });
+      _clientesFielesCache = null; // invalidar para que recargue
+    }
 
     // Actualizar memoria local
     const old       = ventasIndex[savedId];
@@ -848,6 +886,8 @@ async function saveNuevoRegistro() {
     renderDashboard();
   } catch(e) {
     toast('❌ Error: '+e.message,'error');
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Guardar Registro'; }
   }
 }
 
@@ -915,15 +955,24 @@ async function _renderGuiaNr(prodId) {
   document.getElementById('nr-guia-subtitle').textContent = prod?.nombre || '—';
   document.getElementById('nr-guia-empty').style.display   = 'none';
   document.getElementById('nr-guia-content').style.display = '';
-  document.getElementById('nr-guia-col1-body').innerHTML   = '<div style="padding:24px;color:var(--text3);font-size:13px;">Cargando...</div>';
+  document.getElementById('nr-guia-col1-body').innerHTML   =
+    '<div style="padding:24px;color:var(--text3);font-size:13px;">Cargando...</div>';
 
-  const { data: guia } = await db.from('guia_atencion').select('*').eq('producto_id', prodId).maybeSingle();
+  // Usar caché compartido con guia.js
+  let guia;
+  if (typeof _guiaCache !== 'undefined' && _guiaCache.has(prodId)) {
+    guia = _guiaCache.get(prodId);
+  } else {
+    const { data } = await db.from('guia_atencion').select('*').eq('producto_id', prodId).maybeSingle();
+    if (typeof _guiaCache !== 'undefined') _guiaCache.set(prodId, data);
+    guia = data;
+  }
+
   if (_nrGuiaProdId !== prodId) return;
 
   const norm     = _normalizeContenido(guia?.contenido);
   const emptyMsg = '<div style="color:var(--text3);font-size:13px;padding:24px;text-align:center;">Sin contenido</div>';
-
-  const todo = [...(norm.col1 || []), ...(norm.col2 || [])];
+  const todo     = [...(norm.col1 || []), ...(norm.col2 || [])];
   document.getElementById('nr-guia-col1-body').innerHTML = _renderColumna(todo) || emptyMsg;
 
   const eb = document.getElementById('nr-guia-edit-btn');

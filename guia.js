@@ -1,4 +1,7 @@
-// Módulo independiente - no toca app.js
+// guia.js
+
+// CACHÉ DE GUÍAS POR PRODUCTO
+const _guiaCache = new Map();
 
 // PALETAS DE COLOR
 const GUIA_COLORS = [
@@ -223,6 +226,14 @@ async function renderGuia() {
         </div>
       </div>`;
     }).join('');
+
+    (guiaData || []).forEach(g => {
+      if (!_guiaCache.has(g.producto_id)) _guiaCache.set(g.producto_id, g);
+    });
+    prods.forEach(p => {
+      if (!_guiaCache.has(p.id)) _guiaCache.set(p.id, null);
+    });
+
   } catch(e) {
     toast('❌ Error: ' + e.message, 'error');
   }
@@ -270,37 +281,49 @@ function openGuiaProductoModal(prodId, prodNombre) {
   _guiaActiveProdId     = prodId;
   _guiaActiveProdNombre = prodNombre;
 
+  const render = (guia) => {
+    const norm     = _normalizeContenido(guia?.contenido);
+    const emptyMsg = '<div style="color:var(--text3);font-size:13px;padding:24px;text-align:center;">Sin contenido</div>';
+
+    document.getElementById('guia-modal-title').textContent = prodNombre;
+
+    const editBtn = document.getElementById('guia-edit-btn');
+    editBtn.style.display = isAdmin ? '' : 'none';
+    editBtn.onclick = () => {
+      closeGuiaModal();
+      setTimeout(() => openGuiaEditor(prodId, prodNombre), 50);
+    };
+
+    document.getElementById('guia-modal-body').innerHTML = `
+      <div style="display:grid;grid-template-columns:60% 40%;">
+        <div style="overflow-y:auto;max-height:calc(80vh - 140px);">
+          <div style="padding:10px 16px;font-size:10px;font-weight:700;color:var(--text3);
+                      text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);
+                      background:var(--surface2);">Información Principal</div>
+          ${_renderColumna(norm.col1) || emptyMsg}
+        </div>
+        <div style="border-left:1px solid var(--border);overflow-y:auto;max-height:calc(80vh - 140px);">
+          <div style="padding:10px 16px;font-size:10px;font-weight:700;color:var(--text3);
+                      text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);
+                      background:var(--surface2);">Información Complementaria</div>
+          ${_renderColumna(norm.col2) || emptyMsg}
+        </div>
+      </div>`;
+
+    document.getElementById('guia-modal').classList.add('open');
+  };
+
+  // Si ya está en caché (incluso null = sin guía) → render inmediato, sin query
+  if (_guiaCache.has(prodId)) {
+    render(_guiaCache.get(prodId));
+    return;
+  }
+
+  // Primera vez: fetch y guardar en caché
   db.from('guia_atencion').select('*').eq('producto_id', prodId).maybeSingle()
     .then(({ data: guia }) => {
-      const norm    = _normalizeContenido(guia?.contenido);
-      const emptyMsg = '<div style="color:var(--text3);font-size:13px;padding:24px;text-align:center;">Sin contenido</div>';
-
-      document.getElementById('guia-modal-title').textContent = prodNombre;
-
-      const editBtn = document.getElementById('guia-edit-btn');
-      editBtn.style.display = isAdmin ? '' : 'none';
-      editBtn.onclick = () => {
-        closeGuiaModal();
-        setTimeout(() => openGuiaEditor(prodId, prodNombre), 50);
-      };
-
-      document.getElementById('guia-modal-body').innerHTML = `
-        <div style="display:grid;grid-template-columns:60% 40%;">
-          <div style="overflow-y:auto;max-height:calc(80vh - 140px);">
-            <div style="padding:10px 16px;font-size:10px;font-weight:700;color:var(--text3);
-                        text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);
-                        background:var(--surface2);">Información Principal</div>
-            ${_renderColumna(norm.col1) || emptyMsg}
-          </div>
-          <div style="border-left:1px solid var(--border);overflow-y:auto;max-height:calc(80vh - 140px);">
-            <div style="padding:10px 16px;font-size:10px;font-weight:700;color:var(--text3);
-                        text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);
-                        background:var(--surface2);">Información Complementaria</div>
-            ${_renderColumna(norm.col2) || emptyMsg}
-          </div>
-        </div>`;
-
-      document.getElementById('guia-modal').classList.add('open');
+      _guiaCache.set(prodId, guia);
+      render(guia);
     });
 }
 
@@ -333,12 +356,19 @@ function _closeGuiaEditorAndReturn() {
 async function openGuiaEditor(prodId, prodNombre) {
   _injectGuiaEditorCSS();
 
-  const { data: guia, error } = await db.from('guia_atencion')
-    .select('*').eq('producto_id', prodId).maybeSingle();
-
-  if (error && error.code !== 'PGRST116') {
-    toast('❌ Error: ' + error.message, 'error');
-    return;
+  // Usar caché si existe, evitar query extra
+  let guia;
+  if (_guiaCache.has(prodId)) {
+    guia = _guiaCache.get(prodId);
+  } else {
+    const { data, error } = await db.from('guia_atencion')
+      .select('*').eq('producto_id', prodId).maybeSingle();
+    if (error && error.code !== 'PGRST116') {
+      toast('❌ Error: ' + error.message, 'error');
+      return;
+    }
+    _guiaCache.set(prodId, data);
+    guia = data;
   }
 
   const norm   = _normalizeContenido(guia?.contenido);
@@ -411,13 +441,11 @@ async function openGuiaEditor(prodId, prodNombre) {
 }
 
 // CONSTRUIR TOOLBAR (única, global)
-// Recibe uid='__shared__'; los comandos actúan sobre _guiaActiveEditor
 function _buildRichToolbar(_uid) {
   const tb = document.createElement('div');
   tb.className = 'guia-toolbar';
   tb.style.borderRadius = '0';
 
-  // Ejecutar comando sobre el editor activo
   const exec = (cmd, val) => {
     if (!_guiaActiveEditor) return;
     _guiaActiveEditor.focus();
@@ -433,14 +461,12 @@ function _buildRichToolbar(_uid) {
 
   const Sep = () => { const s = document.createElement('div'); s.className = 'gtb-sep'; return s; };
 
-  // Formato texto
   tb.appendChild(B('<b>N</b>', 'Negrita',   'bold'));
   tb.appendChild(B('<i>C</i>', 'Cursiva',   'italic'));
   tb.appendChild(B('<u>S</u>', 'Subrayado', 'underline'));
   tb.appendChild(B('<s>T</s>', 'Tachado',   'strikeThrough'));
   tb.appendChild(Sep());
 
-  // Encabezados / párrafo
   const mkBlock = (label, title, tag) => {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'gtb-btn'; b.title = title;
@@ -448,32 +474,28 @@ function _buildRichToolbar(_uid) {
     b.onmousedown = e => { e.preventDefault(); if (_guiaActiveEditor) { _guiaActiveEditor.focus(); document.execCommand('formatBlock', false, tag); } };
     return b;
   };
-  tb.appendChild(mkBlock('H1', 'Título grande',   'h2'));
-  tb.appendChild(mkBlock('H2', 'Título pequeño',  'h3'));
-  tb.appendChild(mkBlock('¶',  'Párrafo',         'p'));
+  tb.appendChild(mkBlock('H1', 'Título grande',  'h2'));
+  tb.appendChild(mkBlock('H2', 'Título pequeño', 'h3'));
+  tb.appendChild(mkBlock('¶',  'Párrafo',        'p'));
   tb.appendChild(Sep());
 
- // Alineación
-const alignB = (title, cmd, svg) => {
-  const b = document.createElement('button');
-  b.type = 'button'; b.className = 'gtb-btn'; b.title = title;
-  b.innerHTML = svg;
-  b.onmousedown = e => { e.preventDefault(); exec(cmd); };
-  return b;
-};
+  const alignB = (title, cmd, svg) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'gtb-btn'; b.title = title;
+    b.innerHTML = svg;
+    b.onmousedown = e => { e.preventDefault(); exec(cmd); };
+    return b;
+  };
+  tb.appendChild(alignB('Izquierda', 'justifyLeft',   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>`));
+  tb.appendChild(alignB('Centro',    'justifyCenter', `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>`));
+  tb.appendChild(alignB('Derecha',   'justifyRight',  `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>`));
+  tb.appendChild(alignB('Justificar','justifyFull',   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`));
+  tb.appendChild(Sep());
 
-tb.appendChild(alignB('Izquierda', 'justifyLeft',   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>`));
-tb.appendChild(alignB('Centro', 'justifyCenter', `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>`));
-tb.appendChild(alignB('Derecha', 'justifyRight', `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>`));
-tb.appendChild(alignB('Justificar', 'justifyFull', `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`));
-tb.appendChild(Sep());
-
-  // Listas
   tb.appendChild(B('•≡', 'Viñetas',  'insertUnorderedList'));
   tb.appendChild(B('1≡', 'Numerada', 'insertOrderedList'));
   tb.appendChild(Sep());
 
-  // Color de texto
   const btnFg = document.createElement('button');
   btnFg.type = 'button'; btnFg.className = 'gtb-btn';
   btnFg.title = 'Color de texto'; btnFg.setAttribute('data-cpop', '1');
@@ -482,7 +504,6 @@ tb.appendChild(Sep());
   btnFg.onmousedown = e => { e.preventDefault(); _toggleColorPopup(btnFg, 'fg'); };
   tb.appendChild(btnFg);
 
-  // Color de fondo
   const btnBg = document.createElement('button');
   btnBg.type = 'button'; btnBg.className = 'gtb-btn';
   btnBg.title = 'Resaltar (fondo)'; btnBg.setAttribute('data-cpop', '1');
@@ -492,7 +513,6 @@ tb.appendChild(Sep());
   tb.appendChild(btnBg);
   tb.appendChild(Sep());
 
-  // Tabla
   const btnTable = document.createElement('button');
   btnTable.type = 'button'; btnTable.className = 'gtb-btn';
   btnTable.title = 'Insertar tabla'; btnTable.style.cssText = 'font-size:11px;padding:0 6px;width:auto;';
@@ -500,7 +520,6 @@ tb.appendChild(Sep());
   btnTable.onmousedown = e => { e.preventDefault(); _openTableDialog(); };
   tb.appendChild(btnTable);
 
-  // Limpiar formato
   tb.appendChild(Sep());
   tb.appendChild(B('✕f', 'Limpiar formato', 'removeFormat'));
 
@@ -558,7 +577,6 @@ function _toggleColorPopup(triggerBtn, type) {
   popup.style.top  = (rect.bottom + 5) + 'px';
   popup.style.left = Math.min(rect.left, window.innerWidth - 215) + 'px';
 
-  // Separador
   const sep = document.createElement('div');
   sep.style.cssText = 'width:100%;height:1px;background:var(--border);margin:4px 0;';
   popup.appendChild(sep);
@@ -572,14 +590,12 @@ function _toggleColorPopup(triggerBtn, type) {
 
   picker.onmousedown = e => {
     e.stopPropagation();
-    // Guardar selección actual antes de perder el foco
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) _savedRange = sel.getRangeAt(0).cloneRange();
   };
 
   picker.onchange = e => {
     if (!_guiaActiveEditor) return;
-    // Restaurar selección
     _guiaActiveEditor.focus();
     if (_savedRange) {
       const sel = window.getSelection();
@@ -657,17 +673,15 @@ function _doInsertTable() {
   _guiaActiveEditor.focus();
 
   const cellStyle = 'border:1px solid var(--border);padding:6px 10px;min-width:60px;height:32px;vertical-align:top;';
-  const thStyle = cellStyle + 'background:var(--surface2);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;';
+  const thStyle   = cellStyle + 'background:var(--surface2);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;';
 
   let tableHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;margin:8px 0;">`;
-
   if (header) {
     tableHtml += '<thead><tr>';
     for (let c = 0; c < cols; c++)
       tableHtml += `<th style="${thStyle}">Col ${c + 1}</th>`;
     tableHtml += '</tr></thead>';
   }
-
   tableHtml += '<tbody>';
   const dataRows = header ? rows - 1 : rows;
   for (let r = 0; r < dataRows; r++) {
@@ -695,7 +709,6 @@ function addGuiaItemRow(col, data) {
   wrapper.className = `guia-item-row guia-item-${col}`;
   wrapper.style.cssText = 'border:1px solid var(--border);border-radius:10px;background:var(--surface);overflow:visible;';
 
-  // ── Cabecera: meta-campos + botón quitar
   const header = document.createElement('div');
   header.style.cssText = 'padding:10px 12px;background:var(--surface2);border-bottom:1px solid var(--border);border-radius:10px 10px 0 0;';
   header.innerHTML = `
@@ -722,22 +735,18 @@ function addGuiaItemRow(col, data) {
 
   wrapper.appendChild(header);
 
-  // Valores meta — asignados con .value, nunca interpolados en innerHTML
-  header.querySelector('.guia-imagen').value = data?.imagen || '';
-  header.querySelector('.guia-titulo').value = data?.titulo || '';
+  header.querySelector('.guia-imagen').value    = data?.imagen    || '';
+  header.querySelector('.guia-titulo').value    = data?.titulo    || '';
   header.querySelector('.guia-subtitulo').value = data?.subtitulo || '';
 
-  // ── Editor contenteditable (sin toolbar propia — la toolbar es global)
   const editor = document.createElement('div');
   editor.id = uid;
   editor.className = 'guia-rich-editor';
   editor.contentEditable = 'true';
   editor.spellcheck = true;
 
-  // Al hacer focus, registrar como editor activo para la toolbar global
   editor.addEventListener('focus', () => { _guiaActiveEditor = editor; });
 
-  // Convertir legado (texto plano) a HTML si es necesario
   let html = data?.contenido || '';
   if (html && !/<[a-z]/i.test(html)) {
     html = html.split('\n').map(l => l.trim() ? `<p>${l}</p>` : '').join('');
@@ -756,8 +765,8 @@ function _recogerColumna(col) {
     let html = editor ? editor.innerHTML : '';
     if (html === '<br>' || html === '<p><br></p>') html = '';
     items.push({
-      imagen: row.querySelector('.guia-imagen')?.value?.trim() || null,
-      titulo: row.querySelector('.guia-titulo')?.value?.trim() || '',
+      imagen:    row.querySelector('.guia-imagen')?.value?.trim()    || null,
+      titulo:    row.querySelector('.guia-titulo')?.value?.trim()    || '',
       subtitulo: row.querySelector('.guia-subtitulo')?.value?.trim() || '',
       contenido: html,
     });
@@ -773,13 +782,22 @@ async function saveGuiaContenido(prodId, guiaId) {
   };
 
   try {
+    let savedId = guiaId;
     if (guiaId) {
       const { error } = await db.from('guia_atencion').update({ contenido }).eq('id', guiaId);
       if (error) throw error;
     } else {
-      const { error } = await db.from('guia_atencion').insert({ producto_id: prodId, contenido });
+      const { data: inserted, error } = await db.from('guia_atencion')
+        .insert({ producto_id: prodId, contenido })
+        .select()
+        .single();
       if (error) throw error;
+      savedId = inserted.id;
     }
+
+    // Actualizar caché con el objeto completo y correcto — no borrar
+    _guiaCache.set(prodId, { id: savedId, producto_id: prodId, contenido });
+
     toast('✅ Guía actualizada', 'success');
     _closeGuiaEditor();
     renderGuia();

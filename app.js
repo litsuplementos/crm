@@ -66,6 +66,7 @@ const ESTADOS = {
 const ESTADOS_CIERRE = ['vendido', 'no_interesado', 'spam', 'cancelado'];
 const MAX_RELLAMADAS = 3;
 const MAX_SIN_RESPUESTA = 4;
+const PAGE_SIZE = 15;
 
 let currentUser = null;
 let ventas = [];
@@ -74,13 +75,15 @@ let allAgents = [];
 let allProductos = [];
 let selectedAgentId  = 'all';
 let currentPage = 1;
-const PAGE_SIZE = 15;
+
 let totalVentasCount = 0;
 let mostrarArchivados = false;
 let _vendidosEditablesCache = null;
 let filtroTiempo = 'mes';
+let _clientesFielesUmbral = 5;
+let _clientesFielesDescuento = 10;
+let _clientesFielesCache = null;
 
-// Debounce mejorado
 let _searchTimer;
 let _filterTimer;
 function debouncedRenderVentas() {
@@ -88,10 +91,104 @@ function debouncedRenderVentas() {
   _searchTimer = setTimeout(renderVentas, 300);
 }
 
+(function initFloatingLogo() {
+  const LOGO_SRC = 'resources/images/logo/logo.png';
+  const SIZE = 64;
+  const SPEED = 1.2;
+
+  let vx = SPEED, vy = SPEED * 0.75;
+  let x = 80, y = 60;
+  let container = null;
+  let logoEl = null;
+
+  function createLogo() {
+    if (logoEl) return; 
+    logoEl = document.createElement('img');
+    logoEl.src = LOGO_SRC;
+    logoEl.style.cssText = `
+      position:absolute;
+      width:${SIZE}px;height:${SIZE}px;
+      object-fit:contain;
+      opacity:0.18;
+      overflow: visible;
+      pointer-events:none;
+      user-select:none;
+      z-index:0;
+      border-radius:12px;
+    `;
+    logoEl.onerror = () => { logoEl.style.display = 'none'; };
+  }
+
+  function getActiveContainer() {
+    return document.querySelector('.view.active .view-scroll-wrap')
+        || document.querySelector('.view.active');
+  }
+
+  function attach() {
+    if (!logoEl) return; 
+    const c = getActiveContainer();
+    if (!c || c === container) return;
+    container = c;
+    if (logoEl.parentElement !== container) {
+      container.appendChild(logoEl);
+      const cur = getComputedStyle(container).position;
+      if (cur === 'static') container.style.position = 'relative';
+    }
+    const cw = container.clientWidth  || 400;
+    const ch = container.clientHeight || 300;
+    x = Math.random() * (cw - SIZE);
+    y = Math.random() * (ch - SIZE);
+  }
+
+  function loop() {
+    requestAnimationFrame(loop);
+    if (!container || !logoEl) return;
+    const cw = container.clientWidth  || 400;
+    const ch = container.clientHeight || 300;
+    x += vx; y += vy;
+    if (x <= 0) { x = 0; vx =  Math.abs(vx); }
+    if (x >= cw - SIZE){ x = cw - SIZE; vx = -Math.abs(vx); }
+    if (y <= 0) { y = 0; vy =  Math.abs(vy); }
+    if (y >= ch - SIZE){ y = ch - SIZE; vy = -Math.abs(vy); }
+    logoEl.style.left = x + 'px';
+    logoEl.style.top = y + 'px';
+    const newC = getActiveContainer();
+    if (newC && newC !== container) attach();
+  }
+
+  function start() {
+    createLogo(); 
+    attach();
+    loop();
+  }
+
+  // Arrancar cuando el app sea visible
+  const appEl = document.getElementById('app');
+  if (appEl) {
+    const obs = new MutationObserver(() => {
+      if (appEl.style.display !== 'none') {
+        obs.disconnect();
+        setTimeout(start, 100); 
+      }
+    });
+    obs.observe(appEl, { attributes: true, attributeFilter: ['style'] });
+  }
+  setTimeout(() => {
+    const app = document.getElementById('app');
+    if (app && app.style.display !== 'none' && !logoEl) start();
+  }, 500);
+
+  window._floatingLogoSpeed = (s) => {
+    vx = s * Math.sign(vx) || s;
+    vy = s * 0.75 * Math.sign(vy) || s * 0.75;
+  };
+})();
+
 // THEME
 function initTheme() {
   applyTheme(localStorage.getItem('litcrm-theme') || 'white');
 }
+
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('litcrm-theme', theme);
@@ -102,6 +199,7 @@ function applyTheme(theme) {
     else btn.textContent = '🌿 Menta';
   }
 }
+
 function toggleTheme() {
   const order = ['white', 'day', 'night'];
   const cur = document.documentElement.getAttribute('data-theme') || 'white';
@@ -222,26 +320,26 @@ document.addEventListener('keydown', e => {
 });
 
 function doLogout() {
-  // FIX #1 — limpiar intervalos y timers antes de resetear estado
   clearInterval(_recordatorioTimer);
   clearInterval(_bipInterval);
   clearTimeout(_nrCelTimer);
   _recordatorioTimer = null;
   _bipInterval = null;
   _vendidosEditablesCache = null;
+  _clientesFielesCache = null;  
+  _roscaAnualCache = null;
   _nrCelTimer = null;
   _nrGeoInit = false;
   _bipAudio = null;
   _bipActivo = false;
 
-  // FIX #3 — suspender AudioContext en lugar de crear uno nuevo en la próxima sesión
   if (_audioCtx && _audioCtx.state !== 'closed') {
     _audioCtx.suspend().catch(() => {});
   }
 
-  // FIX #14 — resetear flag de geo para la próxima sesión
   _geoSelectorsInitialized = false;
 
+  Objetivos.stop();
   currentUser = null;
   ventas = [];
   ventasIndex = {};
@@ -279,12 +377,17 @@ async function initApp() {
     await Promise.all([loadProductos(false), loadAgents(), loadVentas(), loadConfigVendidosEditables()]);
     buildAgentSelector();
   } else {
-    // Precalentar caché para agentes también — evita el fetch en openVentaModal
     await Promise.all([loadProductos(false), loadVentas(), getVendidosEditables()]);
   }
 
   _setupEventDelegationOnce();
-  renderDashboard();
+
+  await Promise.all([
+    _getClientesFieles(),  
+    _getRoscaAnual(),       
+  ]);
+  renderDashboard();       
+
   _nrGeoInit = false;
   renderVentas();
   populateProductoFilter();
@@ -292,9 +395,9 @@ async function initApp() {
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
   iniciarChequeoRecordatorios();
   _cargarLeadsPendientes();
+  await Objetivos.init();
 }
 
-// FIX #13 — flag para registrar el listener una sola vez por sesión completa de la app
 let _eventDelegationRegistered = false;
 function _setupEventDelegationOnce() {
   if (_eventDelegationRegistered) return;
@@ -313,7 +416,7 @@ function _setupEventDelegationOnce() {
 function onFiltroMesChange(valor) {
   window._filtroMesCustom = valor;
   dashboardCache.invalidate();
-  filteredCache.invalidate(); // FIX #6
+  filteredCache.invalidate(); 
   renderDashboard();
   renderVentas();
 }
@@ -339,8 +442,7 @@ function _buildFiltroMesSelector() {
   window._filtroMesCustom = `${year}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
 }
 
-// PRODUCTOS — catálogo
-// FIX #10 — siempre cargamos con soloActivos=false; filtramos en memoria donde haga falta
+// Catálogo de productos
 async function loadProductos(soloActivos = false) {
   let query = db.from('productos').select('*').order('nombre');
   if (soloActivos) query = query.eq('activo', true);
@@ -348,7 +450,6 @@ async function loadProductos(soloActivos = false) {
   if (!error) allProductos = data || [];
 }
 
-// FIX #5 — bandera para evitar reconstruir el filtro de ciudad si los datos no cambiaron
 let _cityFilterDirty = true;
 function populateCityFilter() {
   if (!_cityFilterDirty) return;
@@ -365,7 +466,6 @@ function populateProductoFilter() {
   const sel = document.getElementById('filter-producto');
   if (!sel) return;
   while (sel.options.length > 1) sel.remove(1);
-  // FIX #10 — allProductos ahora tiene todos (activos e inactivos); mostrar solo activos en el filtro
   allProductos.filter(p => p.activo).forEach(p => {
     const o = document.createElement('option');
     o.value = p.id; o.textContent = p.nombre;
@@ -373,10 +473,8 @@ function populateProductoFilter() {
   });
 }
 
-// PRODUCTOS — vista admin CRUD
+// PRODUCTOS, vista admin CRUD
 async function renderProductos() {
-  // FIX #10 — allProductos ya tiene todos los productos (cargados con soloActivos=false en initApp)
-  // No necesitamos hacer otro SELECT aquí
   const grid = document.getElementById('productos-grid');
   if (!grid) return;
   grid.innerHTML = allProductos.map(p => {
@@ -581,6 +679,7 @@ async function loadVentas() {
     dashboardCache.invalidate();
     filteredCache.invalidate();
     _cityFilterDirty = true;
+    _clientesFielesCache = null;
 
   } catch(e) {
     toast('❌ Error: ' + e.message, 'error');
@@ -670,12 +769,14 @@ async function syncData() {
   const btn = document.getElementById('sync-btn');
   btn.classList.add('syncing');
   try {
-    // FIX #10 — mantener carga unificada con soloActivos=false
     await Promise.all([loadProductos(false), loadVentas(), cargarLeads()]);
+    _roscaAnualCache = null;    
+    _clientesFielesCache = null; 
     renderDashboard();
     renderVentas();
+    Objetivos.render();
     populateProductoFilter();
-    _usersCache = null; // FIX #9 — invalidar caché de usuarios al sincronizar
+    _usersCache = null;
     toast('✅ Datos actualizados', 'success');
   } finally {
     btn.classList.remove('syncing');
@@ -760,6 +861,38 @@ function renderDashboard() {
   const seguimiento = ventasFiltradas.filter(v => v.estado === 'seguimiento').length;
   const sinResp = ventasFiltradas.filter(v => v.estado === 'sin_respuesta').length;
 
+  // Llenar card Enviados
+  const enviadosList = ventasFiltradas.filter(v => v.estado === 'enviado');
+  document.getElementById('dash-enviados-count').textContent = `(${enviadosList.length})`;
+  document.getElementById('dash-enviados-list').innerHTML = enviadosList.length === 0
+    ? '<div style="color:var(--text3);font-size:13px;padding:8px;">Sin enviados en este período</div>'
+    : enviadosList.map(v => `
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${v.cliente?.nombre || 's/n'}</div>
+          <div style="font-size:11px;color:var(--accent2);">${v.cliente?.celular || ''}</div>
+        </div>
+        <div style="font-size:11px;color:var(--text2);text-align:right;flex-shrink:0;">
+          ${(v.venta_items||[]).map(it=>it.productos?.nombre).filter(Boolean).map(n=>`<span class="prod-chip" style="font-size:10px;">${n}</span>`).join(' ')}
+        </div>
+      </div>`).join('');
+
+  // Llenar card Interesados
+  const interesadosList = ventasFiltradas.filter(v => v.estado === 'interesado');
+  document.getElementById('dash-interesados-count').textContent = `(${interesadosList.length})`;
+  document.getElementById('dash-interesados-list').innerHTML = interesadosList.length === 0
+    ? '<div style="color:var(--text3);font-size:13px;padding:8px;">Sin interesados en este período</div>'
+    : interesadosList.map(v => `
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(16,185,129,0.15);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);">${v.cliente?.nombre || 's/n'}</div>
+          <div style="font-size:11px;color:var(--accent2);">${v.cliente?.celular || ''}</div>
+        </div>
+        <div style="font-size:11px;text-align:right;flex-shrink:0;">
+          ${(v.venta_items||[]).map(it=>it.productos?.nombre).filter(Boolean).map(n=>`<span class="prod-chip" style="font-size:10px;">${n}</span>`).join(' ')}
+        </div>
+      </div>`).join('');
+
   document.getElementById('stats-grid').innerHTML = `
     <div class="stat-card"><div class="stat-icon" style="background:var(--accent-glow);">📋</div>
       <div class="stat-value" style="color:var(--accent2);">${total}</div><div class="stat-label">MOVIMIENTOS</div></div>
@@ -769,14 +902,6 @@ function renderDashboard() {
       <div class="stat-value" style="color:var(--green);">${vendidos}</div>
       <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:4px;">Bs. ${montoVendidos.toFixed(0)}</div>
       <div class="stat-label">UNIDADES VENDIDAS</div>
-    </div>
-
-    <div class="stat-card"><div class="stat-icon" style="background:var(--blue-bg);">📦</div>
-      <div class="stat-value" style="color:var(--blue);">${enviados}</div><div class="stat-label">ENVIADOS</div></div>
-
-    <div class="stat-card" onclick="openStatModal('interesado')" style="cursor:pointer;">
-      <div class="stat-icon" style="background:var(--yellow-bg);">🌟</div>
-      <div class="stat-value" style="color:var(--yellow);">${interesados}</div><div class="stat-label">INTERESADOS</div>
     </div>
 
     <div class="stat-card" onclick="openStatModal('seguimiento')" style="cursor:pointer;">
@@ -913,6 +1038,8 @@ function renderDashboard() {
   } else {
     document.getElementById('agents-card').style.display = 'none';
   }
+  renderClientesFieles();
+  renderRoscaAnual();
 }
 
 // VENTAS — lista + filtros
@@ -1501,6 +1628,41 @@ async function loadConfigVendidosEditables() {
       dashboardCache.invalidate();
       filteredCache.invalidate();
     }
+
+    const [{ data: dataUmbral }, { data: dataDesc }] = await Promise.all([
+      db.from('config').select('valor').eq('clave', 'clientes_fieles_umbral').single(),
+      db.from('config').select('valor').eq('clave', 'clientes_fieles_descuento').single(),
+    ]);
+    if (dataUmbral?.valor) _clientesFielesUmbral = parseInt(dataUmbral.valor) || 5;
+    if (dataDesc?.valor) _clientesFielesDescuento = parseInt(dataDesc.valor) || 10;
+
+    const inpUmbral = document.getElementById('config-clientes-umbral');
+    const inpDesc = document.getElementById('config-clientes-descuento');
+    if (inpUmbral) inpUmbral.value = _clientesFielesUmbral;
+    if (inpDesc) inpDesc.value = _clientesFielesDescuento;
+    const inpObj = document.getElementById('config-objetivo-dia');
+    if (inpObj) inpObj.value = Objetivos.getMeta();
+    // Sincronizar toggle de emojis
+    const toggleEmojis = document.getElementById('toggle-emojis-activos');
+    const spanEmojis   = document.getElementById('toggle-emojis-span');
+    if (toggleEmojis) {
+      const activos = Objetivos.getEmojisActivos();
+      toggleEmojis.checked = activos;
+      if (spanEmojis) spanEmojis.style.background = activos ? 'var(--green)' : 'var(--border)';
+    }
+    // Sincronizar inputs de horario
+    const h = Objetivos.getHorario();
+    const _minToTimeStr = (min) => {
+      return `${Math.floor(min/60).toString().padStart(2,'0')}:${(min%60).toString().padStart(2,'0')}`;
+    };
+    const hMI = document.getElementById('horario-manana-inicio');
+    const hMF = document.getElementById('horario-manana-fin');
+    const hTI = document.getElementById('horario-tarde-inicio');
+    const hTF = document.getElementById('horario-tarde-fin');
+    if (hMI) hMI.value = _minToTimeStr(h.mañana.inicio);
+    if (hMF) hMF.value = _minToTimeStr(h.mañana.fin);
+    if (hTI) hTI.value = _minToTimeStr(h.tarde.inicio);
+    if (hTF) hTF.value = _minToTimeStr(h.tarde.fin);
   } catch(e) {
     console.error('Error cargando config:', e);
   }
@@ -1584,7 +1746,7 @@ function _bip() {
     _bipAudio.volume = 0.8;
     _bipAudio.addEventListener('ended', () => {
       if (!_bipActivo) return;
-      setTimeout(_bip, 7000);
+      setTimeout(_bip, 8000);
     });
     _bipAudio.addEventListener('error', () => {
       if (!_bipActivo) return;
@@ -1597,6 +1759,18 @@ function _bip() {
 function _mostrarNotificacionRecordatorio(venta) {
   _loadAudioFiles();
   clearInterval(_bipInterval);
+
+  // Spacer: reserva espacio real en el bottom para que el scroll no quede tapado
+  let spacer = document.getElementById('recordatorio-spacer');
+  if (!spacer) {
+    spacer = document.createElement('div');
+    spacer.id = 'recordatorio-spacer';
+    spacer.style.cssText = 'height:0;transition:height 0.3s ease;pointer-events:none;flex-shrink:0;';
+    // Insertarlo al final del .content-area (o del body como fallback)
+    const ca = document.querySelector('.content-area') || document.querySelector('.main') || document.body;
+    ca.appendChild(spacer);
+  }
+
   let banner = document.getElementById('recordatorio-banner');
   if (!banner) {
     banner = document.createElement('div');
@@ -1606,7 +1780,7 @@ function _mostrarNotificacionRecordatorio(venta) {
       background:linear-gradient(135deg,var(--accent),var(--accent2));
       color:white;padding:14px 20px;
       display:flex;align-items:center;justify-content:space-between;
-      box-shadow:0 4px 20px rgba(0,0,0,0.3);
+      box-shadow:0 -4px 20px rgba(0,0,0,0.3);
       font-family:'DM Sans',sans-serif;font-size:14px;
       animation: slideDown 0.3s ease;
     `;
@@ -1640,6 +1814,11 @@ function _mostrarNotificacionRecordatorio(venta) {
   `;
   banner.style.display = 'flex';
 
+  requestAnimationFrame(() => {
+    const h = banner.getBoundingClientRect().height;
+    if (spacer) spacer.style.height = h + 'px';
+  });
+
   _bipActivo = true;
   _bip();
 }
@@ -1651,6 +1830,8 @@ function _dismissRecordatorio() {
   if (_bipAudio) { _bipAudio.pause(); _bipAudio.currentTime = 0; _bipAudio = null; }
   const banner = document.getElementById('recordatorio-banner');
   if (banner) banner.style.display = 'none';
+  const spacer = document.getElementById('recordatorio-spacer');
+  if (spacer) spacer.style.height = '0';
 }
 
 async function _marcarRecordatorioVisto(ventaId) {
@@ -1662,7 +1843,6 @@ async function _marcarRecordatorioVisto(ventaId) {
   await db.from('ventas').update({ recordatorio_visto: true }).eq('id', ventaId);
 }
 
-// FIX #1 — iniciarChequeoRecordatorios limpia el intervalo anterior antes de crear uno nuevo
 function iniciarChequeoRecordatorios() {
   clearInterval(_recordatorioTimer);
   _recordatorioTimer = setInterval(_chequearRecordatorios, 30000);
@@ -1692,7 +1872,6 @@ function _chequearRecordatorios() {
 
 function _activarSonido(btn) {
   try {
-    // FIX #3 — _getAudioCtx maneja creación/reanudación de forma centralizada
     _getAudioCtx();
     _bip();
     btn.style.background = 'var(--green-bg)';
@@ -1714,6 +1893,316 @@ function _activarSonido(btn) {
       status.style.color = 'var(--red)';
     }
   }
+}
+
+async function saveConfigClientesFieles() {
+  const umbral = parseInt(document.getElementById('config-clientes-umbral').value) || 5;
+  const desc = parseInt(document.getElementById('config-clientes-descuento').value) || 10;
+  try {
+    await Promise.all([
+      db.from('config').update({ valor: String(umbral) }).eq('clave', 'clientes_fieles_umbral'),
+      db.from('config').update({ valor: String(desc) }).eq('clave', 'clientes_fieles_descuento'),
+    ]);
+    _clientesFielesUmbral = umbral;
+    _clientesFielesDescuento = desc;
+    _clientesFielesCache = null;
+    toast('✅ Configuración de clientes fieles guardada', 'success');
+    renderDashboard();
+  } catch(e) { toast('❌ ' + e.message, 'error'); }
+}
+
+async function _getClientesFieles() {
+  if (_clientesFielesCache) return _clientesFielesCache;
+
+  const { data, error } = await db
+    .from('clientes_historial')
+    .select(`
+      cliente_id,
+      mes,
+      unidades,
+      monto_total,
+      ventas_count,
+      cliente:cliente_id ( nombre, celular )
+    `)
+    .order('mes', { ascending: false });
+
+  if (error || !data) {
+    _clientesFielesCache = { top: [], resto: [] };
+    return _clientesFielesCache;
+  }
+
+  // Agrupar por cliente sumando todos sus meses
+  const mapa = {};
+  for (const row of data) {
+    const cid = row.cliente_id;
+    if (!mapa[cid]) {
+      mapa[cid] = {
+        id:           cid,
+        nombre:       row.cliente?.nombre  || 's/n',
+        celular:      row.cliente?.celular || '',
+        unidades:     0,
+        monto_total:  0,
+        ventas_count: 0,
+      };
+    }
+    mapa[cid].unidades     += row.unidades     || 0;
+    mapa[cid].monto_total  += parseFloat(row.monto_total  || 0);
+    mapa[cid].ventas_count += row.ventas_count || 0;
+  }
+
+  const lista  = Object.values(mapa).sort((a, b) => b.unidades - a.unidades);
+  const top    = lista.slice(0, 5);
+  const topIds = new Set(top.map(c => c.id));
+  const resto  = lista.filter(c => !topIds.has(c.id)).slice(0, 20);
+
+  _clientesFielesCache = { top, resto };
+  return _clientesFielesCache;
+}
+
+let _renderingClientesFieles = false;
+async function renderClientesFieles() {
+  if (_renderingClientesFieles) return;
+  _renderingClientesFieles = true;
+  const wrap = document.getElementById('dash-clientes-fieles');
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px;">Cargando...</div>';
+  try {
+    const { top, resto } = await _getClientesFieles();
+
+    if (!top.length && !resto.length) {
+      wrap.innerHTML = `<div style="color:var(--text3);font-size:13px;padding:8px;">
+        Sin clientes fieles aún (umbral: ${_clientesFielesUmbral} unidades)
+      </div>`;
+      return;
+    }
+
+    const maxU = (top[0] || resto[0])?.unidades || 1;
+    const medallas = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+
+    const topHTML = top.length
+      ? top.map((c, i) => `
+          <div style="margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;
+                align-items:center;margin-bottom:5px;">
+              <span style="font-size:13px;font-weight:600;">
+                ${medallas[i]} ${c.nombre}
+              </span>
+              <span style="font-size:12px;color:var(--green);font-weight:700;">
+                ${c.unidades} und.
+              </span>
+            </div>
+            <div style="font-size:12px;color:var(--text3);margin-bottom:5px;">
+              ${c.celular}
+            </div>
+            <div class="bar-track" style="height:8px;">
+              <div class="bar-fill"
+                style="width:${(c.unidades/maxU*100).toFixed(0)}%;
+                      background:var(--green);transition:width 0.5s ease;">
+              </div>
+            </div>
+          </div>`).join('')
+      : `<div style="color:var(--text3);font-size:13px;padding:8px 0;">
+          Sin clientes con ${_clientesFielesUmbral}+ unidades aún
+        </div>`;
+
+    const restoHTML = resto.length
+      ? resto.map(c => `
+          <div style="display:flex;justify-content:space-between;align-items:center;
+              padding:6px 0;border-bottom:1px solid var(--border);">
+            <div>
+              <div style="font-size:12px;font-weight:500;">${c.nombre}</div>
+              <div style="font-size:12px;color:var(--text3);">${c.celular}</div>
+            </div>
+            <span style="font-size:12px;color:var(--green);font-weight:700;">
+              ${c.unidades} und.
+            </span>
+          </div>`).join('')
+      : `<div style="font-size:12px;color:var(--text3);padding:8px 0;">
+          Sin otros clientes 1 unidad o más
+        </div>`;
+
+    wrap.innerHTML = `
+      <div style="display:grid;grid-template-columns:55% 40%;gap:5%;">
+        <div>${topHTML}</div>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--text3);
+              text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">
+            Otros clientes (1 o más unidades)
+          </div>
+          <div style="max-height:260px;overflow-y:auto;">
+            ${restoHTML}
+          </div>
+        </div>
+      </div>`;
+  } finally {
+    _renderingClientesFieles = false;  // siempre se libera
+  }
+}
+
+// Rosca / donut anual
+let _roscaAnualCache = null;
+
+async function _getRoscaAnual() {
+  if (_roscaAnualCache) return _roscaAnualCache;
+  const year = new Date().getFullYear();
+  const desde = `${year}-01`;
+  const hasta  = `${year}-12`;
+
+  const { data, error } = await db
+    .from('clientes_historial')
+    .select('mes, unidades, monto_total')
+    .gte('mes', desde)
+    .lte('mes', hasta);
+
+  if (error || !data) { _roscaAnualCache = []; return []; }
+
+  const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const mapa = {};
+  for (let i = 1; i <= 12; i++) {
+    const key = `${year}-${String(i).padStart(2,'0')}`;
+    mapa[key] = { mes: meses[i-1], unidades: 0, monto: 0 };
+  }
+  for (const row of data) {
+    if (mapa[row.mes]) {
+      mapa[row.mes].unidades += row.unidades || 0;
+      mapa[row.mes].monto    += parseFloat(row.monto_total || 0);
+    }
+  }
+  _roscaAnualCache = Object.values(mapa);
+  return _roscaAnualCache;
+}
+
+async function renderRoscaAnual() {
+  const wrap = document.getElementById('dash-rosca-anual');
+  if (!wrap) return;
+ 
+  const datos         = await _getRoscaAnual();
+  const totalUnidades = datos.reduce((s, d) => s + d.unidades, 0);
+  const totalMonto    = datos.reduce((s, d) => s + d.monto, 0);
+ 
+  if (totalUnidades === 0) {
+    wrap.innerHTML = `<div style="color:var(--text3);font-size:13px;padding:16px;text-align:center;">Sin ventas registradas este año</div>`;
+    Objetivos.render(); // actualizar panel de objetivos aunque no haya ventas
+    return;
+  }
+ 
+  const activos = datos.filter(d => d.unidades > 0);
+  const colores = [
+    '#6366f1','#22d3a4','#60a5fa','#fbbf24','#f472b6',
+    '#34d399','#a78bfa','#fb923c','#f87171','#38bdf8',
+    '#4ade80','#e879f9',
+  ];
+ 
+  const cx = 110, cy = 110, R = 90, r = 54, TAU = 2 * Math.PI;
+  let startAngle = -Math.PI / 2;
+  const segmentos = [];
+ 
+  datos.forEach((d, i) => {
+    if (d.unidades === 0) { segmentos.push(null); return; }
+    const pct   = d.unidades / totalUnidades;
+    const angle = pct * TAU;
+    const end   = startAngle + angle;
+    const gap   = 0.025;
+    const s     = startAngle + gap / 2;
+    const e     = end - gap / 2;
+    const x1 = cx + R * Math.cos(s), y1 = cy + R * Math.sin(s);
+    const x2 = cx + R * Math.cos(e), y2 = cy + R * Math.sin(e);
+    const x3 = cx + r * Math.cos(e), y3 = cy + r * Math.sin(e);
+    const x4 = cx + r * Math.cos(s), y4 = cy + r * Math.sin(s);
+    const large = angle - gap > Math.PI ? 1 : 0;
+    const path  = `M${x1},${y1} A${R},${R} 0 ${large},1 ${x2},${y2} L${x3},${y3} A${r},${r} 0 ${large},0 ${x4},${y4} Z`;
+    segmentos.push({ path, color: colores[i % colores.length], d, pct });
+    startAngle = end;
+  });
+ 
+  const paths = segmentos.map(seg => {
+    if (!seg) return '';
+    return `<path d="${seg.path}" fill="${seg.color}" opacity="0.9"
+      style="cursor:pointer;transition:opacity 0.15s;"></path>`;
+  }).join('');
+ 
+  const leyenda = activos.map(d => {
+    const idx = datos.indexOf(d);
+    return `
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+        <div style="width:10px;height:10px;border-radius:3px;background:${colores[idx % colores.length]};flex-shrink:0;"></div>
+        <span style="font-size:11px;color:var(--text2);flex:1;">${d.mes}</span>
+        <span style="font-size:11px;color:var(--text);font-weight:600;">${d.unidades} und</span>
+        <span style="font-size:11px;color:var(--green);font-weight:700;">Bs.${d.monto.toFixed(0)}</span>
+      </div>`;
+  }).join('');
+ 
+  // Solo la rosca — sin grid partido con el panel de objetivos
+  wrap.innerHTML = `
+    <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+ 
+      <!-- SVG Donut -->
+      <div style="position:relative;flex-shrink:0;">
+        <svg width="220" height="220" viewBox="0 0 220 220">
+          ${paths}
+          <circle cx="${cx}" cy="${cy}" r="${r - 4}" fill="var(--surface)"/>
+          <text x="${cx}" y="${cy - 10}" text-anchor="middle"
+            style="font-size:11px;fill:var(--text3);font-family:'DM Sans',sans-serif;font-weight:600;">
+            ${new Date().getFullYear()}
+          </text>
+          <text x="${cx}" y="${cy + 8}" text-anchor="middle"
+            style="font-size:18px;fill:var(--text);font-family:'Syne',sans-serif;font-weight:700;">
+            ${totalUnidades}
+          </text>
+          <text x="${cx}" y="${cy + 24}" text-anchor="middle"
+            style="font-size:10px;fill:var(--text3);font-family:'DM Sans',sans-serif;">
+            unidades
+          </text>
+          <text x="${cx}" y="${cy + 38}" text-anchor="middle"
+            style="font-size:11px;fill:var(--green);font-family:'DM Sans',sans-serif;font-weight:700;">
+            Bs.${totalMonto.toFixed(0)}
+          </text>
+        </svg>
+        <div id="rosca-tooltip" style="
+          display:none;position:absolute;top:50%;left:50%;
+          transform:translate(-50%,-50%);
+          background:var(--surface2);border:1px solid var(--border);
+          border-radius:8px;padding:8px 12px;font-size:12px;
+          color:var(--text);text-align:center;pointer-events:none;
+          white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:10;
+        "></div>
+      </div>
+ 
+      <!-- Leyenda -->
+      <div style="flex:1;min-width:160px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);
+          text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">
+          Por mes
+        </div>
+        ${leyenda}
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+          <div style="font-size:12px;color:var(--text3);">Total año</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text);">${totalUnidades} unidades</div>
+          <div style="font-size:14px;font-weight:700;color:var(--green);">Bs. ${totalMonto.toFixed(0)}</div>
+        </div>
+      </div>
+ 
+    </div>`;
+ 
+  // Hover en segmentos del donut
+  document.querySelectorAll('#dash-rosca-anual svg path').forEach((path, i) => {
+    const seg = segmentos.filter(Boolean)[i];
+    if (!seg) return;
+    path.addEventListener('mouseover', () => {
+      const tt = document.getElementById('rosca-tooltip');
+      if (tt) {
+        tt.innerHTML = `<b>${seg.d.mes}</b><br>${seg.d.unidades} und · Bs.${seg.d.monto.toFixed(0)}`;
+        tt.style.display = 'block';
+      }
+    });
+    path.addEventListener('mouseout', () => {
+      const tt = document.getElementById('rosca-tooltip');
+      if (tt) tt.style.display = 'none';
+    });
+  });
+ 
+  // Actualizar panel de objetivos (ahora es independiente, siempre existe)
+  Objetivos.render();
 }
 
 // INIT

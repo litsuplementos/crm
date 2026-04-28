@@ -15,7 +15,11 @@
 <div id="login-screen">
   <div class="login-box">
     <div class="login-logo">
-      <div class="logo-icon">L</div>
+      <div class="logo-icon" style="background:none;box-shadow:none;padding:0;overflow:visible;">
+        <img src="resources/images/logo/logo.png" alt="LIT CRM"
+            style="width:100%;height:100%;object-fit:contain;"
+            onerror="this.style.display='none';this.parentElement.style.background='linear-gradient(135deg,var(--accent),var(--accent2))';this.parentElement.textContent='L';">
+      </div>
       <h1>LIT <span style="color:var(--accent)">CRM</span></h1>
       <p>Gestión de clientes y ventas</p>
     </div>
@@ -323,7 +327,50 @@
         <span style="font-size:13px;color:var(--text2);">Ver datos de:</span>
         <div id="agent-selector-wrap"></div>
       </div>
-      <div class="stats-grid" id="stats-grid"></div>
+      <div class="stats-grid" id="stats-grid" style="grid-template-columns:repeat(4,1fr);"></div>
+
+      <!-- Segunda fila: Enviados e Interesados expandidos -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+
+        <!-- ENVIADOS -->
+        <div class="dash-card">
+          <div class="dash-card-title">📦 Enviados <span id="dash-enviados-count" style="color:var(--blue);"></span></div>
+          <div id="dash-enviados-list" style="max-height:220px;overflow-y:auto;"></div>
+        </div>
+
+        <!-- INTERESADOS -->
+        <div class="dash-card" style="border:2px solid var(--green);box-shadow:0 0 18px rgba(16,185,129,0.18);animation:interesadosPulse 2.5s ease-in-out infinite;">
+          <div class="dash-card-title" style="color:var(--green);">🌟 Interesados — ¡Consigue la venta! <span id="dash-interesados-count" style="color:var(--green);"></span></div>
+          <div id="dash-interesados-list" style="max-height:220px;overflow-y:auto;"></div>
+        </div>
+
+      </div>
+
+      <!-- Podio clientes fieles -->
+      <div class="dash-card" style="margin-bottom:14px;">
+        <div class="dash-card-title">🏆 Clientes Fieles (Top por unidades compradas)</div>
+        <div id="dash-clientes-fieles"></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+
+        <div class="dash-card" id="card-rosca-anual">
+          <div class="dash-card-title">
+            🍩 Ventas del año
+            <span id="dash-rosca-year" style="font-size:12px;color:var(--text3);font-weight:400;margin-left:6px;"></span>
+          </div>
+          <div id="dash-rosca-anual">
+            <div style="color:var(--text3);font-size:13px;padding:16px;">Cargando...</div>
+          </div>
+        </div>
+
+        <!-- 🎯 Panel objetivo del día -->
+        <div class="dash-card" id="card-objetivo-dia">
+          <div id="obj-panel-derecho"></div>
+        </div>
+
+      </div>
+
       <div class="dash-grid">
         <div class="dash-card"><div class="dash-card-title">📦 Por Producto</div><div id="prod-chart"></div></div>
         <div class="dash-card"><div class="dash-card-title">📍 Top Ubicaciones</div><div id="city-chart"></div></div>
@@ -450,6 +497,63 @@
           </label>
         </div>
       </div>
+
+      <div class="config-card">
+        <div class="config-card-title">🏆 Clientes Fieles</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
+          Define cuántas unidades acumuladas califican a un cliente como fiel y el descuento que se les aplicará automáticamente.
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px;">
+          <div class="field">
+            <label>Umbral mínimo de unidades</label>
+            <input class="smart-input" type="number" id="config-clientes-umbral" min="1" placeholder="5"
+              style="width:100%;">
+          </div>
+          <div class="field">
+            <label>Descuento automático (%)</label>
+            <input class="smart-input" type="number" id="config-clientes-descuento" min="0" max="100" placeholder="10"
+              style="width:100%;">
+          </div>
+        </div>
+        <button class="btn-save" onclick="saveConfigClientesFieles()">💾 Guardar configuración de fieles</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:10px;">
+          Al registrar el celular de un cliente fiel en el formulario, el descuento se precargará automáticamente.
+        </div>
+      </div>
+
+      <div class="config-card">
+        <div class="config-card-title">🎯 Objetivo de unidades por día</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
+          Define cuántas unidades mínimas debe vender cada agente por día (jornada de 9h).
+          Esto activa los emojis animados y el panel de seguimiento.
+        </div>
+        <div class="field" style="max-width:220px;">
+          <label>Unidades mínimas por día</label>
+          <input class="smart-input" type="number" id="config-objetivo-dia"
+            min="1" max="100" placeholder="10" style="width:100%;">
+        </div>
+        <button class="btn-save" onclick="saveConfigObjetivoDia()">
+          💾 Guardar objetivo
+        </button>
+        <div style="font-size:11px;color:var(--text3);margin-top:10px;">
+          Ejemplo: 10 unidades → un emoji cae cada 54 minutos durante la jornada.
+        </div>
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);
+            display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:3px;">Emojis animados en todas las pestañas</div>
+            <div style="font-size:12px;color:var(--text2);">Desactiva si los emojis que caen resultan distractores.</div>
+          </div>
+          <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;margin-left:16px;">
+            <input type="checkbox" id="toggle-emojis-activos"
+              onchange="saveConfigEmojisActivos(this.checked);document.getElementById('toggle-emojis-span').style.background=this.checked?'var(--green)':'var(--border)'"
+              style="opacity:0;width:0;height:0;">
+            <span id="toggle-emojis-span"
+              style="position:absolute;cursor:pointer;inset:0;background:var(--green);border-radius:24px;transition:0.3s;"></span>
+          </label>
+        </div>
+      </div>
+
       <div class="config-card">
         <div class="config-card-title">🗓 Filtro de tiempo por defecto</div>
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">
@@ -468,6 +572,52 @@
           Se guarda en base de datos y aplica a todos los agentes como valor inicial.
         </div>
       </div>
+
+      <div class="config-card">
+        <div class="config-card-title">🕐 Horario laboral</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
+          Define los turnos de trabajo. Los emojis y el ritmo se calculan sobre este horario.
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:14px;">
+          <div>
+            <div style="font-size:12px;font-weight:700;color:var(--text3);
+                        text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">
+              🌅 Turno Mañana
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div class="field">
+                <label>Inicio</label>
+                <input class="smart-input" type="time" id="horario-manana-inicio" value="09:00">
+              </div>
+              <div class="field">
+                <label>Fin</label>
+                <input class="smart-input" type="time" id="horario-manana-fin" value="12:00">
+              </div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:700;color:var(--text3);
+                        text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">
+              🌆 Turno Tarde
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div class="field">
+                <label>Inicio</label>
+                <input class="smart-input" type="time" id="horario-tarde-inicio" value="13:00">
+              </div>
+              <div class="field">
+                <label>Fin</label>
+                <input class="smart-input" type="time" id="horario-tarde-fin" value="18:00">
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="btn-save" onclick="saveConfigHorario()">💾 Guardar horario</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px;">
+          Los emojis se distribuyen uniformemente a lo largo de la jornada según el horario configurado.
+        </div>
+      </div>
+
       <div class="config-card">
         <div class="config-card-title">📋 Reglas automáticas</div>
         <div style="font-size:13px;color:var(--text2);line-height:2.2;">
@@ -721,6 +871,7 @@
 <script src="nuevo-registro.js"></script>
 <script src="leads.js"></script>
 <script src="memorias.js"></script>
+<script src="objetivos.js"></script>
 <script>
   initTheme();
   initializeSession();
