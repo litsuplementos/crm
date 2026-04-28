@@ -41,11 +41,13 @@ const Objetivos = (() => {
 
   // Ventas
   function _getUnidadesHoy() {
+    // Si la jornada ya terminó, mostrar 0 para el nuevo día
+    if (_jornadaTerminada()) return 0;
+
     const hoy = new Date().toISOString().slice(0, 10);
     return ventas
       .filter(v => {
         if (v.estado !== 'vendido') return false;
-        // updated_at es timestamptz → extraer solo la fecha
         const fechaVenta = v.updated_at
           ? v.updated_at.slice(0, 10)
           : v.fecha;
@@ -492,6 +494,10 @@ const Objetivos = (() => {
     _programarProximo();
 
     _mainTimer = setInterval(() => {
+      if (_ahora() === _horario.tarde.fin) {
+        _lastUnidades = 0;
+        _emojisCaidosHoy = 0;
+      }
       _checkNuevaVenta();
       _renderPanel();
     }, 60_000);
