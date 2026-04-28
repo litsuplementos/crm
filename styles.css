@@ -651,16 +651,6 @@ td.td-actions { white-space: nowrap; }
   align-items: start;
 }
 
-/* Panel derecho del objetivo */
-.obj-card-inner {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
-  height: 100%;
-  box-sizing: border-box;
-}
-
 /* Estado / advertencia dinámica */
 .obj-estado {
   border-radius: 8px;
