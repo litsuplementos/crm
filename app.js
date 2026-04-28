@@ -332,6 +332,9 @@ function doLogout() {
   _nrGeoInit = false;
   _bipAudio = null;
   _bipActivo = false;
+  _bipPlaying = false;
+  clearTimeout(_bipTimeout);
+  _bipTimeout = null;
 
   if (_audioCtx && _audioCtx.state !== 'closed') {
     _audioCtx.suspend().catch(() => {});
@@ -1704,6 +1707,8 @@ let _bipInterval = null;
 let _audioCtx = null;
 let _bipAudio = null;
 let _bipActivo = false; 
+let _bipPlaying = false;
+let _bipTimeout = null;
 
 function _getAudioCtx() {
   if (!_audioCtx || _audioCtx.state === 'closed') {
@@ -1735,25 +1740,43 @@ async function _loadAudioFiles() {
 
 function _bip() {
   if (!_bipActivo) return;
+  if (_bipPlaying) return;   // ya hay una cadena corriendo — no iniciar otra
+
   if (_AUDIO_FILES.length === 0) {
-    // sin archivos: reintentar en 5s por si aún están cargando
-    setTimeout(_bip, 5000);
+    _bipTimeout = setTimeout(_bip, 5000);
     return;
   }
-  try {
-    const archivo = _AUDIO_FILES[Math.floor(Math.random() * _AUDIO_FILES.length)];
-    _bipAudio = new Audio(archivo);
-    _bipAudio.volume = 0.8;
-    _bipAudio.addEventListener('ended', () => {
-      if (!_bipActivo) return;
-      setTimeout(_bip, 8000);
-    });
-    _bipAudio.addEventListener('error', () => {
-      if (!_bipActivo) return;
-      setTimeout(_bip, 1000);
-    });
-    _bipAudio.play().catch(() => {});
-  } catch(e) {}
+
+  // Limpiar audio anterior si quedó colgado
+  if (_bipAudio) {
+    _bipAudio.pause();
+    _bipAudio.src = '';
+    _bipAudio = null;
+  }
+
+  _bipPlaying = true;
+  const archivo = _AUDIO_FILES[Math.floor(Math.random() * _AUDIO_FILES.length)];
+  _bipAudio = new Audio(archivo);
+  _bipAudio.volume = 0.8;
+
+  _bipAudio.addEventListener('ended', () => {
+    _bipPlaying = false;
+    _bipAudio = null;
+    if (!_bipActivo) return;
+    _bipTimeout = setTimeout(_bip, 8000);
+  });
+
+  _bipAudio.addEventListener('error', () => {
+    _bipPlaying = false;
+    _bipAudio = null;
+    if (!_bipActivo) return;
+    _bipTimeout = setTimeout(_bip, 2000);  
+  });
+
+  _bipAudio.play().catch(() => {
+    _bipPlaying = false;
+    _bipAudio = null;
+  });
 }
 
 function _mostrarNotificacionRecordatorio(venta) {
@@ -1824,10 +1847,13 @@ function _mostrarNotificacionRecordatorio(venta) {
 }
 
 function _dismissRecordatorio() {
-  _bipActivo = false;
+  _bipActivo  = false;
+  _bipPlaying = false;         
+  clearTimeout(_bipTimeout);   
+  _bipTimeout = null;
   clearInterval(_bipInterval);
   _bipInterval = null;
-  if (_bipAudio) { _bipAudio.pause(); _bipAudio.currentTime = 0; _bipAudio = null; }
+  if (_bipAudio) { _bipAudio.pause(); _bipAudio.src = ''; _bipAudio = null; }
   const banner = document.getElementById('recordatorio-banner');
   if (banner) banner.style.display = 'none';
   const spacer = document.getElementById('recordatorio-spacer');
