@@ -11,7 +11,7 @@ const Objetivos = (() => {
 
   let _horario = {
     mañana: { inicio: 9 * 60, fin: 12 * 60 },
-    tarde:  { inicio: 13 * 60, fin: 18 * 60 },
+    tarde: { inicio: 13 * 60, fin: 18 * 60 },
   };
 
   const EMOJI_SEC = ['😄','😊','🙂','😐','😕','😟','😢','😰','😱','🥀'];
@@ -79,10 +79,10 @@ const Objetivos = (() => {
         const dur = 4 + Math.random() * 3;
         const swing = (Math.random() - 0.5) * 130;
         el.animate([
-          { transform: `translateX(0) rotate(${Math.random()*20-10}deg)`, opacity: 1 },
-          { transform: `translateX(${swing * 0.35}px) rotate(${Math.random()*30-15}deg)`, opacity: 0.9, offset: 0.3 },
-          { transform: `translateX(${swing}px) rotate(${Math.random()*50-25}deg)`, opacity: 0.65, offset: 0.75 },
-          { transform: `translateX(${swing * 1.5}px) rotate(${Math.random()*70-35}deg)`, opacity: 0 }
+          { transform: `translateX(0) translateY(0) rotate(${Math.random()*20-10}deg)`, opacity: 1 },
+          { transform: `translateX(${swing * 0.35}px) translateY(30vh) rotate(${Math.random()*30-15}deg)`, opacity: 0.9, offset: 0.3 },
+          { transform: `translateX(${swing}px) translateY(70vh) rotate(${Math.random()*50-25}deg)`, opacity: 0.65, offset: 0.75 },
+          { transform: `translateX(${swing * 1.5}px) translateY(110vh) rotate(${Math.random()*70-35}deg)`, opacity: 0 }
         ], { duration: dur * 1000, easing: 'cubic-bezier(0.4, 0, 0.8, 1)', fill: 'forwards' })
         .onfinish = () => el.remove();
         setTimeout(() => el.remove(), dur * 1000 + 300);
@@ -96,11 +96,11 @@ const Objetivos = (() => {
         const dur = 5 + Math.random() * 2.5;
         const amp = 30 + Math.random() * 55;
         el.animate([
-          { transform: 'translateX(0) rotate(0deg) scale(1)', opacity: 0.95 },
-          { transform: `translateX(${amp}px) rotate(130deg) scale(0.82)`, opacity: 0.8, offset: 0.25 },
-          { transform: `translateX(0) rotate(250deg) scale(0.66)`, opacity: 0.55, offset: 0.5 },
-          { transform: `translateX(${-amp}px) rotate(370deg) scale(0.48)`, opacity: 0.3, offset: 0.75 },
-          { transform: `translateX(0) rotate(490deg) scale(0.2)`, opacity: 0 }
+          { transform: 'translateX(0) translateY(0) rotate(0deg) scale(1)', opacity: 0.95 },
+          { transform: `translateX(${amp}px) translateY(25vh) rotate(130deg) scale(0.82)`, opacity: 0.8, offset: 0.25 },
+          { transform: `translateX(0) translateY(55vh) rotate(250deg) scale(0.66)`, opacity: 0.55, offset: 0.5 },
+          { transform: `translateX(${-amp}px) translateY(80vh) rotate(370deg) scale(0.48)`, opacity: 0.3, offset: 0.75 },
+          { transform: `translateX(0) translateY(110vh) rotate(490deg) scale(0.2)`, opacity: 0 }
         ], { duration: dur * 1000, easing: 'ease-in', fill: 'forwards' });
         setTimeout(() => el.remove(), dur * 1000 + 300);
       },
@@ -150,16 +150,15 @@ const Objetivos = (() => {
   }
 
   // Intervalo fijo entre lluvias de emojis (minutos)
-  const MIN_ENTRE_LLUVIAS = 10;
+  const MIN_ENTRE_LLUVIAS = 5;
 
-  // Cuántas lluvias deberían haber ocurrido hasta ahora
   function _ticksEsperados() {
     return Math.floor(_minutosEfectivos() / MIN_ENTRE_LLUVIAS);
   }
 
   function _msHastaProximoTick() {
     if (_jornadaTerminada()) return null;
-    // Próxima lluvia ocurre en el siguiente múltiplo de 10 min efectivos
+    // Próxima lluvia ocurre en el siguiente múltiplo de MIN_ENTRE_LLUVIAS efectivos
     const proxEfect = (_emojisCaidosHoy + 1) * MIN_ENTRE_LLUVIAS;
     const durMañana = _horario.mañana.fin - _horario.mañana.inicio;
     let   targetClock;
@@ -336,7 +335,6 @@ const Objetivos = (() => {
     clearTimeout(_emojiTimer);
     _mainTimer = null;
     _emojiTimer = null;
-    _emojisCaidosHoy = 0;
     _lastUnidades = -1;
 
     try {
@@ -350,14 +348,14 @@ const Objetivos = (() => {
         db.from('horario_laboral').select('*'),
       ]);
 
-      if (dataMeta?.valor)   _meta          = parseInt(dataMeta.valor) || 5;
+      if (dataMeta?.valor) _meta = parseInt(dataMeta.valor) || 5;
       if (dataEmojis?.valor) _emojisActivos = dataEmojis.valor !== 'false';
 
       if (dataHorario?.length) {
         dataHorario.forEach(row => {
           if (row.turno === 'mañana') {
             _horario.mañana.inicio = _timeToMin(row.inicio);
-            _horario.mañana.fin    = _timeToMin(row.fin);
+            _horario.mañana.fin = _timeToMin(row.fin);
           } else if (row.turno === 'tarde') {
             _horario.tarde.inicio = _timeToMin(row.inicio);
             _horario.tarde.fin = _timeToMin(row.fin);

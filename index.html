@@ -70,6 +70,7 @@
     <div class="nav-tab active" data-view="dashboard" onclick="showView('dashboard')">📊 Dashboard</div>
     <div class="nav-tab" id="tab-leads" data-view="leads" onclick="showView('leads')">🎯 Leads</div>
     <div class="nav-tab" data-view="ventas" onclick="showView('ventas')">📋 Registros</div>
+    <div class="nav-tab" data-view="clientes" onclick="showView('clientes')">👥 Clientes</div>
     <div class="nav-tab" id="tab-productos" data-view="productos" onclick="showView('productos')" style="display:none;">📦 Productos</div>
     <div class="nav-tab" data-view="guia" onclick="showView('guia')">📚 Guía AC</div>
     <div class="nav-tab" id="tab-config" data-view="config" onclick="showView('config')" style="display:none;">⚙️ Ajustes</div>
@@ -475,9 +476,17 @@
           <input class="search-box" type="text" id="clientes-search"
             placeholder="🔍 Nombre, celular, ubicación..."
             oninput="debouncedRenderClientes()" style="min-width:220px;">
-          <select class="filter-select" id="clientes-filter-flag" onchange="renderClientes()">
-            <option value="">Todos</option>
-            <option value="normal">✅ Normal</option>
+          <select class="filter-select" id="clientes-filter-estado" onchange="renderClientes()">
+            <option value="">Todos los estados</option>
+            <option value="rellamada">🔁 Rellamada</option>
+            <option value="seguimiento">🔄 Seguimiento</option>
+            <option value="interesado">🌟 Interesado</option>
+            <option value="agendar">📅 Agendar</option>
+            <option value="sin_respuesta">📵 Sin respuesta</option>
+            <option value="no_interesado">👎 No interesado</option>
+            <option value="enviado">📦 Enviado</option>
+            <option value="vendido">✅ Vendido</option>
+            <option value="cancelado">❌ Cancelado</option>
             <option value="spam">🚫 SPAM</option>
           </select>
         </div>
@@ -498,6 +507,7 @@
               <th>Faltas</th>
               <th>Sin resp.</th>
               <th>Flag</th>
+              <th>Actualizado en</th>
               <th>Registrado</th>
             </tr>
           </thead>

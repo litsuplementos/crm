@@ -321,20 +321,15 @@ document.addEventListener('keydown', e => {
 
 function doLogout() {
   clearInterval(_recordatorioTimer);
-  clearInterval(_bipInterval);
   clearTimeout(_nrCelTimer);
   _recordatorioTimer = null;
-  _bipInterval = null;
   _vendidosEditablesCache = null;
   _clientesFielesCache = null;  
   _roscaAnualCache = null;
   _nrCelTimer = null;
   _nrGeoInit = false;
   _bipAudio = null;
-  _bipActivo = false;
-  _bipPlaying = false;
-  clearTimeout(_bipTimeout);
-  _bipTimeout = null;
+  _dismissRecordatorio();
 
   if (_audioCtx && _audioCtx.state !== 'closed') {
     _audioCtx.suspend().catch(() => {});
@@ -781,6 +776,7 @@ async function syncData() {
     populateProductoFilter();
     _usersCache = null;
     toast('✅ Datos actualizados', 'success');
+    ClientesView.invalidate();
     if (document.getElementById('view-clientes')?.classList.contains('active')) {
       ClientesView.load();
     }
@@ -1748,14 +1744,13 @@ async function _loadAudioFiles() {
 
 function _bip() {
   if (!_bipActivo) return;
-  if (_bipPlaying) return;   // ya hay una cadena corriendo — no iniciar otra
+  if (_bipPlaying) return;
 
   if (_AUDIO_FILES.length === 0) {
     _bipTimeout = setTimeout(_bip, 5000);
     return;
   }
 
-  // Limpiar audio anterior si quedó colgado
   if (_bipAudio) {
     _bipAudio.pause();
     _bipAudio.src = '';
@@ -1767,24 +1762,20 @@ function _bip() {
   _bipAudio = new Audio(archivo);
   _bipAudio.volume = 0.8;
 
-  _bipAudio.addEventListener('ended', () => {
+  let _done = false;
+  const _onDone = () => {
+    if (_done) return;
+    _done = true;
     _bipPlaying = false;
     _bipAudio = null;
     if (!_bipActivo) return;
-    _bipTimeout = setTimeout(_bip, 8000);
-  });
+    _bipTimeout = setTimeout(_bip, 15000);
+  };
 
-  _bipAudio.addEventListener('error', () => {
-    _bipPlaying = false;
-    _bipAudio = null;
-    if (!_bipActivo) return;
-    _bipTimeout = setTimeout(_bip, 2000);  
-  });
+  _bipAudio.addEventListener('ended', _onDone);
+  _bipAudio.addEventListener('error', _onDone);
 
-  _bipAudio.play().catch(() => {
-    _bipPlaying = false;
-    _bipAudio = null;
-  });
+  _bipAudio.play().catch(_onDone);
 }
 
 function _mostrarNotificacionRecordatorio(venta) {
@@ -1822,19 +1813,38 @@ function _mostrarNotificacionRecordatorio(venta) {
   const celular = venta.cliente?.celular || '';
   const notas = venta.notas || '';
 
+  const ahoraLocal2 = new Date().toLocaleString('sv-SE').replace(' ', 'T').slice(0, 16);
+  const ahoraMs2 = new Date(ahoraLocal2).getTime();
+  const pendientesCount = ventas.filter(v =>
+    v.recordatorio && !v.recordatorio_visto &&
+    !window._recordatoriosVistos?.has(v.id) &&
+    new Date(v.recordatorio.slice(0, 16)).getTime() <= ahoraMs2 + 5 * 60 * 1000
+  ).length;
+
   banner.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;">
-      <span style="font-size:22px;">⏰</span>
-      <div>
-        <div style="font-weight:700;font-size:15px;">Recordatorio — ${nombre}</div>
-        <div style="font-size:12px;opacity:0.9;">${celular}${notas ? ' · ' + notas.slice(0,60) : ''}</div>
+    <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;">
+      ${pendientesCount > 1 ? `
+        <div style="background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.5);
+            border-radius:8px;padding:4px 8px;text-align:center;flex-shrink:0;">
+          <div style="font-size:16px;font-weight:800;line-height:1;">${pendientesCount}</div>
+          <div style="font-size:9px;font-weight:700;opacity:0.85;letter-spacing:0.3px;">PEND.</div>
+        </div>` : ''}
+      <span style="font-size:22px;flex-shrink:0;">⏰</span>
+      <div style="min-width:0;">
+        <div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Recordatorio — ${nombre}</div>
+        <div style="font-size:12px;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${celular}${notas ? ' · ' + notas.slice(0,60) : ''}</div>
       </div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <button onclick="openVentaModal(${venta.id});_dismissRecordatorio()"
+    <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+      <button onclick="showNuevoRegistro(${venta.id});_dismissRecordatorio()"
         style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);
                border-radius:6px;padding:6px 12px;color:white;cursor:pointer;font-size:13px;font-weight:600;">
         Ver registro
+      </button>
+      <button onclick="_silenciarRecordatorio()"
+        style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.35);
+               border-radius:6px;padding:6px 12px;color:white;cursor:pointer;font-size:13px;font-weight:600;">
+        🔕 Silenciar
       </button>
       <button onclick="_marcarRecordatorioVisto(${venta.id});_dismissRecordatorio()"
         style="background:white;border:none;border-radius:6px;padding:6px 16px;
@@ -1852,6 +1862,17 @@ function _mostrarNotificacionRecordatorio(venta) {
 
   _bipActivo = true;
   _bip();
+}
+
+function _silenciarRecordatorio() {
+  _bipActivo = false;
+  _bipPlaying = false;
+  clearTimeout(_bipTimeout);
+  _bipTimeout = null;
+  if (_bipAudio) { _bipAudio.pause(); _bipAudio.src = ''; _bipAudio = null; }
+  // Solo silencia el audio, el banner sigue visible
+  const btn = document.querySelector('#recordatorio-banner button[onclick="_silenciarRecordatorio()"]');
+  if (btn) { btn.textContent = '🔇 Silenciado'; btn.disabled = true; btn.style.opacity = '0.5'; }
 }
 
 function _dismissRecordatorio() {
