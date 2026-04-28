@@ -408,25 +408,44 @@ body.sidebar-collapsed .content-area {
    ══════════════════════════════ */
 @media (max-width: 768px) {
   #sidebar {
-    width: var(--sidebar-w);
+    width: var(--sidebar-w) !important; /* siempre ancho completo en mobile */
     transform: translateX(-100%);
-    transition: transform var(--sidebar-transition), width var(--sidebar-transition);
+    transition: transform var(--sidebar-transition);
     box-shadow: 4px 0 24px rgba(0,0,0,0.15);
   }
+
   body.sidebar-open #sidebar {
-    transform: translateX(0);
+    transform: translateX(0) !important;
   }
+
+  /* collapsed no afecta en mobile */
+  body.sidebar-collapsed #sidebar {
+    width: var(--sidebar-w) !important;
+    transform: translateX(-100%);
+  }
+
+  body.sidebar-collapsed.sidebar-open #sidebar {
+    transform: translateX(0) !important;
+  }
+
+  /* Labels siempre visibles en mobile */
+  body.sidebar-collapsed .sidebar-nav-label,
+  body.sidebar-collapsed .sidebar-logo-text,
+  body.sidebar-collapsed .sidebar-badge-logo {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    max-width: unset !important;
+  }
+
   .topbar {
     left: 0 !important;
+    justify-content: space-between;
   }
+
   .content-area {
     margin-left: 0 !important;
   }
-  body.sidebar-collapsed #sidebar {
-    width: var(--sidebar-w);
-    transform: translateX(-100%);
-  }
-  /* overlay oscuro al abrir en mobile */
+
   .sidebar-overlay {
     display: none;
     position: fixed;
@@ -434,15 +453,18 @@ body.sidebar-collapsed .content-area {
     background: rgba(0,0,0,0.35);
     z-index: 199;
   }
+
   body.sidebar-open .sidebar-overlay {
     display: block;
   }
-  /* botón hamburguesa en topbar mobile */
-  .topbar {
-    justify-content: space-between;
-  }
+
   #mobile-sidebar-toggle {
     display: flex !important;
+  }
+
+  /* Tooltips no aplican en mobile */
+  body.sidebar-collapsed .sidebar-nav-item::after {
+    display: none !important;
   }
 }
 
