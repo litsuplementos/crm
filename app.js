@@ -329,6 +329,7 @@ function doLogout() {
   _nrCelTimer = null;
   _nrGeoInit = false;
   _bipAudio = null;
+  _eventDelegationRegistered = false;
   _dismissRecordatorio();
 
   if (_audioCtx && _audioCtx.state !== 'closed') {

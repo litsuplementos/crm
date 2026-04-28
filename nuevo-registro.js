@@ -211,6 +211,12 @@ async function _cargarVentaEnPagina(id) {
     addNrItem();
   }
 
+  const montoGuardado = parseFloat(v.monto_total) || 0;
+  if (montoGuardado > 0) {
+    document.getElementById('nr-monto').value = montoGuardado.toFixed(2);
+    document.getElementById('nr-monto')._baseValue = montoGuardado;
+  }
+
   // Comprobante
   _renderNrComprobantePreview(v.comprobante_url || null, shouldLock);
 
@@ -595,11 +601,9 @@ function onNrCelularInput() {
 
       // Detectar cliente fiel y precargar descuento
       if (!ciclo) {
-        const { data: unidadesData } = await db.from('venta_items')
-          .select('cantidad, ventas!inner(cliente_id, estado)')
-          .eq('ventas.cliente_id', cd.id)
-          .eq('ventas.estado', 'vendido');
-        const totalUnidades = (unidadesData || []).reduce((s, it) => s + (it.cantidad || 1), 0);
+        const totalUnidades = ventas
+          .filter(v => v.cliente_id === cd.id && v.estado === 'vendido')
+          .reduce((s, v) => s + (v.venta_items || []).reduce((ss, it) => ss + (it.cantidad || 1), 0), 0);
         if (totalUnidades >= _clientesFielesUmbral) {
           const descInput = document.getElementById('nr-descuento');
           if (descInput && (!descInput.value || descInput.value === '0')) {
