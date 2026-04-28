@@ -585,15 +585,31 @@ async function saveConfigEmojisActivos(activo) {
 }
 
 async function saveConfigHorario() {
-  const mIn = document.getElementById('horario-manana-inicio').value;
+  const mIn  = document.getElementById('horario-manana-inicio').value;
   const mFin = document.getElementById('horario-manana-fin').value;
-  const tIn = document.getElementById('horario-tarde-inicio').value;
+  const tIn  = document.getElementById('horario-tarde-inicio').value;
   const tFin = document.getElementById('horario-tarde-fin').value;
 
   if (!mIn || !mFin || !tIn || !tFin) {
-    toast('⚠️ Completa todos los horarios', 'error');
-    return;
+    toast('⚠️ Completa todos los horarios', 'error'); return;
   }
+
+  const toMin = str => { const [h,m] = str.split(':').map(Number); return h*60+(m||0); };
+  const mInM = toMin(mIn), mFinM = toMin(mFin), tInM = toMin(tIn), tFinM = toMin(tFin);
+
+  if (mInM === 0 || mFinM === 0 || tInM === 0 || tFinM === 0) {
+    toast('⚠️ Ningún horario puede ser 00:00', 'error'); return;
+  }
+  if (mFinM <= mInM) {
+    toast('⚠️ El fin de mañana debe ser mayor que el inicio', 'error'); return;
+  }
+  if (tInM <= mFinM) {
+    toast('⚠️ El inicio de tarde debe ser posterior al fin de mañana', 'error'); return;
+  }
+  if (tFinM <= tInM) {
+    toast('⚠️ El fin de tarde debe ser mayor que el inicio de tarde', 'error'); return;
+  }
+
   await Objetivos.setHorario('mañana', mIn, mFin);
   await Objetivos.setHorario('tarde', tIn, tFin);
   Objetivos.afterHorarioSaved();
