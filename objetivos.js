@@ -150,7 +150,7 @@ const Objetivos = (() => {
   }
 
   // Intervalo fijo entre lluvias de emojis (minutos)
-  const MIN_ENTRE_LLUVIAS = 5;
+  const MIN_ENTRE_LLUVIAS = 20;
 
   function _ticksEsperados() {
     return Math.floor(_minutosEfectivos() / MIN_ENTRE_LLUVIAS);
