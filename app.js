@@ -337,6 +337,10 @@ function doLogout() {
   }
 
   _geoSelectorsInitialized = false;
+  filtroTiempo = 'mes';           
+  window._filtroMesCustom = null; 
+  selectedAgentId = 'all';       
+  ClientesView.invalidate();  
 
   Objetivos.stop();
   currentUser = null;
@@ -344,10 +348,9 @@ function doLogout() {
   ventasIndex = {};
   allAgents = [];
   allProductos = [];
-  selectedAgentId = 'all';
   dashboardCache.invalidate();
   filteredCache.invalidate();
-  _usersCache = null; // FIX #9
+  _usersCache = null; 
 
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
