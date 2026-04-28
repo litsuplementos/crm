@@ -656,7 +656,7 @@ async function loadVentas() {
   try {
     let query = db.from('ventas')
       .select(`
-        id, cliente_id, agente_id, fecha, estado, intentos,
+        id, cliente_id, agente_id, fecha, updated_at, estado, intentos,
         notas, comprobante_url, archivado, monto_total, descuento_pct, recordatorio, recordatorio_visto,
         cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
                              producto_interes, notas, faltas, flag ),
@@ -781,6 +781,9 @@ async function syncData() {
     populateProductoFilter();
     _usersCache = null;
     toast('✅ Datos actualizados', 'success');
+    if (document.getElementById('view-clientes')?.classList.contains('active')) {
+      ClientesView.load();
+    }
   } finally {
     btn.classList.remove('syncing');
     _syncing = false;
@@ -795,6 +798,7 @@ function showView(name) {
   event.target.classList.add('active');
   if (name === 'nuevo-registro') { showNuevoRegistro(); return; }
   if (name === 'ventas') renderVentas();
+  if (name === 'clientes') ClientesView.load();
   if (name === 'dashboard') renderDashboard();
   if (name === 'leads') renderLeads();
   if (name === 'usuarios') renderUsers();
@@ -1150,6 +1154,10 @@ function renderVentas() {
         <td style="max-width:160px;white-space:normal;word-break:break-word;font-size:13px;color:var(--text2);">${ubicacion}</td>
         <td>${statusBadge(v.estado)}${v.estado === 'rellamada' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}${v.estado === 'sin_respuesta' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}</td>
         <td style="min-width:280px;max-width:260px;overflow:hidden;white-space:normal;color:var(--text2);font-size:12px;" title="${v.notas || ''}">${v.notas || ''}${v.comprobante_url ? ` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>` : ''}</td>
+        <td style="font-size:11px;color:var(--text3);white-space:nowrap;">
+          ${v.updated_at ? new Date(v.updated_at).toLocaleDateString('es-BO', 
+            {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'}
+        </td>
         ${isAdmin ? `<td style="font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>` : ''}`;
       fragment.appendChild(tr);
     }
@@ -1963,23 +1971,23 @@ async function _getClientesFieles() {
     const cid = row.cliente_id;
     if (!mapa[cid]) {
       mapa[cid] = {
-        id:           cid,
-        nombre:       row.cliente?.nombre  || 's/n',
-        celular:      row.cliente?.celular || '',
-        unidades:     0,
-        monto_total:  0,
+        id: cid,
+        nombre: row.cliente?.nombre  || 's/n',
+        celular: row.cliente?.celular || '',
+        unidades: 0,
+        monto_total: 0,
         ventas_count: 0,
       };
     }
-    mapa[cid].unidades     += row.unidades     || 0;
-    mapa[cid].monto_total  += parseFloat(row.monto_total  || 0);
+    mapa[cid].unidades += row.unidades || 0;
+    mapa[cid].monto_total += parseFloat(row.monto_total || 0);
     mapa[cid].ventas_count += row.ventas_count || 0;
   }
 
-  const lista  = Object.values(mapa).sort((a, b) => b.unidades - a.unidades);
-  const top    = lista.slice(0, 5);
+  const lista = Object.values(mapa).sort((a, b) => b.unidades - a.unidades);
+  const top = lista.slice(0, 5);
   const topIds = new Set(top.map(c => c.id));
-  const resto  = lista.filter(c => !topIds.has(c.id)).slice(0, 20);
+  const resto = lista.filter(c => !topIds.has(c.id)).slice(0, 20);
 
   _clientesFielesCache = { top, resto };
   return _clientesFielesCache;
@@ -2072,7 +2080,7 @@ async function _getRoscaAnual() {
   if (_roscaAnualCache) return _roscaAnualCache;
   const year = new Date().getFullYear();
   const desde = `${year}-01`;
-  const hasta  = `${year}-12`;
+  const hasta = `${year}-12`;
 
   const { data, error } = await db
     .from('clientes_historial')
@@ -2102,13 +2110,13 @@ async function renderRoscaAnual() {
   const wrap = document.getElementById('dash-rosca-anual');
   if (!wrap) return;
  
-  const datos         = await _getRoscaAnual();
+  const datos = await _getRoscaAnual();
   const totalUnidades = datos.reduce((s, d) => s + d.unidades, 0);
-  const totalMonto    = datos.reduce((s, d) => s + d.monto, 0);
+  const totalMonto = datos.reduce((s, d) => s + d.monto, 0);
  
   if (totalUnidades === 0) {
     wrap.innerHTML = `<div style="color:var(--text3);font-size:13px;padding:16px;text-align:center;">Sin ventas registradas este año</div>`;
-    Objetivos.render(); // actualizar panel de objetivos aunque no haya ventas
+    Objetivos.render();
     return;
   }
  
@@ -2125,18 +2133,18 @@ async function renderRoscaAnual() {
  
   datos.forEach((d, i) => {
     if (d.unidades === 0) { segmentos.push(null); return; }
-    const pct   = d.unidades / totalUnidades;
+    const pct = d.unidades / totalUnidades;
     const angle = pct * TAU;
-    const end   = startAngle + angle;
-    const gap   = 0.025;
-    const s     = startAngle + gap / 2;
-    const e     = end - gap / 2;
+    const end = startAngle + angle;
+    const gap = 0.025;
+    const s = startAngle + gap / 2;
+    const e = end - gap / 2;
     const x1 = cx + R * Math.cos(s), y1 = cy + R * Math.sin(s);
     const x2 = cx + R * Math.cos(e), y2 = cy + R * Math.sin(e);
     const x3 = cx + r * Math.cos(e), y3 = cy + r * Math.sin(e);
     const x4 = cx + r * Math.cos(s), y4 = cy + r * Math.sin(s);
     const large = angle - gap > Math.PI ? 1 : 0;
-    const path  = `M${x1},${y1} A${R},${R} 0 ${large},1 ${x2},${y2} L${x3},${y3} A${r},${r} 0 ${large},0 ${x4},${y4} Z`;
+    const path = `M${x1},${y1} A${R},${R} 0 ${large},1 ${x2},${y2} L${x3},${y3} A${r},${r} 0 ${large},0 ${x4},${y4} Z`;
     segmentos.push({ path, color: colores[i % colores.length], d, pct });
     startAngle = end;
   });
@@ -2158,7 +2166,6 @@ async function renderRoscaAnual() {
       </div>`;
   }).join('');
  
-  // Solo la rosca — sin grid partido con el panel de objetivos
   wrap.innerHTML = `
     <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
  
@@ -2227,7 +2234,6 @@ async function renderRoscaAnual() {
     });
   });
  
-  // Actualizar panel de objetivos (ahora es independiente, siempre existe)
   Objetivos.render();
 }
 

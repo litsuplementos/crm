@@ -1,7 +1,6 @@
 /* sidebar.js */
 
 (function () {
-  /* 1. Inyectar <link> al CSS del sidebar */
   (function injectCSS() {
     const link = document.createElement('link');
     link.rel  = 'stylesheet';
@@ -9,14 +8,13 @@
     document.head.appendChild(link);
   })();
 
-  /* 2. Esperar a que el DOM esté listo */
   function init() {
     const app = document.getElementById('app');
     if (!app) { setTimeout(init, 50); return; }
     buildSidebar();
     wrapContentArea();
-    observeNavTabs(); // sincroniza sidebar con el sistema de pestañas original
-    observeUserData(); // sincroniza nombre/avatar
+    observeNavTabs(); 
+    observeUserData(); 
     syncSidebarWithUser();
     loadSidebarState();
   }
@@ -27,11 +25,11 @@
     init();
   }
 
-  /* 3. Definición de items del sidebar */
   const NAV_ITEMS = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard',   view: 'dashboard',  always: true },
     { id: 'leads',     icon: '🎯', label: 'Leads',        view: 'leads',      tabId: 'tab-leads' },
     { id: 'ventas',    icon: '📋', label: 'Registros',    view: 'ventas',     always: true },
+    { id: 'clientes', icon: '👥', label: 'Clientes', view: 'clientes', always: true },
     { id: 'productos', icon: '📦', label: 'Productos',    view: 'productos',  tabId: 'tab-productos' },
     { id: 'guia',      icon: '📚', label: 'Guía AC',      view: 'guia',       always: true },
     { id: 'config',    icon: '⚙️',  label: 'Ajustes',      view: 'config',     tabId: 'tab-config' },

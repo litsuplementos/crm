@@ -697,20 +697,11 @@ td.td-actions { white-space: nowrap; }
 /* Emojis que caen desde arriba */
 .obj-emoji-fall {
   position: fixed;
-  top: -60px;
   z-index: 9990;
   pointer-events: none;
   user-select: none;
   line-height: 1;
-  /* animación única, sin transform para no interferir con left */
-  animation: obj-emoji-fall-anim linear forwards;
-}
- 
-@keyframes obj-emoji-fall-anim {
-  0%   { top: -60px;  opacity: 1;   }
-  15%  { opacity: 1;                }
-  80%  { opacity: 0.75;             }
-  100% { top: 105vh;  opacity: 0;   }
+  will-change: transform, opacity;
 }
 
 /* ── RECUADROS +3% COMISIÓN ── */

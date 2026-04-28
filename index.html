@@ -453,6 +453,7 @@
             <tr>
               <th>Fecha</th><th>Cliente</th><th>Celular</th><th>Productos</th>
               <th>Monto</th><th>Lugar</th><th>Estado</th><th>Notas</th>
+              <th>Actualizado en</th>
               <th id="th-agente" style="display:none;">Agente</th>
             </tr>
           </thead>
@@ -461,6 +462,49 @@
       </div>
       <div class="mobile-cards" id="ventas-cards"></div>
       <div class="pagination" id="pagination"></div>
+    </div></div>
+
+    <!-- CLIENTES -->
+    <div class="view" id="view-clientes"><div class="view-scroll-wrap">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Clientes</div>
+          <div class="section-sub" id="clientes-count">Cargando...</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="search-box" type="text" id="clientes-search"
+            placeholder="🔍 Nombre, celular, ubicación..."
+            oninput="debouncedRenderClientes()" style="min-width:220px;">
+          <select class="filter-select" id="clientes-filter-flag" onchange="renderClientes()">
+            <option value="">Todos</option>
+            <option value="normal">✅ Normal</option>
+            <option value="spam">🚫 SPAM</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-info">
+          <span id="clientes-table-count">0 clientes</span>
+          <span style="color:var(--text3);font-size:12px;">Clic en fila para ver historial</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Celular</th>
+              <th>Ubicación</th>
+              <th>Unidades (hist.)</th>
+              <th>Monto (hist.)</th>
+              <th>Faltas</th>
+              <th>Sin resp.</th>
+              <th>Flag</th>
+              <th>Registrado</th>
+            </tr>
+          </thead>
+          <tbody id="clientes-tbody"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="clientes-pagination"></div>
     </div></div>
 
     <!-- PRODUCTOS (admin) -->
@@ -868,6 +912,7 @@
 </div>
 <script src="app.js"></script>
 <script src="guia.js"></script>
+<script src="clientes.js"></script>
 <script src="nuevo-registro.js"></script>
 <script src="leads.js"></script>
 <script src="memorias.js"></script>

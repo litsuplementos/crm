@@ -44,7 +44,12 @@ const Objetivos = (() => {
     const hoy = new Date().toISOString().slice(0, 10);
     return ventas
       .filter(v => {
-        if (v.estado !== 'vendido' || v.fecha !== hoy) return false;
+        if (v.estado !== 'vendido') return false;
+        // updated_at es timestamptz → extraer solo la fecha
+        const fechaVenta = v.updated_at
+          ? v.updated_at.slice(0, 10)
+          : v.fecha;
+        if (fechaVenta !== hoy) return false;
         if (currentUser.rol === 'agente') return v.agente_id === currentUser.id;
         if (currentUser.rol === 'admin' && selectedAgentId !== 'all') return v.agente_id === selectedAgentId;
         return true;
@@ -62,17 +67,85 @@ const Objetivos = (() => {
   // Lanzar emojis — cada elemento se destruye solo vía animationend
   function _lanzarEmojis(char, cantidad) {
     if (!_emojisActivos) return;
+
+    // 3 efectos posibles: swing lateral, espiral, explosión desde centro
+    const EFFECTS = [
+      // Caída con swing lateral y rotación suave
+      (el, left, size) => {
+        el.style.left = left + 'vw';
+        el.style.top = '-80px';
+        el.style.fontSize = size + 'px';
+        el.style.filter = 'drop-shadow(0 0 6px rgba(200,80,40,0.55))';
+        const dur = 4 + Math.random() * 3;
+        const swing = (Math.random() - 0.5) * 130;
+        el.animate([
+          { transform: `translateX(0) rotate(${Math.random()*20-10}deg)`, opacity: 1 },
+          { transform: `translateX(${swing * 0.35}px) rotate(${Math.random()*30-15}deg)`, opacity: 0.9, offset: 0.3 },
+          { transform: `translateX(${swing}px) rotate(${Math.random()*50-25}deg)`, opacity: 0.65, offset: 0.75 },
+          { transform: `translateX(${swing * 1.5}px) rotate(${Math.random()*70-35}deg)`, opacity: 0 }
+        ], { duration: dur * 1000, easing: 'cubic-bezier(0.4, 0, 0.8, 1)', fill: 'forwards' })
+        .onfinish = () => el.remove();
+        setTimeout(() => el.remove(), dur * 1000 + 300);
+      },
+      // Espiral descendente — ideal para 🥀
+      (el, left, size) => {
+        el.style.left = left + 'vw';
+        el.style.top = '-80px';
+        el.style.fontSize = size + 'px';
+        el.style.filter = 'drop-shadow(0 2px 5px rgba(0,0,0,0.45))';
+        const dur = 5 + Math.random() * 2.5;
+        const amp = 30 + Math.random() * 55;
+        el.animate([
+          { transform: 'translateX(0) rotate(0deg) scale(1)', opacity: 0.95 },
+          { transform: `translateX(${amp}px) rotate(130deg) scale(0.82)`, opacity: 0.8, offset: 0.25 },
+          { transform: `translateX(0) rotate(250deg) scale(0.66)`, opacity: 0.55, offset: 0.5 },
+          { transform: `translateX(${-amp}px) rotate(370deg) scale(0.48)`, opacity: 0.3, offset: 0.75 },
+          { transform: `translateX(0) rotate(490deg) scale(0.2)`, opacity: 0 }
+        ], { duration: dur * 1000, easing: 'ease-in', fill: 'forwards' });
+        setTimeout(() => el.remove(), dur * 1000 + 300);
+      },
+      // Explosión desde el centro con caída posterior
+      (el, left, size) => {
+        el.style.left = '50vw';
+        el.style.top = '35%';
+        el.style.fontSize = size + 'px';
+        el.style.filter = 'drop-shadow(0 0 10px rgba(248,113,113,0.65))';
+        const angle = Math.random() * 2 * Math.PI;
+        const dist = 90 + Math.random() * 130;
+        const dur = 3 + Math.random() * 2;
+        el.animate([
+          { transform: 'translate(0,0) scale(1.6)', opacity: 1 },
+          { transform: `translate(${Math.cos(angle)*dist}px, ${Math.sin(angle)*dist - 50}px) scale(1)`, opacity: 0.9, offset: 0.3 },
+          { transform: `translate(${Math.cos(angle)*dist*1.3}px, ${Math.sin(angle)*dist*1.3 + 220}px) scale(0.5)`, opacity: 0 }
+        ], { duration: dur * 1000, easing: 'cubic-bezier(0.2, 0, 0.9, 0.8)', fill: 'forwards' });
+        setTimeout(() => el.remove(), dur * 1000 + 300);
+      }
+    ];
+
     for (let i = 0; i < cantidad; i++) {
       setTimeout(() => {
         const el = document.createElement('div');
         el.className = 'obj-emoji-fall';
         el.textContent = char;
-        el.style.left = (4 + Math.random() * 88) + 'vw';
-        el.style.animationDuration = (3.5 + Math.random() * 2.5) + 's';
-        el.style.fontSize = (24 + Math.random() * 22) + 'px';
+        el.style.position = 'fixed';
+        el.style.zIndex = '9990';
+        el.style.pointerEvents = 'none';
+        el.style.userSelect = 'none';
+        el.style.lineHeight = '1';
+        el.style.willChange = 'transform, opacity';
+
+        const left = 4 + Math.random() * 88;
+        const size = 22 + Math.random() * 26;
+
+        // 🥀 siempre usa espiral; otros alternan efecto según índice
+        const efectoIdx = (char === '🥀')
+          ? (Math.random() < 0.6 ? 1 : 0)   // espiral o swing
+          : (i % EFFECTS.length);
+
         document.body.appendChild(el);
-        el.addEventListener('animationend', () => el.remove(), { once: true });
-      }, i * (150 + Math.random() * 250));
+        EFFECTS[efectoIdx](el, left, size);
+
+      }, i * (130 + Math.random() * 220));
     }
   }
 
@@ -134,8 +207,9 @@ const Objetivos = (() => {
   function _checkNuevaVenta() {
     const unidades = _getUnidadesHoy();
     if (_lastUnidades >= 0 && unidades > _lastUnidades) {
-      const cantidad = 3 + Math.floor(Math.random() * 4); // 3–6 emojis
+      const cantidad = 3 + Math.floor(Math.random() * 4); 
       _lanzarEmojis(_emojiDeEstado(unidades), cantidad);
+      _renderPanel(); 
     }
     _lastUnidades = unidades;
   }
@@ -221,7 +295,7 @@ const Objetivos = (() => {
         <div style="display:flex;justify-content:space-between;font-size:10px;
                     color:var(--text3);margin-bottom:4px;font-weight:700;
                     text-transform:uppercase;letter-spacing:0.4px;">
-          <span>Progreso</span><span style="color:${colorProg};">${pctUnidades}%</span>
+          <span>Progreso (Se calcula en base a registros actuales + posteriores) de registros cerrados hoy</span><span style="color:${colorProg};">${pctUnidades}%</span>
         </div>
         <div class="bar-track" style="height:10px;position:relative;overflow:visible;">
           <div style="position:absolute;top:-4px;bottom:-4px;width:2px;
@@ -231,9 +305,9 @@ const Objetivos = (() => {
           <div class="bar-fill" style="width:${pctUnidades}%;background:${colorProg};
                       transition:width 0.6s ease,background 0.5s;"></div>
         </div>
-        <div style="font-size:10px;color:var(--text3);margin-top:3px;">
-          │ = ritmo · mañana ${_minToTime(_horario.mañana.inicio)}–${_minToTime(_horario.mañana.fin)}
-          · tarde ${_minToTime(_horario.tarde.inicio)}–${_minToTime(_horario.tarde.fin)}
+        <div style="font-size:12px;color:var(--text3);margin-top:3px;">
+          Jornada laboral = Mañana ${_minToTime(_horario.mañana.inicio)}–${_minToTime(_horario.mañana.fin)}
+          · Tarde ${_minToTime(_horario.tarde.inicio)}–${_minToTime(_horario.tarde.fin)}
         </div>
       </div>
 
