@@ -379,9 +379,14 @@ async function initApp() {
     await Promise.all([loadProductos(false), loadAgents(), loadVentas(), loadConfigVendidosEditables()]);
     buildAgentSelector();
   } else {
-    await Promise.all([loadProductos(false), loadVentas(), getVendidosEditables()]);
+    await Promise.all([loadProductos(false), loadVentas(), getVendidosEditables()]);    
+    const [{ data: dataU }, { data: dataD }] = await Promise.all([
+      db.from('config').select('valor').eq('clave', 'clientes_fieles_umbral').single(),
+      db.from('config').select('valor').eq('clave', 'clientes_fieles_descuento').single(),
+    ]);
+    if (dataU?.valor) _clientesFielesUmbral = parseInt(dataU.valor) || 5;
+    if (dataD?.valor) _clientesFielesDescuento = parseInt(dataD.valor) || 10;
   }
-
   _setupEventDelegationOnce();
 
   await Promise.all([
@@ -848,10 +853,7 @@ function renderDashboard() {
     dashboardCache.lastShowingAll = showingAll;
   }
 
-  const subtitle = isAdmin
-    ? (showingAll ? 'Vista general — todos los agentes' : `Filtrando: ${allAgents.find(a => a.id === selectedAgentId)?.nombre || ''}`)
-    : `Tu actividad — ${currentUser.nombre}`;
-  document.getElementById('dash-subtitle').textContent = subtitle;
+  
   document.getElementById('dash-periodo').textContent = describeFiltroTiempo();
   document.getElementById('dashboard-agent-row').style.display = isAdmin ? 'flex' : 'none';
 

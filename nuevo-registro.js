@@ -7,6 +7,11 @@ let _nrCelTimer = null;
 let _nrGeoInit = false;       
 let _nrGuiaProdId = null;     
 
+function _fechaHoy() {
+  const hoy = new Date();
+  return `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
+}
+
 function openVentaModal(id) {
   showNuevoRegistro(id);
 }
@@ -140,7 +145,7 @@ function _resetNuevoRegistro() {
 function _configurarModoCreacion() {
   document.getElementById('nr-page-title').textContent = 'Nuevo Registro';
   document.getElementById('nr-page-subtitle').textContent = 'Completa los datos del cliente';
-  document.getElementById('nr-fecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('nr-fecha').value = _fechaHoy();
 
   if (currentUser?.rol === 'admin' && allAgents.length > 0) {
     const primerAgente = allAgents.find(a => a.rol === 'agente');
@@ -180,7 +185,7 @@ async function _cargarVentaEnPagina(id) {
   // Campos básicos
   document.getElementById('nr-edit-venta-id').value  = id;
   document.getElementById('nr-cliente-id').value = v.cliente_id || '';
-  document.getElementById('nr-fecha').value = v.fecha || '';
+  document.getElementById('nr-fecha').value = _fechaHoy();
   document.getElementById('nr-celular').value = v.cliente?.celular || '';
   document.getElementById('nr-nombre').value = v.cliente?.nombre || '';
   document.getElementById('nr-ubicacion').value = v.cliente?.ubicacion || '';
@@ -601,9 +606,14 @@ function onNrCelularInput() {
 
       // Detectar cliente fiel y precargar descuento
       if (!ciclo) {
-        const totalUnidades = ventas
-          .filter(v => v.cliente_id === cd.id && v.estado === 'vendido')
-          .reduce((s, v) => s + (v.venta_items || []).reduce((ss, it) => ss + (it.cantidad || 1), 0), 0);
+        // Consultar historial acumulado del cliente (incluye todos los agentes)
+        const { data: histFiel } = await db
+          .from('clientes_historial')
+          .select('unidades')
+          .eq('cliente_id', cd.id);
+
+        const totalUnidades = (histFiel || []).reduce((s, h) => s + (h.unidades || 0), 0);
+
         if (totalUnidades >= _clientesFielesUmbral) {
           const descInput = document.getElementById('nr-descuento');
           if (descInput && (!descInput.value || descInput.value === '0')) {
@@ -871,6 +881,7 @@ async function saveNuevoRegistro() {
       monto_total:monto, descuento_pct:descPct, recordatorio:recordat||null, recordatorio_visto:false,
       estado:estadoFinal, intentos:['rellamada','sin_respuesta'].includes(estado)?intentos:1,
       archivado:debeArchivar, comprobante_url:url||(old?.comprobante_url||null),
+      updated_at: new Date().toISOString(),  
       cliente:{ ...(old?.cliente||{}), id:cId, celular, nombre:nombre||'s/n', ubicacion, direccion_residencial:direccion, producto_interes:prodNombre||null },
       agente: agenteObj,
       venta_items: toInsert.map((it,i)=>({ id:i, venta_id:savedId, producto_id:it.producto_id, cantidad:it.cantidad, subtotal:it.subtotal,

@@ -41,22 +41,28 @@ const Objetivos = (() => {
 
   // Ventas
   function _getUnidadesHoy() {
-    // Si la jornada ya terminó, mostrar 0 para el nuevo día
-    if (_jornadaTerminada()) return 0;
+    // Fecha actual en Bolivia (UTC-4)
+    const ahoraBolivia = new Date(Date.now() - 4 * 60 * 60 * 1000);
+    const hoy = ahoraBolivia.toISOString().slice(0, 10);
 
-    const hoy = new Date().toISOString().slice(0, 10);
     return ventas
       .filter(v => {
         if (v.estado !== 'vendido') return false;
+        
+        // Convertir updated_at a fecha Bolivia
         const fechaVenta = v.updated_at
-          ? v.updated_at.slice(0, 10)
+          ? new Date(new Date(v.updated_at).getTime() - 4 * 60 * 60 * 1000)
+              .toISOString().slice(0, 10)
           : v.fecha;
+        
         if (fechaVenta !== hoy) return false;
         if (currentUser.rol === 'agente') return v.agente_id === currentUser.id;
-        if (currentUser.rol === 'admin' && selectedAgentId !== 'all') return v.agente_id === selectedAgentId;
+        if (currentUser.rol === 'admin' && selectedAgentId !== 'all') 
+          return v.agente_id === selectedAgentId;
         return true;
       })
-      .reduce((s, v) => s + (v.venta_items || []).reduce((ss, it) => ss + (it.cantidad || 1), 0), 0);
+      .reduce((s, v) => s + (v.venta_items || [])
+        .reduce((ss, it) => ss + (it.cantidad || 1), 0), 0);
   }
 
   // Emoji según progreso
@@ -232,16 +238,24 @@ const Objetivos = (() => {
   }
 
   function _renderPanelRoscaAgentes(wrap) {
-    const hoy = new Date().toISOString().slice(0, 10);
+    // Fecha actual en Bolivia (UTC-4)
+    const ahoraBolivia = new Date(Date.now() - 4 * 60 * 60 * 1000);
+    const hoy = ahoraBolivia.toISOString().slice(0, 10);
 
-    // Calcular unidades vendidas hoy por cada agente
     const agStats = allAgents
       .filter(a => a.rol === 'agente')
       .map(ag => {
         const unidades = ventas
-          .filter(v => v.estado === 'vendido' && v.agente_id === ag.id &&
-            (v.updated_at ? v.updated_at.slice(0, 10) : v.fecha) === hoy)
-          .reduce((s, v) => s + (v.venta_items || []).reduce((ss, it) => ss + (it.cantidad || 1), 0), 0);
+          .filter(v => {
+            if (v.estado !== 'vendido' || v.agente_id !== ag.id) return false;
+            const fechaVenta = v.updated_at
+              ? new Date(new Date(v.updated_at).getTime() - 4 * 60 * 60 * 1000)
+                  .toISOString().slice(0, 10)
+              : v.fecha;
+            return fechaVenta === hoy;
+          })
+          .reduce((s, v) => s + (v.venta_items || [])
+            .reduce((ss, it) => ss + (it.cantidad || 1), 0), 0);
         return { nombre: ag.nombre, unidades };
       })
       .filter(a => a.unidades > 0);
@@ -494,7 +508,9 @@ const Objetivos = (() => {
     _programarProximo();
 
     _mainTimer = setInterval(() => {
-      if (_ahora() === _horario.tarde.fin) {
+      // Resetear contadores solo al inicio del nuevo día (medianoche)
+      const ahora = _ahora();
+      if (ahora === 0) {  // medianoche
         _lastUnidades = 0;
         _emojisCaidosHoy = 0;
       }
