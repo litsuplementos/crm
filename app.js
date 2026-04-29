@@ -276,15 +276,15 @@ function getFechaLimite(filtro) {
 function ventasEnFiltroTiempo(venta) {
   if (filtroTiempo === 'todos') return true;
 
+  const fechaVenta = venta.updated_at ? new Date(venta.updated_at) : new Date(venta.fecha + 'T00:00:00');
+
   if (filtroTiempo === 'mes' && window._filtroMesCustom) {
     const [year, month] = window._filtroMesCustom.split('-').map(Number);
-    const fechaVenta = new Date(venta.fecha + 'T00:00:00');
     return fechaVenta.getFullYear() === year && fechaVenta.getMonth() === month - 1;
   }
 
   const limite = getFechaLimite(filtroTiempo);
   if (!limite) return true;
-  const fechaVenta = new Date(venta.fecha + 'T00:00:00');
   return fechaVenta >= limite;
 }
 
