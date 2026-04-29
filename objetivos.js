@@ -423,7 +423,7 @@ const Objetivos = (() => {
         <div style="display:flex;justify-content:space-between;font-size:10px;
                     color:var(--text3);margin-bottom:4px;font-weight:700;
                     text-transform:uppercase;letter-spacing:0.4px;">
-          <span>Progreso (Se calcula en base a registros actuales + posteriores) de registros cerrados hoy</span><span style="color:${colorProg};">${pctUnidades}%</span>
+          <span>Progreso se calcula en base a registros cerrados hoy</span><span style="color:${colorProg};">${pctUnidades}%</span>
         </div>
         <div class="bar-track" style="height:10px;position:relative;overflow:visible;">
           <div style="position:absolute;top:-4px;bottom:-4px;width:2px;
