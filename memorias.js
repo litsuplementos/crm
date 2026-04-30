@@ -833,8 +833,8 @@ async function _generarPreviewMemoria() {
         agente:agente_id   ( nombre ),
         venta_items ( id, cantidad, subtotal, producto_id, productos ( nombre ) )
       `)
-      .gte('fecha', desdeStr)
-      .lt('fecha', hastaStr)
+      .gte('updated_at', desdeStr)
+      .lt('updated_at', hastaStr)
       .order('fecha', { ascending: true });
 
     // Si se seleccionó un agente específico, filtrar por él
@@ -1546,7 +1546,7 @@ async function _ejecutarLimpieza() {
 
   try {
     const { data: ventasDelMes, error: e1 } = await db.from('ventas')
-      .select('id').gte('fecha', desdeStr).lt('fecha', hastaStr);
+      .select('id').gte('updated_at', desdeStr).lt('updated_at', hastaStr);
     if (e1) throw e1;
     const ids = (ventasDelMes || []).map(v => v.id);
 
