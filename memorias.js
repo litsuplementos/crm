@@ -819,9 +819,10 @@ async function _generarPreviewMemoria() {
 
   try {
     const [year, month] = mes.split('-').map(Number);
-    const desdeStr = `${year}-${String(month).padStart(2,'0')}-01`;
-    const hasta    = new Date(year, month, 1);
-    const hastaStr = `${hasta.getFullYear()}-${String(hasta.getMonth()+1).padStart(2,'0')}-01`;
+    const desdeLocal = new Date(year, month - 1, 1, 0, 0, 0);
+    const hastaLocal = new Date(year, month, 1, 0, 0, 0);
+    const desdeStr = desdeLocal.toISOString();
+    const hastaStr = hastaLocal.toISOString();
 
     const agente = _getAgenteSeleccionado();
 
@@ -1538,8 +1539,8 @@ function _confirmarLimpieza() {
 
 async function _ejecutarLimpieza() {
   const [desde, hasta] = _getRangoMes(_memoriaMes);
-  const desdeStr = `${desde.getFullYear()}-${String(desde.getMonth()+1).padStart(2,'0')}-01`;
-  const hastaStr = `${hasta.getFullYear()}-${String(hasta.getMonth()+1).padStart(2,'0')}-01`;
+  const desdeStr = desde.toISOString(); // '2026-04-01T04:00:00.000Z' (UTC-4)
+  const hastaStr = hasta.toISOString();
 
   const btn = document.getElementById('mem-btn-limpiar');
   btn.textContent = '⏳ Limpiando...'; btn.disabled = true;
