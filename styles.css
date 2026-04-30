@@ -175,7 +175,7 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   position: sticky; top: 0; z-index: 100;
 }
-.topbar-left { display: flex; align-items: center; gap: 10px; }
+.topbar-left { display: flex; align-items: center; gap: 10px; margin-right: auto; }
 .topbar-logo { font-family: 'Syne', 'Noto Color Emoji', sans-serif; font-weight: 800; font-size: 19px; letter-spacing: -0.5px; }
 .topbar-logo span { color: var(--topbar-logo-color); }
 .topbar-badge {
@@ -269,7 +269,7 @@ body {
 /* SECTION HEADER */
 .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .section-title { font-family: 'Syne', 'Noto Color Emoji', sans-serif; font-weight: 700; font-size: 22px; }
-.section-sub { color: var(--text2); font-size: 14px; margin-top: 2px; }
+.section-sub { color: var(--text2); font-size: 14px; }
 
 /* BUTTON */
 button {
@@ -596,17 +596,6 @@ td.td-actions { white-space: nowrap; }
 @media (max-width: 480px) {
   .topbar-logo { font-size: 16px; }
   #theme-toggle { padding: 4px 9px; font-size: 11px; }
-}
-
-/* ── RANIMACIONES LEADS ── */
-@keyframes leadSlideIn {
-  from { opacity:0; transform:translateY(-6px); }
-  to { opacity:1; transform:translateY(0); }
-}
-
-@keyframes leadsPulse {
-  0%, 100% { transform:scale(1); opacity:1; }
-  50% { transform:scale(1.15); opacity:0.85; }
 }
 
 /* BOTÓN AÑADIR ITEM */

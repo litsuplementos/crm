@@ -6,6 +6,7 @@ const Objetivos = (() => {
   let _emojiTimer = null;  
   let _initialized = false;
   let _emojisActivos = true;
+  let _umbralComision = 150;
   let _lastUnidades = -1;
   let _emojisCaidosHoy = 0;
 
@@ -323,7 +324,7 @@ const Objetivos = (() => {
             ${paths}
             <circle cx="${cx}" cy="${cy}" r="${r - 4}" fill="var(--surface)"/>
             <text x="${cx}" y="${cy - 10}" text-anchor="middle"
-              style="font-size:11px;fill:var(--text3);font-family:'DM Sans',sans-serif;font-weight:600;">
+              style="font-size:12px;fill:var(--text3);font-family:'DM Sans',sans-serif;font-weight:600;">
               Hoy
             </text>
             <text x="${cx}" y="${cy + 8}" text-anchor="middle"
@@ -331,11 +332,11 @@ const Objetivos = (() => {
               ${totalUnidades}
             </text>
             <text x="${cx}" y="${cy + 24}" text-anchor="middle"
-              style="font-size:10px;fill:var(--text3);font-family:'DM Sans',sans-serif;">
+              style="font-size:12px;fill:var(--text3);font-family:'DM Sans',sans-serif;">
               unidades
             </text>
             <text x="${cx}" y="${cy + 38}" text-anchor="middle"
-              style="font-size:10px;fill:var(--text3);font-family:'DM Sans',sans-serif;">
+              style="font-size:12px;fill:var(--text3);font-family:'DM Sans',sans-serif;">
               meta: ${_meta} c/u
             </text>
           </svg>
@@ -343,7 +344,7 @@ const Objetivos = (() => {
         <div style="flex:1;min-width:120px;">
           ${leyenda}
           <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);
-                      font-size:11px;color:var(--text3);">
+                      font-size:12px;color:var(--text3);">
             Meta individual: <b style="color:var(--text);">${_meta} unidades/día</b>
           </div>
         </div>
@@ -354,7 +355,7 @@ const Objetivos = (() => {
     const wrap = document.getElementById('obj-panel-derecho');
     if (!wrap) return;
 
-    // ── ADMIN viendo TODOS los agentes → rosca por agente ──
+    // ADMIN viendo TODOS los agentes → rosca por agente
     if (currentUser?.rol === 'admin' && selectedAgentId === 'all') {
       _renderPanelRoscaAgentes(wrap);
       return;
@@ -372,12 +373,38 @@ const Objetivos = (() => {
     const pctUnidades = Math.round(pct * 100);
     const emojiActual = _emojiDeEstado(unidades);
 
+    // ── Comisión: sólo activa si el agente superó el umbral acumulado del mes ──
+    // Para calcular las unidades del mes completo (no solo hoy), usamos ventas en memoria
+    const ahoraBolivia = new Date(Date.now() - 4 * 60 * 60 * 1000);
+    const mesActual = ahoraBolivia.toISOString().slice(0, 7); // 'YYYY-MM'
+
+    const unidadesMes = ventas
+      .filter(v => {
+        if (v.estado !== 'vendido') return false;
+        const fechaVenta = v.updated_at
+          ? new Date(new Date(v.updated_at).getTime() - 4 * 60 * 60 * 1000)
+              .toISOString().slice(0, 7)
+          : (v.fecha || '').slice(0, 7);
+        if (fechaVenta !== mesActual) return false;
+        if (currentUser.rol === 'agente') return v.agente_id === currentUser.id;
+        if (currentUser.rol === 'admin' && selectedAgentId !== 'all')
+          return v.agente_id === selectedAgentId;
+        return true;
+      })
+      .reduce((s, v) => s + (v.venta_items || [])
+        .reduce((ss, it) => ss + (it.cantidad || 1), 0), 0);
+
+    const comisionActiva = unidadesMes > _umbralComision;
+    const unidadesConComision = comisionActiva ? unidadesMes - _umbralComision : 0;
+    const faltanParaComision = Math.max(0, _umbralComision - unidadesMes);
+
+    // ── Estado de jornada ──
     let estadoHTML = '';
     if (_antesDeJornada()) {
       estadoHTML = `<div class="obj-estado" style="background:var(--blue-bg);border-color:var(--blue);color:var(--blue);">
         🌅 Jornada inicia a las ${_minToTime(_horario.mañana.inicio)}</div>`;
     } else if (unidades >= _meta) {
-      estadoHTML = `<div class="obj-estado obj-estado-ok">🎉 ¡Objetivo cumplido! +3% por unidad activo</div>`;
+      estadoHTML = `<div class="obj-estado obj-estado-ok">🎉 ¡Objetivo del día cumplido!</div>`;
     } else if (_enPausa()) {
       estadoHTML = `<div class="obj-estado" style="background:var(--yellow-bg);border-color:var(--yellow);color:var(--yellow);">
         ☕ Pausa — regresa a las ${_minToTime(_horario.tarde.inicio)}</div>`;
@@ -392,13 +419,40 @@ const Objetivos = (() => {
         ✅ ${superavit > 0 ? `+${superavit} sobre el ritmo` : '¡En ritmo perfecto!'}</div>`;
     }
 
-    const recuadros = Array.from({ length: _meta }, (_, i) => {
-      const ok = unidades > i;
-      return `<div class="obj-comision-box ${ok ? 'obj-comision-box-ok' : ''}">
-        <div class="obj-comision-box-pct">+3%</div>
-        <div class="obj-comision-box-num">${ok ? '✓' : i + 1}</div>
-      </div>`;
-    }).join('');
+    // ── Bloque de comisión ──
+    const comisionHTML = comisionActiva
+      ? `<div style="background:var(--green-bg);border:1.5px solid var(--green);border-radius:10px;padding:12px 16px;margin-bottom:10px;">
+          <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">
+            💰 Comisión del 3% ACTIVA
+          </div>
+          <div style="display:flex;align-items:baseline;gap:6px;">
+            <span style="font-size:28px;font-weight:800;color:var(--green);">${unidadesConComision}</span>
+            <span style="font-size:13px;color:var(--green);">unidades con +3%</span>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">
+            Umbral superado: ${unidadesMes} / ${_umbralComision} unidades este mes
+          </div>
+        </div>`
+      : `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:10px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">
+            💰 Comisión del 3% (Se reinicia cada mes)
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="flex:1;">
+              <div class="bar-track" style="height:8px;">
+                <div class="bar-fill" style="width:${Math.min(100, Math.round(unidadesMes / _umbralComision * 100))}%;background:var(--accent);transition:width 0.5s ease;"></div>
+              </div>
+            </div>
+            <span style="font-size:12px;color:var(--text2);white-space:nowrap;font-weight:600;">
+              ${unidadesMes} / ${_umbralComision}
+            </span>
+          </div>
+          <div style="font-size:12px;color:var(--text3);margin-top:5px;">
+            ${faltanParaComision === 0 
+              ? '¡La próxima unidad vendida ya genera comisión del +3%!'
+              : `Faltan <b style="color:var(--text);">${faltanParaComision}</b> unidades para activar la comisión de +3%`}
+          </div>
+        </div>`;
 
     wrap.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
@@ -423,7 +477,7 @@ const Objetivos = (() => {
         <div style="display:flex;justify-content:space-between;font-size:10px;
                     color:var(--text3);margin-bottom:4px;font-weight:700;
                     text-transform:uppercase;letter-spacing:0.4px;">
-          <span>Progreso se calcula en base a registros cerrados hoy</span><span style="color:${colorProg};">${pctUnidades}%</span>
+          <span>Progreso hoy</span><span style="color:${colorProg};">${pctUnidades}%</span>
         </div>
         <div class="bar-track" style="height:10px;position:relative;overflow:visible;">
           <div style="position:absolute;top:-4px;bottom:-4px;width:2px;
@@ -434,25 +488,19 @@ const Objetivos = (() => {
                       transition:width 0.6s ease,background 0.5s;"></div>
         </div>
         <div style="font-size:12px;color:var(--text3);margin-top:3px;">
-          Jornada laboral = Mañana ${_minToTime(_horario.mañana.inicio)}–${_minToTime(_horario.mañana.fin)}
-          · Tarde ${_minToTime(_horario.tarde.inicio)}–${_minToTime(_horario.tarde.fin)}
+          Jornada = ${_minToTime(_horario.mañana.inicio)}–${_minToTime(_horario.mañana.fin)}
+          · ${_minToTime(_horario.tarde.inicio)}–${_minToTime(_horario.tarde.fin)}
         </div>
       </div>
 
       ${estadoHTML}
 
-      <div style="margin-bottom:10px;">
-        <div style="font-size:10px;font-weight:700;color:var(--text3);
-                    text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">
-          💰 +3% comisión por unidad vendida
-        </div>
-        <div class="obj-comision-grid">${recuadros}</div>
-      </div>
+      ${comisionHTML}
 
       <div style="padding-top:8px;border-top:1px solid var(--border);
                   font-size:11px;color:var(--text3);line-height:1.9;">
         ${!_jornadaTerminada() && !_antesDeJornada() && !_enPausa()
-          ? `<div>⏱ Quedan <b style="color:var(--text);">${minRest} min</b> efectivos para terminar la jornada laboral</div>`
+          ? `<div>⏱ Quedan <b style="color:var(--text);">${minRest} min</b> efectivos en la jornada</div>`
           : ''}
       </div>
     `;
@@ -470,15 +518,18 @@ const Objetivos = (() => {
       const [
         { data: dataMeta },
         { data: dataEmojis },
-        { data: dataHorario }
+        { data: dataHorario },
+        { data: dataUmbral }
       ] = await Promise.all([
         db.from('config').select('valor').eq('clave', 'objetivo_unidades_dia').single(),
         db.from('config').select('valor').eq('clave', 'objetivo_emojis_activos').single(),
         db.from('horario_laboral').select('*'),
+        db.from('config').select('valor').eq('clave', 'umbral_comision').single(),
       ]);
 
       if (dataMeta?.valor) _meta = parseInt(dataMeta.valor) || 5;
       if (dataEmojis?.valor) _emojisActivos = dataEmojis.valor !== 'false';
+      if (dataUmbral?.valor) _umbralComision = parseInt(dataUmbral.valor) || 150;
 
       if (dataHorario?.length) {
         dataHorario.forEach(row => {
@@ -584,6 +635,14 @@ const Objetivos = (() => {
     getMeta, setMeta,
     getEmojisActivos, setEmojisActivos,
     getHorario, setHorario, afterHorarioSaved,
+    getUmbralComision: () => _umbralComision,
+    setUmbralComision: async (val) => {
+      _umbralComision = parseInt(val) || 150;
+      try {
+        await db.from('config').update({ valor: String(_umbralComision) }).eq('clave', 'umbral_comision');
+      } catch(e) { console.warn('setUmbralComision error:', e); }
+      _renderPanel();
+    },
   };
 })();
 
@@ -630,4 +689,10 @@ async function saveConfigHorario() {
   await Objetivos.setHorario('tarde', tIn, tFin);
   Objetivos.afterHorarioSaved();
   toast('✅ Horario laboral guardado', 'success');
+}
+
+async function saveConfigUmbralComision() {
+  const val = parseInt(document.getElementById('config-umbral-comision').value) || 150;
+  await Objetivos.setUmbralComision(val);
+  toast(`✅ Umbral de comisión: ${val} unidades/mes`, 'success');
 }

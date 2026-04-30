@@ -894,7 +894,6 @@ async function saveNuevoRegistro() {
     dashboardCache.invalidate();
     filteredCache.invalidate();
     _cityFilterDirty = true;
-    await onVentaGuardadaDesdeLeads();
 
     cerrarNuevoRegistro();
     renderVentas();
@@ -913,9 +912,9 @@ function nrDeleteVenta() {
   const celular = v?.cliente?.celular || '';
   const nombre  = v?.cliente?.nombre  || 's/n';
 
-  document.getElementById('delete-modal-nombre').textContent  = nombre;
+  document.getElementById('delete-modal-nombre').textContent = nombre;
   document.getElementById('delete-modal-celular').textContent = celular;
-  document.getElementById('delete-confirm-input').value       = '';
+  document.getElementById('delete-confirm-input').value = '';
   document.getElementById('delete-confirm-input').style.borderColor = '';
   document.getElementById('delete-modal-error').style.display = 'none';
   document.getElementById('delete-modal').classList.add('open');

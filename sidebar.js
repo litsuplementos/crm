@@ -27,7 +27,6 @@
 
   const NAV_ITEMS = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard',   view: 'dashboard',  always: true },
-    { id: 'leads', icon: '🎯', label: 'Leads', view: 'leads', tabId: 'tab-leads' },
     { id: 'ventas', icon: '📋', label: 'Registros', view: 'ventas', always: true },
     { id: 'clientes', icon: '👥', label: 'Clientes', view: 'clientes', always: true },
     { id: 'productos', icon: '📦', label: 'Productos',    view: 'productos',  tabId: 'tab-productos' },

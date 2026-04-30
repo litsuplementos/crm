@@ -692,15 +692,14 @@ function _renderMemoriasUI() {
 
     <!-- SECCIÓN 3: LIMPIAR -->
     <div class="config-card" id="memoria-seccion-limpiar" style="border-color:rgba(239,68,68,0.3);">
-      <div class="config-card-title" style="color:var(--red);">🗑️ Limpiar registros del mes</div>
+      <div class="config-card-title" style="color:var(--red);">🗑️ Limpiar registros del mes (Opcional)</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.7;">
         Elimina permanentemente los registros de <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">ventas</code>,
-        <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">venta_items</code> y
-        <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">leads</code> del mes seleccionado.<br>
+        <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">venta_items</code> del mes seleccionado.<br>
         <b style="color:var(--text);">La tabla de clientes nunca se toca.</b>
       </div>
       <div id="mem-limpiar-info" style="background:var(--red-bg);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:var(--text2);">
-        Primero previsualiza un mes para habilitar la limpieza.
+        Primero realiza una copia de seguridad del mes a eliminar para habilitar la limpieza.
       </div>
       <button class="btn-save" id="mem-btn-limpiar" disabled
         style="background:var(--red);opacity:0.5;cursor:not-allowed;"
@@ -907,7 +906,7 @@ async function _generarPreviewMemoria() {
       <b style="color:var(--red);">Se eliminarán ${ventasUnicasTotal} registros de ventas</b> del mes completo
       ${agente ? `(agente: <b>${agente.nombre}</b>)` : '(todos los agentes)'}
       (<b>${d1.toLocaleDateString('es-BO')}</b> al <b>${new Date(d2.getTime()-1).toLocaleDateString('es-BO')}</b>).
-      También se limpiarán sus items y los leads del mismo período.
+      También se limpiarán sus items del mismo período.
     `;
     const btnL = document.getElementById('mem-btn-limpiar');
     btnL.disabled = false; btnL.style.opacity = ''; btnL.style.cursor = '';
@@ -1498,8 +1497,8 @@ async function _descargarRespaldoStorage(path, nombre) {
   try {
     const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
     if (error) throw error;
-    const a    = document.createElement('a');
-    a.href     = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(data);
     a.download = nombre || path.split('/').pop();
     a.click();
     toast('💾 Descargado', 'success');
@@ -1521,7 +1520,7 @@ function _confirmarLimpieza() {
   const label = d1.toLocaleDateString('es-BO', { month:'long', year:'numeric' }).replace(/^\w/,c=>c.toUpperCase());
   document.getElementById('mem-confirm-detalle').innerHTML = `
     Estás por eliminar <b style="color:var(--red);">permanentemente</b> todos los registros de ventas,
-    items y leads creados en <b>${label}</b>
+    e items creados en <b>${label}</b>
     (del ${d1.toLocaleDateString('es-BO')} al ${new Date(d2.getTime()-1).toLocaleDateString('es-BO')}).<br><br>
     <b style="color:var(--text);">La tabla de clientes NO se toca.</b><br>
     Esta acción no se puede deshacer.
@@ -1558,10 +1557,6 @@ async function _ejecutarLimpieza() {
       if (e3) throw e3;
     }
 
-    const { error: e4 } = await db.from('leads')
-      .delete().gte('created_at', desde.toISOString()).lt('created_at', hasta.toISOString());
-    if (e4) throw e4;
-
     toast(`✅ Limpieza completada — ${ids.length} registros eliminados`, 'success');
 
     _memoriaData = []; _memoriaMes = '';
@@ -1571,7 +1566,6 @@ async function _ejecutarLimpieza() {
     btn.textContent = '🗑️ Limpiar mes';
 
     if (typeof loadVentas === 'function') { await loadVentas(); renderDashboard(); renderVentas(); }
-    if (typeof _cargarLeadsPendientes === 'function') await _cargarLeadsPendientes();
 
   } catch(e) {
     toast('❌ Error en limpieza: ' + e.message, 'error');

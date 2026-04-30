@@ -387,6 +387,7 @@ async function initApp() {
     if (dataU?.valor) _clientesFielesUmbral = parseInt(dataU.valor) || 5;
     if (dataD?.valor) _clientesFielesDescuento = parseInt(dataD.valor) || 10;
   }
+  await _loadUserConfig();
   _setupEventDelegationOnce();
 
   await Promise.all([
@@ -401,7 +402,6 @@ async function initApp() {
   setArchivoFiltro(false);
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
   iniciarChequeoRecordatorios();
-  _cargarLeadsPendientes();
   await Objetivos.init();
 }
 
@@ -423,9 +423,59 @@ function _setupEventDelegationOnce() {
 function onFiltroMesChange(valor) {
   window._filtroMesCustom = valor;
   dashboardCache.invalidate();
-  filteredCache.invalidate(); 
+  filteredCache.invalidate();
+  _saveUserConfig('filtro_mes_custom', valor); 
   renderDashboard();
   renderVentas();
+}
+
+async function _saveUserConfig(clave, valor) {
+  if (!currentUser?.id) return;
+  try {
+    await db.from('user_config')
+      .upsert({ usuario_id: currentUser.id, clave, valor }, { onConflict: 'usuario_id,clave' });
+  } catch(e) {
+    console.warn('Error guardando user_config:', e.message);
+  }
+}
+
+async function _loadUserConfig() {
+  if (!currentUser?.id) return;
+  try {
+    const { data, error } = await db.from('user_config')
+      .select('clave, valor')
+      .eq('usuario_id', currentUser.id);
+    if (error || !data) return;
+
+    for (const row of data) {
+      if (row.clave === 'filtro_tiempo') {
+        filtroTiempo = row.valor;
+        ['filtro-tiempo-global', 'filtro-tiempo-ventas', 'filtro-tiempo-dash'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.value = filtroTiempo;
+        });
+        if (filtroTiempo === 'mes') {
+          const mesLabel = document.getElementById('mes-actual-label');
+          const mesSel = document.getElementById('filtro-mes-especifico');
+          const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                         'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+          if (mesLabel) { mesLabel.textContent = meses[new Date().getMonth()]; mesLabel.style.display = ''; }
+          if (mesSel) { _buildFiltroMesSelector(); mesSel.style.display = ''; }
+        }
+      }
+      if (row.clave === 'filtro_mes_custom') {
+        const hoy = new Date();
+        const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+        if (filtroTiempo === 'mes' && row.valor === mesActual) {
+          window._filtroMesCustom = row.valor;
+        }
+      }
+    }
+    dashboardCache.invalidate();
+    filteredCache.invalidate();
+  } catch(e) {
+    console.warn('Error cargando user_config:', e.message);
+  }
 }
 
 function _buildFiltroMesSelector() {
@@ -741,14 +791,8 @@ async function onFiltroTiempoChange(valor) {
     const hoy = new Date();
     const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-    if (mesLabel) {
-      mesLabel.textContent = meses[hoy.getMonth()];
-      mesLabel.style.display = '';
-    }
-    if (mesSel) {
-      _buildFiltroMesSelector();
-      mesSel.style.display = '';
-    }
+    if (mesLabel) { mesLabel.textContent = meses[hoy.getMonth()]; mesLabel.style.display = ''; }
+    if (mesSel) { _buildFiltroMesSelector(); mesSel.style.display = ''; }
   } else {
     if (mesLabel) mesLabel.style.display = 'none';
     if (mesSel) mesSel.style.display = 'none';
@@ -756,17 +800,17 @@ async function onFiltroTiempoChange(valor) {
   }
 
   dashboardCache.invalidate();
-  filteredCache.invalidate(); // FIX #6
-  ['filtro-tiempo-global', 'filtro-tiempo-ventas', 'filtro-tiempo-dash', 'filtro-tiempo-leads'].forEach(id => {
+  filteredCache.invalidate();
+  ['filtro-tiempo-global', 'filtro-tiempo-ventas', 'filtro-tiempo-dash'].forEach(id => {
     const el = document.getElementById(id);
     if (el && el.value !== valor) el.value = valor;
   });
-  if (currentUser?.rol === 'admin') {
-    await db.from('config').update({ valor }).eq('clave', 'filtro_tiempo_default');
-  }
+
+  // Guardar preferencia del usuario actual (todos los roles)
+  await _saveUserConfig('filtro_tiempo', valor);
+
   renderDashboard();
   renderVentas();
-  _renderLeads();
 }
 
 let _syncing = false;
@@ -776,7 +820,7 @@ async function syncData() {
   const btn = document.getElementById('sync-btn');
   btn.classList.add('syncing');
   try {
-    await Promise.all([loadProductos(false), loadVentas(), cargarLeads()]);
+    await Promise.all([loadProductos(false), loadVentas()]);
     _roscaAnualCache = null;    
     _clientesFielesCache = null; 
     renderDashboard();
@@ -805,7 +849,6 @@ function showView(name) {
   if (name === 'ventas') renderVentas();
   if (name === 'clientes') ClientesView.load();
   if (name === 'dashboard') renderDashboard();
-  if (name === 'leads') renderLeads();
   if (name === 'usuarios') renderUsers();
   if (name === 'memorias') renderMemorias();
   if (name === 'productos') renderProductos();
@@ -1605,8 +1648,6 @@ function renderStatModal() {
 
 async function loadConfigVendidosEditables() {
   try {
-    // ANTES: dos awaits en cadena
-    // AHORA: ambos en paralelo
     const [{ data: dataVendidos, error }, { data: dataFiltro }] = await Promise.all([
       db.from('config').select('valor').eq('clave', 'vendidos_editables').single(),
       db.from('config').select('valor').eq('clave', 'filtro_tiempo_default').single(),
@@ -1621,34 +1662,15 @@ async function loadConfigVendidosEditables() {
     if (cb) cb.checked = val;
     if (span) span.style.background = val ? 'var(--green)' : 'var(--border)';
 
-    if (dataFiltro?.valor) {
-      filtroTiempo = dataFiltro.valor;
-      ['filtro-tiempo-global', 'filtro-tiempo-ventas', 'filtro-tiempo-dash', 'filtro-tiempo-leads'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = filtroTiempo;
-      });
-      if (filtroTiempo === 'mes') {
-        const mesLabel = document.getElementById('mes-actual-label');
-        const mesSel = document.getElementById('filtro-mes-especifico');
-        if (mesLabel) {
-          const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-                         'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-          mesLabel.textContent = meses[new Date().getMonth()];
-          mesLabel.style.display = '';
-        }
-        if (mesSel) { _buildFiltroMesSelector(); mesSel.style.display = ''; }
-      }
-      dashboardCache.invalidate();
-      filteredCache.invalidate();
-    }
-
-    const [{ data: dataUmbral }, { data: dataDesc }] = await Promise.all([
+    const [{ data: dataUmbral }, { data: dataDesc }, { data: dataUmbralCom }] = await Promise.all([
       db.from('config').select('valor').eq('clave', 'clientes_fieles_umbral').single(),
       db.from('config').select('valor').eq('clave', 'clientes_fieles_descuento').single(),
+      db.from('config').select('valor').eq('clave', 'umbral_comision').single(),
     ]);
     if (dataUmbral?.valor) _clientesFielesUmbral = parseInt(dataUmbral.valor) || 5;
     if (dataDesc?.valor) _clientesFielesDescuento = parseInt(dataDesc.valor) || 10;
-
+    const inpUmbralCom = document.getElementById('config-umbral-comision');
+    if (inpUmbralCom && dataUmbralCom?.valor) inpUmbralCom.value = dataUmbralCom.valor;
     const inpUmbral = document.getElementById('config-clientes-umbral');
     const inpDesc = document.getElementById('config-clientes-descuento');
     if (inpUmbral) inpUmbral.value = _clientesFielesUmbral;
