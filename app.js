@@ -231,22 +231,22 @@ function describeFiltroTiempo() {
 
   if (filtroTiempo === 'todos') return 'Todos los registros';
   if (filtroTiempo === 'dia') {
-    return `Hoy — ${hoy.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`;
+    return `Hoy: ${hoy.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`;
   }
   if (filtroTiempo === 'semana') {
     const diaSemana = hoy.getDay();
     const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
     const lunes = new Date(hoy); lunes.setDate(hoy.getDate() + diffLunes);
     const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 6);
-    return `Esta semana — del ${lunes.toLocaleDateString('es-BO', opts)} al ${domingo.toLocaleDateString('es-BO', opts)}`;
+    return `Esta semana: del ${lunes.toLocaleDateString('es-BO', opts)} al ${domingo.toLocaleDateString('es-BO', opts)}`;
   }
   if (filtroTiempo === 'mes') {
     const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
-    return `Este mes — del ${primerDia.toLocaleDateString('es-BO', opts)} al ${ultimoDia.toLocaleDateString('es-BO', opts)}`;
+    return `Este mes: del ${primerDia.toLocaleDateString('es-BO', opts)} al ${ultimoDia.toLocaleDateString('es-BO', opts)}`;
   }
   if (filtroTiempo === 'año') {
-    return `Este año — del 1 de enero al 31 de diciembre de ${hoy.getFullYear()}`;
+    return `Este año: del 1 de enero al 31 de diciembre de ${hoy.getFullYear()}`;
   }
   return '';
 }
