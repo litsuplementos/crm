@@ -241,8 +241,16 @@ function describeFiltroTiempo() {
     return `Esta semana: del ${lunes.toLocaleDateString('es-BO', opts)} al ${domingo.toLocaleDateString('es-BO', opts)}`;
   }
   if (filtroTiempo === 'mes') {
-    const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+    // Usar el mes custom si está seleccionado, si no el mes actual
+    let year = hoy.getFullYear();
+    let month = hoy.getMonth(); // 0-indexed
+    if (window._filtroMesCustom) {
+      const [y, m] = window._filtroMesCustom.split('-').map(Number);
+      year = y;
+      month = m - 1; // convertir a 0-indexed
+    }
+    const primerDia = new Date(year, month, 1);
+    const ultimoDia = new Date(year, month + 1, 0);
     return `Este mes: del ${primerDia.toLocaleDateString('es-BO', opts)} al ${ultimoDia.toLocaleDateString('es-BO', opts)}`;
   }
   if (filtroTiempo === 'año') {
@@ -1996,48 +2004,50 @@ async function saveConfigClientesFieles() {
 
 async function _getClientesFieles() {
   if (_clientesFielesCache) return _clientesFielesCache;
-
+ 
+  // Traer todas las ventas vendidas con sus items y cliente
   const { data, error } = await db
-    .from('clientes_historial')
+    .from('ventas')
     .select(`
       cliente_id,
-      mes,
-      unidades,
       monto_total,
-      ventas_count,
-      cliente:cliente_id ( nombre, celular )
+      cliente:cliente_id ( nombre, celular ),
+      venta_items ( cantidad, subtotal )
     `)
-    .order('mes', { ascending: false });
-
+    .eq('estado', 'vendido');
+ 
   if (error || !data) {
     _clientesFielesCache = { top: [], resto: [] };
     return _clientesFielesCache;
   }
-
-  // Agrupar por cliente sumando todos sus meses
+ 
+  // Agrupar por cliente
   const mapa = {};
-  for (const row of data) {
-    const cid = row.cliente_id;
+  for (const v of data) {
+    const cid = v.cliente_id;
     if (!mapa[cid]) {
       mapa[cid] = {
         id: cid,
-        nombre: row.cliente?.nombre  || 's/n',
-        celular: row.cliente?.celular || '',
+        nombre: v.cliente?.nombre || 's/n',
+        celular: v.cliente?.celular || '',
         unidades: 0,
         monto_total: 0,
         ventas_count: 0,
       };
     }
-    mapa[cid].unidades += row.unidades || 0;
-    mapa[cid].monto_total += parseFloat(row.monto_total || 0);
-    mapa[cid].ventas_count += row.ventas_count || 0;
+    // Sumar unidades de los items de esta venta
+    for (const it of (v.venta_items || [])) {
+      mapa[cid].unidades += it.cantidad || 1;
+    }
+    mapa[cid].monto_total += parseFloat(v.monto_total || 0);
+    mapa[cid].ventas_count += 1;
   }
-
+ 
   const lista = Object.values(mapa).sort((a, b) => b.unidades - a.unidades);
   const top = lista.slice(0, 5);
   const topIds = new Set(top.map(c => c.id));
   const resto = lista.filter(c => !topIds.has(c.id)).slice(0, 20);
-
+ 
   _clientesFielesCache = { top, resto };
   return _clientesFielesCache;
 }
@@ -2047,21 +2057,21 @@ async function renderClientesFieles() {
   if (_renderingClientesFieles) return;
   _renderingClientesFieles = true;
   const wrap = document.getElementById('dash-clientes-fieles');
-  if (!wrap) return;
+  if (!wrap) { _renderingClientesFieles = false; return; }
   wrap.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px;">Cargando...</div>';
   try {
     const { top, resto } = await _getClientesFieles();
-
+ 
     if (!top.length && !resto.length) {
       wrap.innerHTML = `<div style="color:var(--text3);font-size:13px;padding:8px;">
-        Sin clientes fieles aún (umbral: ${_clientesFielesUmbral} unidades)
+        Sin clientes con ventas aún
       </div>`;
       return;
     }
-
+ 
     const maxU = (top[0] || resto[0])?.unidades || 1;
     const medallas = ['🥇','🥈','🥉','4️⃣','5️⃣'];
-
+ 
     const topHTML = top.length
       ? top.map((c, i) => `
           <div style="margin-bottom:14px;">
@@ -2085,9 +2095,9 @@ async function renderClientesFieles() {
             </div>
           </div>`).join('')
       : `<div style="color:var(--text3);font-size:13px;padding:8px 0;">
-          Sin clientes con ${_clientesFielesUmbral}+ unidades aún
+          Sin clientes con ventas aún
         </div>`;
-
+ 
     const restoHTML = resto.length
       ? resto.map(c => `
           <div style="display:flex;justify-content:space-between;align-items:center;
@@ -2101,9 +2111,9 @@ async function renderClientesFieles() {
             </span>
           </div>`).join('')
       : `<div style="font-size:12px;color:var(--text3);padding:8px 0;">
-          Sin otros clientes 1 unidad o más
+          Sin otros clientes
         </div>`;
-
+ 
     wrap.innerHTML = `
       <div style="display:grid;grid-template-columns:55% 40%;gap:5%;">
         <div>${topHTML}</div>
@@ -2117,40 +2127,65 @@ async function renderClientesFieles() {
           </div>
         </div>
       </div>`;
+  } catch(e) {
+    console.error('renderClientesFieles error:', e);
+    const wrap = document.getElementById('dash-clientes-fieles');
+    if (wrap) wrap.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px;">Error cargando datos</div>';
   } finally {
-    _renderingClientesFieles = false;  // siempre se libera
+    _renderingClientesFieles = false;
   }
 }
 
 // Rosca / donut anual
 let _roscaAnualCache = null;
-
+ 
 async function _getRoscaAnual() {
   if (_roscaAnualCache) return _roscaAnualCache;
+
   const year = new Date().getFullYear();
-  const desde = `${year}-01`;
-  const hasta = `${year}-12`;
 
   const { data, error } = await db
-    .from('clientes_historial')
-    .select('mes, unidades, monto_total')
-    .gte('mes', desde)
-    .lte('mes', hasta);
+    .from('ventas')
+    .select(`
+      updated_at,
+      monto_total,
+      venta_items ( cantidad, subtotal )
+    `)
+    .eq('estado', 'vendido')
+    .gte('updated_at', `${year}-01-01T00:00:00.000Z`)
+    .lte('updated_at', `${year}-12-31T23:59:59.999Z`);
 
-  if (error || !data) { _roscaAnualCache = []; return []; }
+  if (error || !data) {
+    _roscaAnualCache = [];
+    return [];
+  }
 
-  const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const meses = ['Ene','Feb','Mar','Abr','May','Jun',
+                  'Jul','Ago','Sep','Oct','Nov','Dic'];
+
   const mapa = {};
   for (let i = 1; i <= 12; i++) {
     const key = `${year}-${String(i).padStart(2,'0')}`;
-    mapa[key] = { mes: meses[i-1], unidades: 0, monto: 0 };
+    mapa[key] = { mes: meses[i - 1], unidades: 0, monto: 0 };
   }
-  for (const row of data) {
-    if (mapa[row.mes]) {
-      mapa[row.mes].unidades += row.unidades || 0;
-      mapa[row.mes].monto    += parseFloat(row.monto_total || 0);
+
+  for (const v of data) {
+    if (!v.updated_at) continue;
+    // Convertir UTC a local para obtener el mes correcto
+    const fechaLocal = new Date(v.updated_at);
+    const mesLocal   = fechaLocal.getMonth() + 1;
+    const yearLocal  = fechaLocal.getFullYear();
+    if (yearLocal !== year) continue;
+
+    const key = `${year}-${String(mesLocal).padStart(2,'0')}`;
+    if (!mapa[key]) continue;
+
+    for (const it of (v.venta_items || [])) {
+      mapa[key].unidades += it.cantidad || 1;
     }
+    mapa[key].monto += parseFloat(v.monto_total || 0);
   }
+
   _roscaAnualCache = Object.values(mapa);
   return _roscaAnualCache;
 }

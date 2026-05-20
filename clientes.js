@@ -1,4 +1,9 @@
-// clientes.js
+// clientes.js — VERSIÓN FINAL
+// Fix crítico: paginación completa para superar el límite de 1000 de Supabase.
+// load() hace fetch paginado de clientes (range de 1000 en 1000) hasta traer todos.
+// Los totales (unidades/monto) se calculan desde ventas en memoria para evitar
+// el join masivo que también sufre el límite de 1000.
+
 const ClientesView = (() => {
   let _data = [];
   let _currentPage = 1;
@@ -6,25 +11,43 @@ const ClientesView = (() => {
   let _searchTimer = null;
   let _loaded = false;
 
-  // Índice: cliente_id → Set de estados de sus ventas (construido desde ventas en memoria)
-  function _buildEstadosIndex() {
-    const idx = {};
-    for (const v of (ventas || [])) {
-      if (!v.cliente_id) continue;
-      if (!idx[v.cliente_id]) idx[v.cliente_id] = new Set();
-      idx[v.cliente_id].add(v.estado);
-    }
-    return idx;
-  }
-
-  // Invalidar caché cuando se sincronicen datos externos
   function invalidate() {
     _loaded = false;
     _data = [];
   }
 
+  // Calcular totales desde ventas en memoria (solo vendidas)
+  function _buildTotalesIndex() {
+    const idx = {};
+    for (const v of (ventas || [])) {
+      if (!v.cliente_id || v.estado !== 'vendido') continue;
+      if (!idx[v.cliente_id]) idx[v.cliente_id] = { unidades: 0, monto: 0 };
+      for (const it of (v.venta_items || [])) {
+        idx[v.cliente_id].unidades += it.cantidad || 1;
+      }
+      idx[v.cliente_id].monto += parseFloat(v.monto_total || 0);
+    }
+    return idx;
+  }
+
+  // Última actualización desde ventas en memoria
+  function _buildLastUpdatedIndex() {
+    const idx = {};
+    for (const v of (ventas || [])) {
+      if (!v.cliente_id) continue;
+      const t = v.updated_at || v.fecha;
+      if (!idx[v.cliente_id] || t > idx[v.cliente_id]) idx[v.cliente_id] = t;
+    }
+    return idx;
+  }
+
+  // Para agentes: set de cliente_ids que este agente ha atendido
+  // (desde ventas en memoria, que ya están filtradas por agente_id)
+  function _buildClientesVisiblesAgente() {
+    return new Set((ventas || []).map(v => v.cliente_id).filter(Boolean));
+  }
+
   async function load() {
-    // Solo recargar si los datos fueron invalidados o es la primera vez
     if (_loaded && _data.length > 0) {
       render();
       document.getElementById('clientes-count').textContent =
@@ -32,46 +55,56 @@ const ClientesView = (() => {
       return;
     }
 
-    const [
-      { data: clientes, error: errC },
-      { data: historial }
-    ] = await Promise.all([
-      db.from('clientes')
-        .select('id, celular, nombre, ubicacion, faltas, sin_respuesta, flag, created_at')
-        .order('id', { ascending: false }),
-      db.from('clientes_historial')
-        .select('cliente_id, unidades, monto_total')
-    ]);
-
-    if (errC) { toast('❌ Error cargando clientes: ' + errC.message, 'error'); return; }
-
-    // Agrupar historial por cliente en un solo pass
-    const histMap = {};
-    for (const h of (historial || [])) {
-      if (!histMap[h.cliente_id]) histMap[h.cliente_id] = { unidades: 0, monto: 0 };
-      histMap[h.cliente_id].unidades += h.unidades || 0;
-      histMap[h.cliente_id].monto += parseFloat(h.monto_total || 0);
-    }
-
-    const clientesVisibles = new Set((ventas || []).map(v => v.cliente_id));
     const isAgente = currentUser?.rol === 'agente';
 
-    const lastUpdatedMap = {};
-    for (const v of (ventas || [])) {
-      if (!v.cliente_id) continue;
-      const t = v.updated_at || v.fecha;
-      if (!lastUpdatedMap[v.cliente_id] || t > lastUpdatedMap[v.cliente_id]) {
-        lastUpdatedMap[v.cliente_id] = t;
+    // ── Fetch paginado para superar el límite de 1000 filas de Supabase ──
+    // Supabase devuelve máximo 1000 filas por request por defecto.
+    // Usamos .range(from, to) iterando hasta que no haya más datos.
+    let allClientes = [];
+    const BATCH = 1000;
+    let from = 0;
+    let keepGoing = true;
+
+    while (keepGoing) {
+      const { data: batch, error: errC } = await db
+        .from('clientes')
+        .select('id, celular, nombre, ubicacion, faltas, sin_respuesta, flag, created_at')
+        .order('id', { ascending: false })
+        .range(from, from + BATCH - 1);
+
+      if (errC) { toast('❌ Error cargando clientes: ' + errC.message, 'error'); return; }
+
+      if (!batch || batch.length === 0) {
+        keepGoing = false;
+      } else {
+        allClientes = allClientes.concat(batch);
+        if (batch.length < BATCH) {
+          keepGoing = false; // última página
+        } else {
+          from += BATCH;
+        }
       }
     }
 
-    _data = (clientes || [])
-      .filter(c => !isAgente || clientesVisibles.has(c.id))
+    // Índices desde ventas en memoria
+    const totalesIdx    = _buildTotalesIndex();
+    const lastUpdIdx    = _buildLastUpdatedIndex();
+    const clientesVis   = isAgente ? _buildClientesVisiblesAgente() : null;
+
+    _data = allClientes
+      .filter(c => !clientesVis || clientesVis.has(c.id))
       .map(c => ({
-        ...c,
-        hist_unidades: histMap[c.id]?.unidades || 0,
-        hist_monto: histMap[c.id]?.monto || 0,
-        last_updated: lastUpdatedMap[c.id] || null, 
+        id:            c.id,
+        celular:       c.celular,
+        nombre:        c.nombre,
+        ubicacion:     c.ubicacion,
+        faltas:        c.faltas,
+        sin_respuesta: c.sin_respuesta,
+        flag:          c.flag,
+        created_at:    c.created_at,
+        hist_unidades: totalesIdx[c.id]?.unidades || 0,
+        hist_monto:    totalesIdx[c.id]?.monto    || 0,
+        last_updated:  lastUpdIdx[c.id] || null,
       }));
 
     _loaded = true;
@@ -80,18 +113,24 @@ const ClientesView = (() => {
       `${_data.length} clientes registrados`;
   }
 
-  // Filtrar — usa ventas en memoria para el filtro de estado (sin query extra)
   function _getFiltered() {
     const search = (document.getElementById('clientes-search')?.value || '').toLowerCase();
-    const flag = document.getElementById('clientes-filter-flag')?.value || '';
+    const flag   = document.getElementById('clientes-filter-flag')?.value   || '';
     const estado = document.getElementById('clientes-filter-estado')?.value || '';
 
-    // Solo construir el índice si se necesita filtrar por estado
-    const estadosIdx = estado ? _buildEstadosIndex() : null;
+    let estadosIdx = null;
+    if (estado) {
+      estadosIdx = {};
+      for (const v of (ventas || [])) {
+        if (!v.cliente_id) continue;
+        if (!estadosIdx[v.cliente_id]) estadosIdx[v.cliente_id] = new Set();
+        estadosIdx[v.cliente_id].add(v.estado);
+      }
+    }
 
     return _data.filter(c => {
-      if (flag && c.flag !== flag) return false;
-      if (estado && estadosIdx && !estadosIdx[c.id]?.has(estado)) return false;
+      if (flag   && c.flag !== flag)                                  return false;
+      if (estado && estadosIdx && !estadosIdx[c.id]?.has(estado))     return false;
       if (search) {
         const hay = `${c.nombre || ''} ${c.celular || ''} ${c.ubicacion || ''}`.toLowerCase();
         if (!hay.includes(search)) return false;
@@ -101,8 +140,8 @@ const ClientesView = (() => {
   }
 
   function render() {
-    const filtered = _getFiltered();
-    const total = filtered.length;
+    const filtered   = _getFiltered();
+    const total      = filtered.length;
     const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
     if (_currentPage > totalPages) _currentPage = 1;
 
@@ -114,7 +153,7 @@ const ClientesView = (() => {
     if (!tbody) return;
 
     if (page.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9"
+      tbody.innerHTML = `<tr><td colspan="10"
         style="text-align:center;padding:40px;color:var(--text2);">Sin resultados</td></tr>`;
       document.getElementById('clientes-pagination').innerHTML = '';
       return;
@@ -140,30 +179,32 @@ const ClientesView = (() => {
         ? `<span style="color:var(--green);font-weight:700;">Bs.${c.hist_monto.toFixed(0)}</span>`
         : '—';
 
+      const lastUpdFmt = c.last_updated
+        ? new Date(c.last_updated).toLocaleDateString('es-BO',
+            { day:'2-digit', month:'2-digit', year:'2-digit',
+              hour:'2-digit', minute:'2-digit' })
+        : '—';
+
       tr.innerHTML = `
         <td class="td-name">${c.nombre || '<span style="color:var(--text3)">s/n</span>'}</td>
         <td class="td-phone">
           <a href="tel:${c.celular}" onclick="event.stopPropagation()"
             style="color:var(--accent2);text-decoration:none;">${c.celular || ''}</a>
         </td>
-        <td class="td-ciudad">${c.ubicacion || '—'}</td>
+        <td>${c.ubicacion || '—'}</td>
         <td style="font-weight:700;color:${c.hist_unidades > 0 ? 'var(--blue)' : 'var(--text3)'};">
           ${c.hist_unidades > 0 ? c.hist_unidades + ' und.' : '—'}
         </td>
         <td>${montoFmt}</td>
-        <td style="color:${c.faltas > 0 ? 'var(--red)' : 'var(--text3)'};font-weight:${c.faltas > 0 ? '700' : '400'};">
+        <td style="color:${c.faltas > 0 ? 'var(--red)' : 'var(--text3)'};
+                   font-weight:${c.faltas > 0 ? '700' : '400'};">
           ${c.faltas || 0}
         </td>
         <td style="color:${c.sin_respuesta > 0 ? 'var(--orange)' : 'var(--text3)'};">
           ${c.sin_respuesta || 0}
         </td>
         <td>${flagBadgeHtml}</td>
-        <td style="font-size:11px;color:var(--text3);white-space:nowrap;">
-          ${c.last_updated
-          ? new Date(c.last_updated).toLocaleDateString('es-BO',
-          {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})
-          : '—'}
-        </td>
+        <td style="font-size:11px;color:var(--text3);white-space:nowrap;">${lastUpdFmt}</td>
         <td style="font-size:12px;color:var(--text3);">${fechaReg}</td>
       `;
 
@@ -201,40 +242,54 @@ const ClientesView = (() => {
   }
 
   async function openClienteHistorial(c) {
-    const [
-      { data: hist },
-      { data: ventasCliente }
-    ] = await Promise.all([
-      db.from('clientes_historial')
-        .select('mes, unidades, monto_total, ventas_count')
-        .eq('cliente_id', c.id)
-        .order('mes', { ascending: false }),
-      db.from('ventas')
-        .select(`id, fecha, updated_at, estado, monto_total, notas,
-                 agente:agente_id(nombre),
-                 venta_items(cantidad, subtotal, productos(nombre))`)
-        .eq('cliente_id', c.id)
-        .order('id', { ascending: false })
-        .limit(30)
-    ]);
+    const { data: ventasCliente, error } = await db
+      .from('ventas')
+      .select(`
+        id, fecha, updated_at, estado, monto_total, notas,
+        agente:agente_id(nombre),
+        venta_items(cantidad, subtotal, productos(nombre))
+      `)
+      .eq('cliente_id', c.id)
+      .order('id', { ascending: false })
+      .limit(50);
 
-    const totalUnid = (hist || []).reduce((s, h) => s + (h.unidades || 0), 0);
-    const totalMonto = (hist || []).reduce((s, h) => s + parseFloat(h.monto_total || 0), 0);
+    if (error) { toast('❌ Error cargando historial: ' + error.message, 'error'); return; }
 
-    const histRows = (hist || []).map(h => `
-      <tr>
-        <td style="padding:7px 12px;font-size:13px;color:var(--text2);">${h.mes}</td>
-        <td style="padding:7px 12px;font-size:13px;font-weight:700;color:var(--blue);">${h.unidades}</td>
-        <td style="padding:7px 12px;font-size:13px;color:var(--green);font-weight:700;">Bs.${parseFloat(h.monto_total).toFixed(0)}</td>
-        <td style="padding:7px 12px;font-size:12px;color:var(--text3);">${h.ventas_count} transac.</td>
-      </tr>`).join('') || `<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--text3);">Sin historial</td></tr>`;
+    const vendidas = (ventasCliente || []).filter(v => v.estado === 'vendido');
+    const totalUnid  = vendidas.reduce(
+      (s, v) => s + (v.venta_items || []).reduce((si, it) => si + (it.cantidad || 1), 0), 0
+    );
+    const totalMonto = vendidas.reduce((s, v) => s + parseFloat(v.monto_total || 0), 0);
+
+    // Historial mensual agrupado por mes (usando updated_at)
+    const mesMap = {};
+    for (const v of vendidas) {
+      // Usar updated_at (cuándo se marcó como vendido) para agrupar por mes
+      const fechaRef = v.updated_at || v.fecha;
+      if (!fechaRef) continue;
+      const key = fechaRef.slice(0, 7); // 'YYYY-MM'
+      if (!mesMap[key]) mesMap[key] = { mes: key, unidades: 0, monto: 0, count: 0 };
+      for (const it of (v.venta_items || [])) mesMap[key].unidades += it.cantidad || 1;
+      mesMap[key].monto += parseFloat(v.monto_total || 0);
+      mesMap[key].count += 1;
+    }
+    const histMeses = Object.values(mesMap).sort((a, b) => b.mes.localeCompare(a.mes));
+
+    const histRows = histMeses.length
+      ? histMeses.map(h => `
+          <tr>
+            <td style="padding:7px 12px;font-size:13px;color:var(--text2);">${h.mes}</td>
+            <td style="padding:7px 12px;font-size:13px;font-weight:700;color:var(--blue);">${h.unidades}</td>
+            <td style="padding:7px 12px;font-size:13px;color:var(--green);font-weight:700;">Bs.${h.monto.toFixed(0)}</td>
+            <td style="padding:7px 12px;font-size:12px;color:var(--text3);">${h.count} transac.</td>
+          </tr>`).join('')
+      : `<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--text3);">Sin ventas registradas</td></tr>`;
 
     const ventasRows = (ventasCliente || []).map(v => {
       const prods = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
       const updFecha = v.updated_at
         ? new Date(v.updated_at).toLocaleDateString('es-BO',
-            { day: '2-digit', month: '2-digit', year: '2-digit',
-              hour: '2-digit', minute: '2-digit' })
+            { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })
         : v.fecha;
       return `
         <tr onclick="closeClienteHistorialModal();setTimeout(()=>showNuevoRegistro(${v.id}),50)"
@@ -260,7 +315,7 @@ const ClientesView = (() => {
     document.getElementById('stat-modal-body').innerHTML = `
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
         <div class="stat-card" style="flex:1;min-width:120px;padding:12px;">
-          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;">Unidades totales</div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;">Unidades vendidas</div>
           <div style="font-size:24px;font-weight:800;color:var(--blue);font-family:'Syne',sans-serif;">${totalUnid}</div>
         </div>
         <div class="stat-card" style="flex:1;min-width:120px;padding:12px;">
@@ -277,7 +332,7 @@ const ClientesView = (() => {
         </div>
       </div>
 
-      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📅 Historial mensual</div>
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📅 Historial mensual (vendidos)</div>
       <div style="overflow-x:auto;margin-bottom:20px;">
         <table style="width:100%;border-collapse:collapse;">
           <thead><tr>
@@ -290,7 +345,7 @@ const ClientesView = (() => {
         </table>
       </div>
 
-      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📋 Registros recientes (máx. 30)</div>
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📋 Registros recientes (máx. 50)</div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;">
           <thead><tr>
