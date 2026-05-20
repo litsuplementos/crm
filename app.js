@@ -398,10 +398,6 @@ async function initApp() {
   await _loadUserConfig();
   _setupEventDelegationOnce();
 
-  await Promise.all([
-    _getClientesFieles(),  
-    _getRoscaAnual(),       
-  ]);
   renderDashboard();       
 
   _nrGeoInit = false;
@@ -2002,28 +1998,12 @@ async function saveConfigClientesFieles() {
   } catch(e) { toast('❌ ' + e.message, 'error'); }
 }
 
-async function _getClientesFieles() {
+function _getClientesFieles() {
   if (_clientesFielesCache) return _clientesFielesCache;
- 
-  // Traer todas las ventas vendidas con sus items y cliente
-  const { data, error } = await db
-    .from('ventas')
-    .select(`
-      cliente_id,
-      monto_total,
-      cliente:cliente_id ( nombre, celular ),
-      venta_items ( cantidad, subtotal )
-    `)
-    .eq('estado', 'vendido');
- 
-  if (error || !data) {
-    _clientesFielesCache = { top: [], resto: [] };
-    return _clientesFielesCache;
-  }
- 
-  // Agrupar por cliente
+
   const mapa = {};
-  for (const v of data) {
+  for (const v of ventas) {
+    if (v.estado !== 'vendido') continue;
     const cid = v.cliente_id;
     if (!mapa[cid]) {
       mapa[cid] = {
@@ -2035,154 +2015,95 @@ async function _getClientesFieles() {
         ventas_count: 0,
       };
     }
-    // Sumar unidades de los items de esta venta
     for (const it of (v.venta_items || [])) {
       mapa[cid].unidades += it.cantidad || 1;
     }
     mapa[cid].monto_total += parseFloat(v.monto_total || 0);
     mapa[cid].ventas_count += 1;
   }
- 
+
   const lista = Object.values(mapa).sort((a, b) => b.unidades - a.unidades);
   const top = lista.slice(0, 5);
   const topIds = new Set(top.map(c => c.id));
   const resto = lista.filter(c => !topIds.has(c.id)).slice(0, 20);
- 
+
   _clientesFielesCache = { top, resto };
   return _clientesFielesCache;
 }
 
 let _renderingClientesFieles = false;
-async function renderClientesFieles() {
-  if (_renderingClientesFieles) return;
-  _renderingClientesFieles = true;
+function renderClientesFieles() {
   const wrap = document.getElementById('dash-clientes-fieles');
-  if (!wrap) { _renderingClientesFieles = false; return; }
-  wrap.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px;">Cargando...</div>';
-  try {
-    const { top, resto } = await _getClientesFieles();
- 
-    if (!top.length && !resto.length) {
-      wrap.innerHTML = `<div style="color:var(--text3);font-size:13px;padding:8px;">
-        Sin clientes con ventas aún
-      </div>`;
-      return;
-    }
- 
-    const maxU = (top[0] || resto[0])?.unidades || 1;
-    const medallas = ['🥇','🥈','🥉','4️⃣','5️⃣'];
- 
-    const topHTML = top.length
-      ? top.map((c, i) => `
-          <div style="margin-bottom:14px;">
-            <div style="display:flex;justify-content:space-between;
-                align-items:center;margin-bottom:5px;">
-              <span style="font-size:13px;font-weight:600;">
-                ${medallas[i]} ${c.nombre}
-              </span>
-              <span style="font-size:12px;color:var(--green);font-weight:700;">
-                ${c.unidades} und.
-              </span>
-            </div>
-            <div style="font-size:12px;color:var(--text3);margin-bottom:5px;">
-              ${c.celular}
-            </div>
-            <div class="bar-track" style="height:8px;">
-              <div class="bar-fill"
-                style="width:${(c.unidades/maxU*100).toFixed(0)}%;
-                      background:var(--green);transition:width 0.5s ease;">
-              </div>
-            </div>
-          </div>`).join('')
-      : `<div style="color:var(--text3);font-size:13px;padding:8px 0;">
-          Sin clientes con ventas aún
-        </div>`;
- 
-    const restoHTML = resto.length
-      ? resto.map(c => `
-          <div style="display:flex;justify-content:space-between;align-items:center;
-              padding:6px 0;border-bottom:1px solid var(--border);">
-            <div>
-              <div style="font-size:12px;font-weight:500;">${c.nombre}</div>
-              <div style="font-size:12px;color:var(--text3);">${c.celular}</div>
-            </div>
-            <span style="font-size:12px;color:var(--green);font-weight:700;">
-              ${c.unidades} und.
-            </span>
-          </div>`).join('')
-      : `<div style="font-size:12px;color:var(--text3);padding:8px 0;">
-          Sin otros clientes
-        </div>`;
- 
-    wrap.innerHTML = `
-      <div style="display:grid;grid-template-columns:55% 40%;gap:5%;">
-        <div>${topHTML}</div>
-        <div>
-          <div style="font-size:12px;font-weight:700;color:var(--text3);
-              text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">
-            Otros clientes (1 o más unidades)
-          </div>
-          <div style="max-height:260px;overflow-y:auto;">
-            ${restoHTML}
-          </div>
-        </div>
-      </div>`;
-  } catch(e) {
-    console.error('renderClientesFieles error:', e);
-    const wrap = document.getElementById('dash-clientes-fieles');
-    if (wrap) wrap.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px;">Error cargando datos</div>';
-  } finally {
-    _renderingClientesFieles = false;
+  if (!wrap) return;
+
+  const { top, resto } = _getClientesFieles();
+
+  if (!top.length && !resto.length) {
+    wrap.innerHTML = `<div style="color:var(--text3);font-size:13px;padding:8px;">Sin clientes con ventas aún</div>`;
+    return;
   }
+
+  const maxU = (top[0] || resto[0])?.unidades || 1;
+  const medallas = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+
+  const topHTML = top.length
+    ? top.map((c, i) => `
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+            <span style="font-size:13px;font-weight:600;">${medallas[i]} ${c.nombre}</span>
+            <span style="font-size:12px;color:var(--green);font-weight:700;">${c.unidades} und.</span>
+          </div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:5px;">${c.celular}</div>
+          <div class="bar-track" style="height:8px;">
+            <div class="bar-fill" style="width:${(c.unidades/maxU*100).toFixed(0)}%;background:var(--green);transition:width 0.5s ease;"></div>
+          </div>
+        </div>`).join('')
+    : `<div style="color:var(--text3);font-size:13px;padding:8px 0;">Sin clientes con ventas aún</div>`;
+
+  const restoHTML = resto.length
+    ? resto.map(c => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+          <div>
+            <div style="font-size:12px;font-weight:500;">${c.nombre}</div>
+            <div style="font-size:12px;color:var(--text3);">${c.celular}</div>
+          </div>
+          <span style="font-size:12px;color:var(--green);font-weight:700;">${c.unidades} und.</span>
+        </div>`).join('')
+    : `<div style="font-size:12px;color:var(--text3);padding:8px 0;">Sin otros clientes</div>`;
+
+  wrap.innerHTML = `
+    <div style="display:grid;grid-template-columns:55% 40%;gap:5%;">
+      <div>${topHTML}</div>
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">
+          Otros clientes (1 o más unidades)
+        </div>
+        <div style="max-height:260px;overflow-y:auto;">${restoHTML}</div>
+      </div>
+    </div>`;
 }
 
 // Rosca / donut anual
 let _roscaAnualCache = null;
  
-async function _getRoscaAnual() {
+function _getRoscaAnual() {
   if (_roscaAnualCache) return _roscaAnualCache;
 
   const year = new Date().getFullYear();
-
-  const { data, error } = await db
-    .from('ventas')
-    .select(`
-      updated_at,
-      monto_total,
-      venta_items ( cantidad, subtotal )
-    `)
-    .eq('estado', 'vendido')
-    .gte('updated_at', `${year}-01-01T00:00:00.000Z`)
-    .lte('updated_at', `${year}-12-31T23:59:59.999Z`);
-
-  if (error || !data) {
-    _roscaAnualCache = [];
-    return [];
-  }
-
-  const meses = ['Ene','Feb','Mar','Abr','May','Jun',
-                  'Jul','Ago','Sep','Oct','Nov','Dic'];
+  const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
   const mapa = {};
   for (let i = 1; i <= 12; i++) {
-    const key = `${year}-${String(i).padStart(2,'0')}`;
-    mapa[key] = { mes: meses[i - 1], unidades: 0, monto: 0 };
+    mapa[`${year}-${String(i).padStart(2,'0')}`] = { mes: meses[i-1], unidades: 0, monto: 0 };
   }
 
-  for (const v of data) {
-    if (!v.updated_at) continue;
-    // Convertir UTC a local para obtener el mes correcto
-    const fechaLocal = new Date(v.updated_at);
-    const mesLocal   = fechaLocal.getMonth() + 1;
-    const yearLocal  = fechaLocal.getFullYear();
-    if (yearLocal !== year) continue;
-
-    const key = `${year}-${String(mesLocal).padStart(2,'0')}`;
+  for (const v of ventas) {
+    if (v.estado !== 'vendido' || !v.updated_at) continue;
+    const fecha = new Date(v.updated_at);
+    if (fecha.getFullYear() !== year) continue;
+    const key = `${year}-${String(fecha.getMonth()+1).padStart(2,'0')}`;
     if (!mapa[key]) continue;
-
-    for (const it of (v.venta_items || [])) {
-      mapa[key].unidades += it.cantidad || 1;
-    }
+    for (const it of (v.venta_items || [])) mapa[key].unidades += it.cantidad || 1;
     mapa[key].monto += parseFloat(v.monto_total || 0);
   }
 
@@ -2190,11 +2111,11 @@ async function _getRoscaAnual() {
   return _roscaAnualCache;
 }
 
-async function renderRoscaAnual() {
+function renderRoscaAnual() {
   const wrap = document.getElementById('dash-rosca-anual');
   if (!wrap) return;
  
-  const datos = await _getRoscaAnual();
+  const datos = _getRoscaAnual();
   const totalUnidades = datos.reduce((s, d) => s + d.unidades, 0);
   const totalMonto = datos.reduce((s, d) => s + d.monto, 0);
  
