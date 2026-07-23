@@ -306,17 +306,24 @@
         <div style="display:flex;gap:8px;align-items:center;">
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="font-size:12px;color:var(--text3);" id="dash-periodo"></div>
-            <select class="filter-select" id="filtro-tiempo-dash" onchange="onFiltroTiempoChange(this.value)"
+            <select class="filter-select" id="filtro-tiempo-dash" onchange="onFiltroTiempoChange(this.value, 'dash')"
               style="font-size:13px;">
               <option value="todos">🗓 Todos</option>
               <option value="dia">📅 Hoy</option>
               <option value="semana">📆 Semana</option>
               <option value="mes">🗃 Mes</option>
               <option value="año">📊 Año</option>
+              <option value="personalizado">📅 Personalizado</option>
             </select>
             <select class="filter-select" id="filtro-mes-especifico" onchange="onFiltroMesChange(this.value)"
               style="font-size:13px;display:none;">
             </select>
+            <div style="display:none;align-items:center;gap:4px;" id="dash-date-range">
+              <input type="date" id="dash-date-desde" class="filter-select" onchange="onDashFechaRangeChange()" style="font-size:12px;padding:4px 6px;">
+              <span style="color:var(--text3);font-size:11px;">a</span>
+              <input type="date" id="dash-date-hasta" class="filter-select" onchange="onDashFechaRangeChange()" style="font-size:12px;padding:4px 6px;">
+              <button onclick="clearDashFechaRange()" class="icon-btn" title="Limpiar rango" style="padding:2px 5px;font-size:11px;">✕</button>
+            </div>
           </div>
         </div>
       </div>
@@ -407,7 +414,7 @@
         <select class="filter-select" id="filter-agente" onchange="renderVentas()" style="display:none;">
           <option value="">👥 Todos los agentes</option>
         </select>
-        <select class="filter-select" id="filtro-tiempo-ventas" onchange="onFiltroTiempoChange(this.value)">
+        <select class="filter-select" id="filtro-tiempo-ventas" onchange="onFiltroTiempoChange(this.value, 'ventas')">
           <option value="todos">🗓 Todos los tiempos</option>
           <option value="dia">📅 Hoy</option>
           <option value="semana">📆 Esta semana</option>
@@ -418,7 +425,7 @@
       <div class="table-wrap desktop-table">
         <div class="table-info">
           <span id="table-count">0 registros</span>
-          <span style="color:var(--text3);font-size:12px;">Clic en fila para editar</span>
+          <span style="color:var(--text3);font-size:12px;">Clic en nombre para editar · Clic en celular para copiar</span>
         </div>
         <table>
           <thead>

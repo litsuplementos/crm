@@ -250,8 +250,7 @@ const ClientesView = (() => {
         venta_items(cantidad, subtotal, productos(nombre))
       `)
       .eq('cliente_id', c.id)
-      .order('id', { ascending: false })
-      .limit(50);
+      .order('id', { ascending: false });
 
     if (error) { toast('❌ Error cargando historial: ' + error.message, 'error'); return; }
 
@@ -261,66 +260,39 @@ const ClientesView = (() => {
     );
     const totalMonto = vendidas.reduce((s, v) => s + parseFloat(v.monto_total || 0), 0);
 
-    // Historial mensual agrupado por mes (usando updated_at)
-    const mesMap = {};
-    for (const v of vendidas) {
-      // Usar updated_at (cuándo se marcó como vendido) para agrupar por mes
-      const fechaRef = v.updated_at || v.fecha;
-      if (!fechaRef) continue;
-      const key = fechaRef.slice(0, 7); // 'YYYY-MM'
-      if (!mesMap[key]) mesMap[key] = { mes: key, unidades: 0, monto: 0, count: 0 };
-      for (const it of (v.venta_items || [])) mesMap[key].unidades += it.cantidad || 1;
-      mesMap[key].monto += parseFloat(v.monto_total || 0);
-      mesMap[key].count += 1;
-    }
-    const histMeses = Object.values(mesMap).sort((a, b) => b.mes.localeCompare(a.mes));
-
-    const histRows = histMeses.length
-      ? histMeses.map(h => `
-          <tr>
-            <td style="padding:7px 12px;font-size:13px;color:var(--text2);">${h.mes}</td>
-            <td style="padding:7px 12px;font-size:13px;font-weight:700;color:var(--blue);">${h.unidades}</td>
-            <td style="padding:7px 12px;font-size:13px;color:var(--green);font-weight:700;">Bs.${h.monto.toFixed(0)}</td>
-            <td style="padding:7px 12px;font-size:12px;color:var(--text3);">${h.count} transac.</td>
-          </tr>`).join('')
-      : `<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--text3);">Sin ventas registradas</td></tr>`;
-
-    const ventasRows = (ventasCliente || []).map(v => {
-      const prods = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
-      const updFecha = v.updated_at
-        ? new Date(v.updated_at).toLocaleDateString('es-BO',
-            { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })
-        : v.fecha;
-      return `
-        <tr onclick="closeClienteHistorialModal();setTimeout(()=>showNuevoRegistro(${v.id}),50)"
-          style="cursor:pointer;border-bottom:1px solid var(--border);"
-          onmouseover="this.style.background='var(--surface2)'"
-          onmouseout="this.style.background=''">
-          <td style="padding:8px 12px;font-size:12px;color:var(--text3);">${v.fecha}</td>
-          <td style="padding:8px 12px;">${statusBadge(v.estado)}</td>
-          <td style="padding:8px 12px;font-size:12px;">
-            ${prods.map(n => prodChip(n)).join(' ') || '—'}
-          </td>
-          <td style="padding:8px 12px;font-size:12px;color:var(--green);font-weight:700;">
-            ${v.monto_total ? 'Bs.' + parseFloat(v.monto_total).toFixed(0) : '—'}
-          </td>
-          <td style="padding:8px 12px;font-size:11px;color:var(--text3);">${updFecha}</td>
-          <td style="padding:8px 12px;font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>
-        </tr>`;
-    }).join('') || `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text3);">Sin registros</td></tr>`;
+    const histRows = vendidas.length
+      ? vendidas.map(v => {
+          const prods = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
+          const updFecha = v.updated_at
+            ? new Date(v.updated_at).toLocaleDateString('es-BO',
+                { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })
+            : v.fecha;
+          return `
+            <tr onclick="closeClienteHistorialModal();setTimeout(()=>showNuevoRegistro(${v.id}),50)"
+              style="cursor:pointer;border-bottom:1px solid var(--border);"
+              onmouseover="this.style.background='var(--surface2)'"
+              onmouseout="this.style.background=''">
+              <td style="padding:8px 12px;font-size:12px;color:var(--text3);">${v.fecha}</td>
+              <td style="padding:8px 12px;font-size:12px;">
+                ${prods.map(n => prodChip(n)).join(' ') || '—'}
+              </td>
+              <td style="padding:8px 12px;font-size:12px;color:var(--green);font-weight:700;">
+                ${v.monto_total ? 'Bs.' + parseFloat(v.monto_total).toFixed(0) : '—'}
+              </td>
+              <td style="padding:8px 12px;font-size:11px;color:var(--text3);">${updFecha}</td>
+              <td style="padding:8px 12px;font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>
+            </tr>`;
+        }).join('')
+      : `<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3);">Sin compras registradas</td></tr>`;
 
     document.getElementById('stat-modal-title').textContent =
       `👤 ${c.nombre || 'Cliente'} — ${c.celular}`;
 
     document.getElementById('stat-modal-body').innerHTML = `
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
-        <div class="stat-card" style="flex:1;min-width:120px;padding:12px;">
-          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;">Unidades vendidas</div>
-          <div style="font-size:24px;font-weight:800;color:var(--blue);font-family:'Syne',sans-serif;">${totalUnid}</div>
-        </div>
-        <div class="stat-card" style="flex:1;min-width:120px;padding:12px;">
-          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;">Monto total</div>
-          <div style="font-size:24px;font-weight:800;color:var(--green);font-family:'Syne',sans-serif;">Bs.${totalMonto.toFixed(0)}</div>
+        <div class="stat-card" style="flex:1;min-width:160px;padding:12px;">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;">Unidades Compradas</div>
+          <div style="font-size:24px;font-weight:800;color:var(--blue);font-family:'Syne',sans-serif;">${totalUnid} und · <span style="color:var(--green);font-size:18px;">Bs.${totalMonto.toFixed(0)}</span></div>
         </div>
         <div class="stat-card" style="flex:1;min-width:120px;padding:12px;">
           <div style="font-size:11px;color:var(--text3);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;">Faltas / Sin resp.</div>
@@ -332,31 +304,17 @@ const ClientesView = (() => {
         </div>
       </div>
 
-      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📅 Historial mensual (vendidos)</div>
-      <div style="overflow-x:auto;margin-bottom:20px;">
-        <table style="width:100%;border-collapse:collapse;">
-          <thead><tr>
-            <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Mes</th>
-            <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Unidades</th>
-            <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Monto</th>
-            <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Transacciones</th>
-          </tr></thead>
-          <tbody>${histRows}</tbody>
-        </table>
-      </div>
-
-      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📋 Registros recientes (máx. 50)</div>
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📋 Historial de compras</div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;">
           <thead><tr>
             <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Fecha</th>
-            <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Estado</th>
             <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Productos</th>
             <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Monto</th>
             <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Actualización</th>
             <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Agente</th>
           </tr></thead>
-          <tbody>${ventasRows}</tbody>
+          <tbody>${histRows}</tbody>
         </table>
       </div>
     `;

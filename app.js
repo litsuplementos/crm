@@ -79,7 +79,10 @@ let currentPage = 1;
 let totalVentasCount = 0;
 let mostrarArchivados = false;
 let _vendidosEditablesCache = null;
-let filtroTiempo = 'mes';
+let filtroTiempoDash = 'mes';
+let filtroTiempoVentas = 'mes';
+let filtroFechaDesdeDash = null;
+let filtroFechaHastaDash = null;
 let _clientesFielesUmbral = 5;
 let _clientesFielesDescuento = 10;
 let _clientesFielesCache = null;
@@ -225,35 +228,46 @@ function initializeSession() {
 }
 
 // Describir tiempo
-function describeFiltroTiempo() {
+function describeFiltroTiempo(source) {
+  const filtro = source === 'ventas' ? filtroTiempoVentas : filtroTiempoDash;
   const hoy = new Date();
   const opts = { day: 'numeric', month: 'long' };
 
-  if (filtroTiempo === 'todos') return 'Todos los registros';
-  if (filtroTiempo === 'dia') {
+  if (source === 'dash' && filtro === 'personalizado') {
+    if (filtroFechaDesdeDash || filtroFechaHastaDash) {
+      const d = filtroFechaDesdeDash ? new Date(filtroFechaDesdeDash + 'T00:00:00') : null;
+      const h = filtroFechaHastaDash ? new Date(filtroFechaHastaDash + 'T00:00:00') : hoy;
+      if (d && filtroFechaHastaDash) return `Personalizado: del ${d.toLocaleDateString('es-BO', opts)} al ${h.toLocaleDateString('es-BO', opts)}`;
+      if (d) return `Personalizado: desde ${d.toLocaleDateString('es-BO', opts)}`;
+      if (filtroFechaHastaDash) return `Personalizado: hasta ${h.toLocaleDateString('es-BO', opts)}`;
+    }
+    return 'Personalizado: sin rango definido (mostrando todos)';
+  }
+
+  if (filtro === 'todos') return 'Todos los registros';
+  if (filtro === 'dia') {
     return `Hoy: ${hoy.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`;
   }
-  if (filtroTiempo === 'semana') {
+  if (filtro === 'semana') {
     const diaSemana = hoy.getDay();
     const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
     const lunes = new Date(hoy); lunes.setDate(hoy.getDate() + diffLunes);
     const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 6);
     return `Esta semana: del ${lunes.toLocaleDateString('es-BO', opts)} al ${domingo.toLocaleDateString('es-BO', opts)}`;
   }
-  if (filtroTiempo === 'mes') {
-    // Usar el mes custom si está seleccionado, si no el mes actual
+  if (filtro === 'mes') {
     let year = hoy.getFullYear();
-    let month = hoy.getMonth(); // 0-indexed
-    if (window._filtroMesCustom) {
+    let month = hoy.getMonth();
+    if (source === 'dash' && window._filtroMesCustom) {
       const [y, m] = window._filtroMesCustom.split('-').map(Number);
       year = y;
-      month = m - 1; // convertir a 0-indexed
+      month = m - 1;
     }
     const primerDia = new Date(year, month, 1);
     const ultimoDia = new Date(year, month + 1, 0);
     return `Este mes: del ${primerDia.toLocaleDateString('es-BO', opts)} al ${ultimoDia.toLocaleDateString('es-BO', opts)}`;
   }
-  if (filtroTiempo === 'año') {
+  if (filtro === 'año') {
     return `Este año: del 1 de enero al 31 de diciembre de ${hoy.getFullYear()}`;
   }
   return '';
@@ -281,17 +295,27 @@ function getFechaLimite(filtro) {
   return null;
 }
 
-function ventasEnFiltroTiempo(venta) {
-  if (filtroTiempo === 'todos') return true;
+function ventasEnFiltroTiempo(venta, source) {
+  const filtro = source === 'ventas' ? filtroTiempoVentas : filtroTiempoDash;
+
+  if (source === 'dash' && filtro === 'personalizado') {
+    if (!filtroFechaDesdeDash && !filtroFechaHastaDash) return true;
+    const fechaVenta = venta.updated_at ? new Date(venta.updated_at) : new Date(venta.fecha + 'T00:00:00');
+    const desde = filtroFechaDesdeDash ? new Date(filtroFechaDesdeDash + 'T00:00:00') : new Date(0);
+    const hasta = filtroFechaHastaDash ? new Date(filtroFechaHastaDash + 'T23:59:59') : new Date();
+    return fechaVenta >= desde && fechaVenta <= hasta;
+  }
+
+  if (filtro === 'todos') return true;
 
   const fechaVenta = venta.updated_at ? new Date(venta.updated_at) : new Date(venta.fecha + 'T00:00:00');
 
-  if (filtroTiempo === 'mes' && window._filtroMesCustom) {
+  if (filtro === 'mes' && source === 'dash' && window._filtroMesCustom) {
     const [year, month] = window._filtroMesCustom.split('-').map(Number);
     return fechaVenta.getFullYear() === year && fechaVenta.getMonth() === month - 1;
   }
 
-  const limite = getFechaLimite(filtroTiempo);
+  const limite = getFechaLimite(filtro);
   if (!limite) return true;
   return fechaVenta >= limite;
 }
@@ -345,8 +369,13 @@ function doLogout() {
   }
 
   _geoSelectorsInitialized = false;
-  filtroTiempo = 'mes';           
-  window._filtroMesCustom = null; 
+  filtroTiempoDash = 'mes';
+  filtroTiempoVentas = 'mes';
+  filtroFechaDesdeDash = null;
+  filtroFechaHastaDash = null;
+  window._filtroMesCustom = null;
+  const drWrap = document.getElementById('dash-date-range');
+  if (drWrap) drWrap.style.display = 'none'; 
   selectedAgentId = 'all';       
   ClientesView.invalidate();  
 
@@ -415,10 +444,24 @@ function _setupEventDelegationOnce() {
   const tbody = document.getElementById('ventas-tbody');
   if (!tbody) return;
   tbody.addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) {
-      const row = e.target.closest('tr[data-venta-id]');
-      if (row) showNuevoRegistro(parseInt(row.dataset.ventaId));
+    const row = e.target.closest('tr[data-venta-id]');
+    if (!row) return;
+    const ventaId = parseInt(row.dataset.ventaId);
+
+    if (e.target.closest('.td-name')) {
+      showNuevoRegistro(ventaId);
+      return;
+    }
+
+    if (e.target.closest('.td-phone')) {
+      const venta = ventas.find(v => v.id === ventaId);
+      const celular = venta?.cliente?.celular;
+      if (celular) {
+        navigator.clipboard.writeText(celular).then(() => {
+          toast('📋 Número copiado: ' + celular, 'success');
+        }).catch(() => {});
+      }
+      return;
     }
   }, { passive: true });
   _eventDelegationRegistered = true;
@@ -430,7 +473,22 @@ function onFiltroMesChange(valor) {
   filteredCache.invalidate();
   _saveUserConfig('filtro_mes_custom', valor); 
   renderDashboard();
-  renderVentas();
+}
+
+function onDashFechaRangeChange() {
+  const desde = document.getElementById('dash-date-desde').value;
+  const hasta = document.getElementById('dash-date-hasta').value;
+  if (!desde && !hasta) return;
+  filtroFechaDesdeDash = desde || null;
+  filtroFechaHastaDash = hasta || null;
+  dashboardCache.invalidate();
+  renderDashboard();
+  _saveUserConfig('filtro_fecha_desde_dash', filtroFechaDesdeDash || '');
+  _saveUserConfig('filtro_fecha_hasta_dash', filtroFechaHastaDash || '');
+}
+
+function clearDashFechaRange() {
+  onFiltroTiempoChange('todos', 'dash');
 }
 
 async function _saveUserConfig(clave, valor) {
@@ -452,13 +510,11 @@ async function _loadUserConfig() {
     if (error || !data) return;
 
     for (const row of data) {
-      if (row.clave === 'filtro_tiempo') {
-        filtroTiempo = row.valor;
-        ['filtro-tiempo-global', 'filtro-tiempo-ventas', 'filtro-tiempo-dash'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.value = filtroTiempo;
-        });
-        if (filtroTiempo === 'mes') {
+      if (row.clave === 'filtro_tiempo_dash') {
+        filtroTiempoDash = row.valor;
+        const el = document.getElementById('filtro-tiempo-dash');
+        if (el) el.value = filtroTiempoDash;
+        if (filtroTiempoDash === 'mes') {
           const mesLabel = document.getElementById('mes-actual-label');
           const mesSel = document.getElementById('filtro-mes-especifico');
           const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -466,13 +522,46 @@ async function _loadUserConfig() {
           if (mesLabel) { mesLabel.textContent = meses[new Date().getMonth()]; mesLabel.style.display = ''; }
           if (mesSel) { _buildFiltroMesSelector(); mesSel.style.display = ''; }
         }
+        if (filtroTiempoDash === 'personalizado') {
+          const dateRangeWrap = document.getElementById('dash-date-range');
+          if (dateRangeWrap) dateRangeWrap.style.display = 'flex';
+        }
+      }
+      if (row.clave === 'filtro_tiempo_ventas') {
+        filtroTiempoVentas = row.valor;
+        const el = document.getElementById('filtro-tiempo-ventas');
+        if (el) el.value = filtroTiempoVentas;
+      }
+      if (row.clave === 'filtro_tiempo') {
+        if (!data.some(r => r.clave === 'filtro_tiempo_dash')) {
+          filtroTiempoDash = 'mes';
+          const el = document.getElementById('filtro-tiempo-dash');
+          if (el) el.value = filtroTiempoDash;
+          _saveUserConfig('filtro_tiempo_dash', 'mes');
+        }
+        if (!data.some(r => r.clave === 'filtro_tiempo_ventas')) {
+          filtroTiempoVentas = 'mes';
+          const el = document.getElementById('filtro-tiempo-ventas');
+          if (el) el.value = filtroTiempoVentas;
+          _saveUserConfig('filtro_tiempo_ventas', 'mes');
+        }
       }
       if (row.clave === 'filtro_mes_custom') {
         const hoy = new Date();
         const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
-        if (filtroTiempo === 'mes' && row.valor === mesActual) {
+        if (filtroTiempoDash === 'mes' && row.valor === mesActual) {
           window._filtroMesCustom = row.valor;
         }
+      }
+      if (row.clave === 'filtro_fecha_desde_dash' && row.valor) {
+        filtroFechaDesdeDash = row.valor;
+        const el = document.getElementById('dash-date-desde');
+        if (el) el.value = row.valor;
+      }
+      if (row.clave === 'filtro_fecha_hasta_dash' && row.valor) {
+        filtroFechaHastaDash = row.valor;
+        const el = document.getElementById('dash-date-hasta');
+        if (el) el.value = row.valor;
       }
     }
     dashboardCache.invalidate();
@@ -712,28 +801,46 @@ function _actualizarCardProducto(id, nuevoActivo) {
 
 async function loadVentas() {
   try {
-    let query = db.from('ventas')
-      .select(`
-        id, cliente_id, agente_id, fecha, updated_at, estado, intentos,
-        notas, comprobante_url, archivado, monto_total, descuento_pct, recordatorio, recordatorio_visto,
-        cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
-                             producto_interes, notas, faltas, flag ),
-        agente:agente_id   ( id, nombre ),
-        venta_items ( id, cantidad, subtotal, producto_id, productos ( id, nombre ))
-      `, { count: 'exact' })
-      .order('archivado', { ascending: true })
-      .order('id', { ascending: false });
+    let allVentas = [];
+    const BATCH = 1000;
+    let from = 0;
+    let keepGoing = true;
+    let totalCount = 0;
 
-    if (currentUser.rol === 'agente') {
-      query = query.eq('agente_id', currentUser.id);
-    } else if (currentUser.rol === 'admin' && selectedAgentId !== 'all') {
-      query = query.eq('agente_id', selectedAgentId);
+    while (keepGoing) {
+      let query = db.from('ventas')
+        .select(`
+          id, cliente_id, agente_id, fecha, updated_at, estado, intentos,
+          notas, comprobante_url, archivado, monto_total, descuento_pct, recordatorio, recordatorio_visto,
+          cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
+                               producto_interes, notas, faltas, flag ),
+          agente:agente_id   ( id, nombre ),
+          venta_items ( id, cantidad, subtotal, producto_id, productos ( id, nombre ))
+        `, from === 0 ? { count: 'exact' } : {})
+        .order('archivado', { ascending: true })
+        .order('id', { ascending: false })
+        .range(from, from + BATCH - 1);
+
+      if (currentUser.rol === 'agente') {
+        query = query.eq('agente_id', currentUser.id);
+      } else if (currentUser.rol === 'admin' && selectedAgentId !== 'all') {
+        query = query.eq('agente_id', selectedAgentId);
+      }
+
+      const { data, error, count } = await query;
+      if (error) throw error;
+      if (from === 0 && count) totalCount = count;
+      if (!data || data.length === 0) {
+        keepGoing = false;
+      } else {
+        allVentas = allVentas.concat(data);
+        if (data.length < BATCH) keepGoing = false;
+        else from += BATCH;
+      }
     }
 
-    const { data, error, count } = await query;
-    if (error) throw error;
-    ventas = data || [];
-    totalVentasCount = count || 0;
+    ventas = allVentas;
+    totalVentasCount = totalCount;
 
     ventasIndex = {};
     ventas.forEach(v => ventasIndex[v.id] = v);
@@ -786,35 +893,57 @@ async function onAgentFilterChange() {
   renderVentas();
 }
 
-async function onFiltroTiempoChange(valor) {
-  filtroTiempo = valor;
+async function onFiltroTiempoChange(valor, source) {
+  if (source === 'dash') {
+    filtroTiempoDash = valor;
+    const dateRangeWrap = document.getElementById('dash-date-range');
+
+    if (valor === 'personalizado') {
+      if (dateRangeWrap) dateRangeWrap.style.display = 'flex';
+    } else {
+      if (dateRangeWrap) dateRangeWrap.style.display = 'none';
+      filtroFechaDesdeDash = null;
+      filtroFechaHastaDash = null;
+      const desdeEl = document.getElementById('dash-date-desde');
+      const hastaEl = document.getElementById('dash-date-hasta');
+      if (desdeEl) desdeEl.value = '';
+      if (hastaEl) hastaEl.value = '';
+    }
+  } else {
+    filtroTiempoVentas = valor;
+  }
+
   const mesLabel = document.getElementById('mes-actual-label');
   const mesSel = document.getElementById('filtro-mes-especifico');
 
-  if (valor === 'mes') {
+  if (valor === 'mes' && source === 'dash') {
     const hoy = new Date();
     const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     if (mesLabel) { mesLabel.textContent = meses[hoy.getMonth()]; mesLabel.style.display = ''; }
     if (mesSel) { _buildFiltroMesSelector(); mesSel.style.display = ''; }
   } else {
-    if (mesLabel) mesLabel.style.display = 'none';
-    if (mesSel) mesSel.style.display = 'none';
-    window._filtroMesCustom = null;
+    if (source === 'dash') {
+      if (mesLabel) mesLabel.style.display = 'none';
+      if (mesSel) mesSel.style.display = 'none';
+      window._filtroMesCustom = null;
+    }
   }
 
   dashboardCache.invalidate();
   filteredCache.invalidate();
-  ['filtro-tiempo-global', 'filtro-tiempo-ventas', 'filtro-tiempo-dash'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el && el.value !== valor) el.value = valor;
-  });
+  if (source === 'dash') {
+    const elDash = document.getElementById('filtro-tiempo-dash');
+    if (elDash && elDash.value !== valor) elDash.value = valor;
+    await _saveUserConfig('filtro_tiempo_dash', valor);
+  } else {
+    const elVentas = document.getElementById('filtro-tiempo-ventas');
+    if (elVentas && elVentas.value !== valor) elVentas.value = valor;
+    await _saveUserConfig('filtro_tiempo_ventas', valor);
+  }
 
-  // Guardar preferencia del usuario actual (todos los roles)
-  await _saveUserConfig('filtro_tiempo', valor);
-
-  renderDashboard();
-  renderVentas();
+  if (source === 'dash') renderDashboard();
+  if (source === 'ventas') renderVentas();
 }
 
 let _syncing = false;
@@ -901,10 +1030,10 @@ function renderDashboard() {
   }
 
   
-  document.getElementById('dash-periodo').textContent = describeFiltroTiempo();
+  document.getElementById('dash-periodo').textContent = describeFiltroTiempo('dash');
   document.getElementById('dashboard-agent-row').style.display = isAdmin ? 'flex' : 'none';
 
-  const ventasFiltradas = ventas.filter(ventasEnFiltroTiempo);
+  const ventasFiltradas = ventas.filter(v => ventasEnFiltroTiempo(v, 'dash'));
   const total = ventasFiltradas.length;
   const vendidos = ventasFiltradas
     .filter(v => v.estado === 'vendido')
@@ -1117,7 +1246,7 @@ function getFiltered() {
     filteredCache._prodId    === prodId &&
     filteredCache._ubicacion === ubicacion &&
     filteredCache._agente    === agente &&
-    filteredCache._tiempo    === filtroTiempo &&
+    filteredCache._tiempo    === filtroTiempoVentas &&
     filteredCache._archivado === mostrarArchivados &&
     filteredCache._mesCustom === mesCustom
   ) {
@@ -1126,7 +1255,7 @@ function getFiltered() {
 
   const result = ventas.filter(v => {
     if (!!v.archivado !== mostrarArchivados) return false;
-    if (!ventasEnFiltroTiempo(v)) return false;
+    if (!ventasEnFiltroTiempo(v, 'ventas')) return false;
     if (status && v.estado !== status) return false;
     if (prodId && !(v.venta_items || []).some(it => it.producto_id == prodId)) return false;
     if (ubicacion && !(v.cliente?.ubicacion || '').toLowerCase().includes(ubicacion.toLowerCase())) return false;
@@ -1148,7 +1277,7 @@ function getFiltered() {
   filteredCache._prodId    = prodId;
   filteredCache._ubicacion = ubicacion;
   filteredCache._agente    = agente;
-  filteredCache._tiempo    = filtroTiempo;
+  filteredCache._tiempo    = filtroTiempoVentas;
   filteredCache._archivado = mostrarArchivados;
   filteredCache._mesCustom = mesCustom;
 
@@ -1196,7 +1325,7 @@ function renderVentas() {
         <td style="color:var(--text2);font-size:12px;">${v.fecha || ''}${v.archivado ? ' 🔒' : ''}</td>
         <td class="td-name">${v.cliente?.nombre || '<span style="color:var(--text3)">s/n</span>'} ${flagBadge(v.cliente)}</td>
         <td class="td-phone">
-          <a href="tel:${v.cliente?.celular}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;">${v.cliente?.celular || ''}</a>
+          ${v.cliente?.celular || ''}
         </td>
         <td>${prodCell}</td>
         <td>${v.monto_total ? montoChip(v.monto_total) : ''}</td>
@@ -1499,10 +1628,16 @@ async function saveUser() {
     if (id) { const { error } = await db.from('usuarios').update(data).eq('id', id); if (error) throw error; }
     else { const { error } = await db.from('usuarios').insert(data); if (error) throw error; }
     closeUserModal();
-    _usersCache = null; // FIX #9 — invalidar caché al guardar
+    _usersCache = null;
     renderUsers();
     await loadAgents();
     buildAgentSelector();
+    selectedAgentId = 'all';
+    const agentSel = document.getElementById('agent-selector');
+    if (agentSel) agentSel.value = 'all';
+    await loadVentas();
+    renderDashboard();
+    renderVentas();
     toast('✅ Usuario guardado', 'success');
   } catch(e) { toast('❌ ' + e.message, 'error'); }
 }
@@ -1585,7 +1720,7 @@ function renderStatModal() {
   const labels = { vendido: '✅ Vendidos', interesado: '🌟 Interesados', sin_respuesta: '📵 Sin respuesta', seguimiento: '🔄 En seguimiento', rellamada: '🔁 Rellamadas', agendar: '📅 Agendar' };
   document.getElementById('stat-modal-title').textContent = labels[estado] || estado;
 
-  const filtered = ventas.filter(v => v.estado === estado && ventasEnFiltroTiempo(v));
+  const filtered = ventas.filter(v => v.estado === estado && ventasEnFiltroTiempo(v, 'dash'));
   const total = filtered.length;
 
   let resumenTexto = '';
@@ -1601,7 +1736,7 @@ function renderStatModal() {
     resumenTexto = `${total} registro${total !== 1 ? 's' : ''} — ${labels[estado] || estado}`;
   }  
 
-  const periodoTexto = describeFiltroTiempo();
+  const periodoTexto = describeFiltroTiempo('dash');
   const pages = Math.ceil(total / STAT_PAGE_SIZE) || 1;
   if (statModalPage > pages) statModalPage = 1;
   const page = filtered.slice((statModalPage - 1) * STAT_PAGE_SIZE, statModalPage * STAT_PAGE_SIZE);
@@ -1652,10 +1787,8 @@ function renderStatModal() {
 
 async function loadConfigVendidosEditables() {
   try {
-    const [{ data: dataVendidos, error }, { data: dataFiltro }] = await Promise.all([
-      db.from('config').select('valor').eq('clave', 'vendidos_editables').single(),
-      db.from('config').select('valor').eq('clave', 'filtro_tiempo_default').single(),
-    ]);
+    const { data: dataVendidos, error } = await db.from('config')
+      .select('valor').eq('clave', 'vendidos_editables').single();
 
     if (error) throw error;
 
