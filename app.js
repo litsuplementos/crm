@@ -103,6 +103,7 @@ function debouncedRenderVentas() {
   let x = 80, y = 60;
   let container = null;
   let logoEl = null;
+  let rafId = null;
 
   function createLogo() {
     if (logoEl) return; 
@@ -144,7 +145,7 @@ function debouncedRenderVentas() {
   }
 
   function loop() {
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
     if (!container || !logoEl) return;
     const cw = container.clientWidth  || 400;
     const ch = container.clientHeight || 300;
@@ -163,6 +164,13 @@ function debouncedRenderVentas() {
     createLogo(); 
     attach();
     loop();
+  }
+
+  function stop() {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    if (logoEl && logoEl.parentElement) logoEl.parentElement.removeChild(logoEl);
+    logoEl = null;
+    container = null;
   }
 
   // Arrancar cuando el app sea visible
@@ -185,6 +193,7 @@ function debouncedRenderVentas() {
     vx = s * Math.sign(vx) || s;
     vy = s * 0.75 * Math.sign(vy) || s * 0.75;
   };
+  window._floatingLogoStop = stop;
 })();
 
 // THEME
@@ -360,9 +369,8 @@ function doLogout() {
   _roscaAnualCache = null;
   _nrCelTimer = null;
   _nrGeoInit = false;
-  _bipAudio = null;
-  _eventDelegationRegistered = false;
   _dismissRecordatorio();
+  if (window._floatingLogoStop) window._floatingLogoStop();
 
   if (_audioCtx && _audioCtx.state !== 'closed') {
     _audioCtx.suspend().catch(() => {});
@@ -380,6 +388,7 @@ function doLogout() {
   ClientesView.invalidate();  
 
   Objetivos.stop();
+  if (window._sidebarDisconnectObservers) window._sidebarDisconnectObservers();
   currentUser = null;
   ventas = [];
   ventasIndex = {};
@@ -1046,6 +1055,10 @@ function renderDashboard() {
   const seguimiento = ventasFiltradas.filter(v => v.estado === 'seguimiento').length;
   const sinResp = ventasFiltradas.filter(v => v.estado === 'sin_respuesta').length;
 
+  // — Batch DOM updates (1 reflow en vez de 8+) —
+  const dashWrap = document.getElementById('view-dashboard')?.querySelector('.view-scroll-wrap');
+  if (dashWrap) dashWrap.style.display = 'none';
+
   // Llenar card Enviados
   const enviadosList = ventasFiltradas.filter(v => v.estado === 'enviado');
   document.getElementById('dash-enviados-count').textContent = `(${enviadosList.length})`;
@@ -1225,6 +1238,7 @@ function renderDashboard() {
   }
   renderClientesFieles();
   renderRoscaAnual();
+  if (dashWrap) dashWrap.style.display = '';
 }
 
 // VENTAS — lista + filtros
@@ -1894,16 +1908,26 @@ let _audioFilesLoaded = false;
 
 async function _loadAudioFiles() {
   if (_audioFilesLoaded) return;
-  const found = [];
-  for (let i = 1; i <= 50; i++) {
-    const url = `resources/audio/Recordatorio${i}.mp3`;
-    try {
-      const res = await fetch(url, { method: 'HEAD' });
-      if (res.ok) found.push(url);
-      else break; // para en el primer número que no exista
-    } catch { break; }
+  const BATCH = 10;
+  const maxFiles = 50;
+  const results = new Array(maxFiles).fill(false);
+
+  for (let start = 1; start <= maxFiles; start += BATCH) {
+    const end = Math.min(start + BATCH - 1, maxFiles);
+    const promises = [];
+    for (let i = start; i <= end; i++) {
+      const url = `resources/audio/Recordatorio${i}.mp3`;
+      promises.push(
+        fetch(url, { method: 'HEAD' })
+          .then(res => { if (res.ok) results[i - 1] = url; })
+          .catch(() => {})
+      );
+    }
+    await Promise.all(promises);
+    if (!results[start - 1]) break;
   }
-  _AUDIO_FILES = found.length > 0 ? found : [];
+
+  _AUDIO_FILES = results.filter(Boolean);
   _audioFilesLoaded = true;
 }
 
@@ -2001,7 +2025,7 @@ function _mostrarNotificacionRecordatorio(venta) {
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
-      <button onclick="showNuevoRegistro(${venta.id});_dismissRecordatorio()"
+      <button onclick="showNuevoRegistro(${venta.id});_marcarRecordatorioVisto(${venta.id});_dismissRecordatorio()"
         style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);
                border-radius:6px;padding:6px 12px;color:white;cursor:pointer;font-size:13px;font-weight:600;">
         Ver registro

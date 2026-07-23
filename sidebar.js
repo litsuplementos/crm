@@ -1,6 +1,8 @@
 /* sidebar.js */
 
 (function () {
+  const _sidebarObservers = [];
+
   (function injectCSS() {
     const link = document.createElement('link');
     link.rel  = 'stylesheet';
@@ -186,6 +188,7 @@
       syncActiveItem();
     });
     mo.observe(navTabs, { subtree: true, attributes: true, attributeFilter: ['class'] });
+    _sidebarObservers.push(mo);
 
     // También observar las views directamente
     const main = document.querySelector('.main');
@@ -194,6 +197,7 @@
         syncActiveItem();
       });
       mo2.observe(main, { subtree: true, attributes: true, attributeFilter: ['class'] });
+      _sidebarObservers.push(mo2);
     }
 
     // Observar cambios de display en los tabs para admin-only items
@@ -203,6 +207,7 @@
         renderNavItems(); // re-renderizar cuando cambien visibilidad
       });
       mo3.observe(tab, { attributes: true, attributeFilter: ['style'] });
+      _sidebarObservers.push(mo3);
     });
   }
 
@@ -216,6 +221,7 @@
     const mo = new MutationObserver(update);
     mo.observe(nameEl, { childList: true, characterData: true, subtree: true });
     mo.observe(avatarEl, { childList: true, characterData: true, subtree: true });
+    _sidebarObservers.push(mo);
   }
 
   function syncSidebarWithUser() {
@@ -297,5 +303,9 @@
   window._sidebarSyncActiveItem = syncActiveItem;
   window._sidebarRenderNav = renderNavItems;
   window._sidebarSyncUser = syncSidebarWithUser;
+  window._sidebarDisconnectObservers = function() {
+    _sidebarObservers.forEach(mo => mo.disconnect());
+    _sidebarObservers.length = 0;
+  };
 
 })();

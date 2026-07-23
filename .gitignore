@@ -1,4 +1,5 @@
 node_modules/
+PERFORMANCE.md
 .env
 .env.local
 .DS_Store

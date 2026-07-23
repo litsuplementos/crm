@@ -352,6 +352,8 @@ const Objetivos = (() => {
   }
 
   function _renderPanel() {
+    const dashView = document.getElementById('view-dashboard');
+    if (dashView && !dashView.classList.contains('active')) return;
     const wrap = document.getElementById('obj-panel-derecho');
     if (!wrap) return;
 
@@ -572,6 +574,8 @@ const Objetivos = (() => {
 
   function render() {
     if (!_initialized) return;
+    const dashView = document.getElementById('view-dashboard');
+    if (dashView && !dashView.classList.contains('active')) return;
     _checkNuevaVenta();
     _renderPanel();
   }
