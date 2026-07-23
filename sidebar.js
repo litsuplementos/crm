@@ -32,6 +32,7 @@
     { id: 'ventas', icon: '📋', label: 'Registros', view: 'ventas', always: true },
     { id: 'clientes', icon: '👥', label: 'Clientes', view: 'clientes', always: true },
     { id: 'productos', icon: '📦', label: 'Productos',    view: 'productos',  tabId: 'tab-productos' },
+    { id: 'inventario', icon: '📦', label: 'Inventario', view: 'inventario', always: true },
     { id: 'guia', icon: '📚', label: 'Guía AC', view: 'guia', always: true },
     { id: 'config', icon: '⚙️',  label: 'Ajustes', view: 'config',  tabId: 'tab-config' },
     { id: 'usuarios', icon: '🔐', label: 'Usuarios', view: 'usuarios', tabId: 'tab-usuarios' },

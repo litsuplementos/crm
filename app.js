@@ -995,6 +995,7 @@ function showView(name) {
   if (name === 'memorias') renderMemorias();
   if (name === 'productos') renderProductos();
   if (name === 'guia') renderGuia();
+  if (name === 'inventario') Inventario.render();
   if (name === 'config' && currentUser.rol === 'admin') loadConfigVendidosEditables();
 }
 
@@ -1003,6 +1004,7 @@ function showViewDirect(name) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('view-' + name)?.classList.add('active');
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
+  if (name === 'inventario') Inventario.render();
 }
 
 // STATUS / BADGE HELPERS
@@ -1909,25 +1911,38 @@ let _audioFilesLoaded = false;
 async function _loadAudioFiles() {
   if (_audioFilesLoaded) return;
   const BATCH = 10;
-  const maxFiles = 50;
-  const results = new Array(maxFiles).fill(false);
+  const found = [];
+  let probe = 1;
+  let hasMore = true;
 
-  for (let start = 1; start <= maxFiles; start += BATCH) {
-    const end = Math.min(start + BATCH - 1, maxFiles);
+  while (hasMore) {
+    const end = probe + BATCH - 1;
     const promises = [];
-    for (let i = start; i <= end; i++) {
+    const batchResults = {};
+
+    for (let i = probe; i <= end; i++) {
       const url = `resources/audio/Recordatorio${i}.mp3`;
       promises.push(
         fetch(url, { method: 'HEAD' })
-          .then(res => { if (res.ok) results[i - 1] = url; })
+          .then(res => { if (res.ok) batchResults[i] = url; })
           .catch(() => {})
       );
     }
     await Promise.all(promises);
-    if (!results[start - 1]) break;
+
+    for (let i = probe; i <= end; i++) {
+      if (batchResults[i]) {
+        found.push(batchResults[i]);
+      } else {
+        hasMore = false;
+        break;
+      }
+    }
+
+    probe = end + 1;
   }
 
-  _AUDIO_FILES = results.filter(Boolean);
+  _AUDIO_FILES = found;
   _audioFilesLoaded = true;
 }
 
