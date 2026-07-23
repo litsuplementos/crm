@@ -385,7 +385,8 @@ function doLogout() {
   const drWrap = document.getElementById('dash-date-range');
   if (drWrap) drWrap.style.display = 'none'; 
   selectedAgentId = 'all';       
-  ClientesView.invalidate();  
+  ClientesView.invalidate();
+  Inventario.reset();
 
   Objetivos.stop();
   if (window._sidebarDisconnectObservers) window._sidebarDisconnectObservers();

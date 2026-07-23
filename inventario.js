@@ -460,5 +460,13 @@ const Inventario = (() => {
     if (wrap) _renderContent(wrap);
   }
 
-  return { render, switchTab, goPage, saveAjuste, saveAllAjustes, onProductoChange, saveMovimiento };
+  function reset() {
+    _tab = 'movimiento';
+    _productos = [];
+    _stockMap = {};
+    _movimientos = [];
+    _currentPage = 1;
+  }
+
+  return { render, switchTab, goPage, saveAjuste, saveAllAjustes, onProductoChange, saveMovimiento, reset };
 })();
