@@ -398,20 +398,23 @@
             </div>            
           </div>
         </div>
-        <button class="add-btn" onclick="showNuevoRegistro()">+ Nuevo Registro</button>
+        <div style="display:flex;gap:8px;">
+          <button class="add-btn" onclick="showNuevoRegistro()">+ Nuevo Registro</button>
+          <button class="export-btn" onclick="openExportModal('ventas')">📤 Exportar</button>
+        </div>
       </div>
       <div class="toolbar">
         <input class="search-box" type="text" id="search-input" placeholder="🔍  Nombre, celular, producto, notas..." oninput="debouncedRenderVentas()">
-        <select class="filter-select" id="filter-status" onchange="renderVentas()">
+        <select class="filter-select" id="filter-status" onchange="onFilterStatusChange()">
           <option value="">Todos los estados</option>
         </select>
-        <select class="filter-select" id="filter-producto" onchange="renderVentas()">
+        <select class="filter-select" id="filter-producto" onchange="onFilterProductoChange()">
           <option value="">Todos los productos</option>
         </select>
-        <select class="filter-select" id="filter-ubicacion" onchange="renderVentas()">
+        <select class="filter-select" id="filter-ubicacion" onchange="onFilterUbicacionChange()">
           <option value="">Todas las ubicaciones</option>
         </select>
-        <select class="filter-select" id="filter-agente" onchange="renderVentas()" style="display:none;">
+        <select class="filter-select" id="filter-agente" onchange="onFilterAgenteChange()" style="display:none;">
           <option value="">👥 Todos los agentes</option>
         </select>
         <select class="filter-select" id="filtro-tiempo-ventas" onchange="onFiltroTiempoChange(this.value, 'ventas')">
@@ -420,7 +423,14 @@
           <option value="semana">📆 Esta semana</option>
           <option value="mes">🗃 Este mes</option>
           <option value="año">📊 Este año</option>
+          <option value="personalizado">📅 Personalizado</option>
         </select>
+        <div style="display:none;align-items:center;gap:4px;" id="ventas-date-range">
+          <input type="date" id="ventas-date-desde" class="filter-select" onchange="onVentasFechaRangeChange()" style="font-size:12px;padding:4px 6px;">
+          <span style="color:var(--text3);font-size:11px;">a</span>
+          <input type="date" id="ventas-date-hasta" class="filter-select" onchange="onVentasFechaRangeChange()" style="font-size:12px;padding:4px 6px;">
+          <button onclick="clearVentasFechaRange()" class="icon-btn" title="Limpiar rango" style="padding:2px 5px;font-size:11px;">✕</button>
+        </div>
       </div>
       <div class="table-wrap desktop-table">
         <div class="table-info">
@@ -454,7 +464,7 @@
           <input class="search-box" type="text" id="clientes-search"
             placeholder="🔍 Nombre, celular, ubicación..."
             oninput="debouncedRenderClientes()" style="min-width:220px;">
-          <select class="filter-select" id="clientes-filter-estado" onchange="renderClientes()">
+          <select class="filter-select" id="clientes-filter-estado" onchange="onClientesFilterEstadoChange()">
             <option value="">Todos los estados</option>
             <option value="rellamada">🔁 Rellamada</option>
             <option value="seguimiento">🔄 Seguimiento</option>
@@ -467,6 +477,7 @@
             <option value="cancelado">❌ Cancelado</option>
             <option value="spam">🚫 SPAM</option>
           </select>
+          <button class="export-btn" onclick="openExportModal('clientes')">📤 Exportar</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -902,6 +913,57 @@
       <div class="modal-actions" style="margin-top:20px;">
         <button class="btn-secondary" onclick="closeToggleProductoModal()">Cancelar</button>
         <button class="btn-save" id="toggle-producto-confirm-btn" style="min-width:120px;">Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- EXPORT MODAL -->
+<div class="modal-overlay" id="export-modal">
+  <div class="modal" style="max-width:500px;">
+    <div class="modal-header">
+      <div class="modal-title" id="export-modal-title">📤 Exportar</div>
+      <button class="modal-close" onclick="closeExportModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:16px;">
+        Se exportarán <strong id="export-count">0</strong> registros con los filtros actuales.
+      </p>
+      <div class="field">
+        <label>Formato</label>
+        <div style="display:flex;gap:8px;">
+          <label class="export-format-card" data-format="excel" style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border:2px solid var(--accent);border-radius:10px;cursor:pointer;transition:all 0.2s;">
+            <input type="radio" name="export-format" value="excel" checked style="accent-color:var(--accent);">
+            <span style="font-size:22px;">📗</span>
+            <div>
+              <div style="font-weight:600;font-size:13px;">Excel</div>
+              <div style="font-size:11px;color:var(--text3);">.xlsx</div>
+            </div>
+          </label>
+          <label class="export-format-card" data-format="pdf" style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border:2px solid var(--border);border-radius:10px;cursor:pointer;transition:all 0.2s;">
+            <input type="radio" name="export-format" value="pdf" style="accent-color:var(--accent);">
+            <span style="font-size:22px;">📄</span>
+            <div>
+              <div style="font-weight:600;font-size:13px;">PDF</div>
+              <div style="font-size:11px;color:var(--text3);">.pdf</div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Columnas a exportar</label>
+        <div style="margin-bottom:8px;">
+          <a href="#" onclick="event.preventDefault();selectAllColumns(true)" style="font-size:12px;color:var(--accent);text-decoration:none;margin-right:14px;">✓ Seleccionar todo</a>
+          <a href="#" onclick="event.preventDefault();selectAllColumns(false)" style="font-size:12px;color:var(--text3);text-decoration:none;">✕ Deseleccionar todo</a>
+        </div>
+        <div id="export-columns-list" style="display:grid;grid-template-columns:1fr 1fr;gap:5px;"></div>
+      </div>
+      <div id="export-progress" style="display:none;align-items:center;gap:8px;padding:10px 14px;background:var(--surface2);border-radius:8px;margin-top:12px;">
+        <span class="spinner" style="width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.6s linear infinite;display:inline-block;"></span>
+        <span id="export-progress-text" style="font-size:13px;color:var(--text2);">Generando...</span>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeExportModal()">Cancelar</button>
+        <button class="btn-save" onclick="doExport()" id="export-btn">📤 Exportar</button>
       </div>
     </div>
   </div>

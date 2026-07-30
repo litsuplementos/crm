@@ -49,6 +49,7 @@ const ClientesView = (() => {
 
   async function load() {
     if (_loaded && _data.length > 0) {
+      _aplicarFiltroGuardado();
       render();
       document.getElementById('clientes-count').textContent =
         `${_data.length} clientes registrados`;
@@ -108,6 +109,7 @@ const ClientesView = (() => {
       }));
 
     _loaded = true;
+    _aplicarFiltroGuardado();
     render();
     document.getElementById('clientes-count').textContent =
       `${_data.length} clientes registrados`;
@@ -331,7 +333,14 @@ const ClientesView = (() => {
     _searchTimer = setTimeout(render, 280);
   }
 
-  return { load, render, goPage, debouncedRender, openClienteHistorial, invalidate };
+  function _aplicarFiltroGuardado() {
+    const el = document.getElementById('clientes-filter-estado');
+    if (el && _savedFiltroEstadoClientes) {
+      el.value = _savedFiltroEstadoClientes;
+    }
+  }
+
+  return { load, render, goPage, debouncedRender, openClienteHistorial, invalidate, getFiltered: _getFiltered };
 })();
 
 function renderClientes() { ClientesView.render(); }

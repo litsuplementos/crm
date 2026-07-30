@@ -84,6 +84,72 @@
     const topbar = document.querySelector('.topbar');
     if (topbar) topbar.insertBefore(mobileBtn, topbar.firstChild);
 
+    // Botón de notificación de stock + panel desplegable
+    const stockWrap = document.createElement('div');
+    stockWrap.id = 'stock-notif-wrap';
+    stockWrap.style.cssText = 'position:relative;display:flex;';
+
+    const stockBtn = document.createElement('button');
+    stockBtn.id = 'stock-notif-btn';
+    stockBtn.title = 'Stock moderado o bajo';
+    stockBtn.style.display = 'none';
+    stockBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg><span id="stock-notif-count" class="stock-notif-count"></span>';
+    stockBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const panel = document.getElementById('stock-notif-panel');
+      if (panel) {
+        panel.style.display = panel.style.display === 'none' ? '' : 'none';
+      }
+    });
+    stockWrap.appendChild(stockBtn);
+
+    const panel = document.createElement('div');
+    panel.id = 'stock-notif-panel';
+    panel.className = 'stock-notif-panel';
+    panel.style.display = 'none';
+    panel.innerHTML = `
+      <div class="stock-notif-header">
+        <span class="stock-notif-title">Alertas de Stock</span>
+        <button class="stock-notif-header-close" data-action="close-panel" title="Cerrar">✕</button>
+      </div>
+      <div id="stock-notif-list" class="stock-notif-list"></div>
+      <div class="stock-notif-footer">
+        <button data-action="dismiss-all" title="Descartar todas">Descartar todo</button>
+      </div>
+    `;
+    stockWrap.appendChild(panel);
+
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+      themeToggle.parentNode.insertBefore(stockWrap, themeToggle);
+    }
+
+    // Delegación de eventos en el panel
+    panel.addEventListener('click', (e) => {
+      const target = e.target.closest('[data-action], .stock-notif-dismiss');
+      if (!target) return;
+      e.stopPropagation();
+      const action = target.dataset.action;
+      if (action === 'close-panel') {
+        panel.style.display = 'none';
+      } else if (action === 'dismiss-all') {
+        if (window._dismissAllStockAlerts) window._dismissAllStockAlerts();
+      }
+      const pid = target.dataset.pid;
+      if (pid != null) {
+        if (window._dismissStockAlerts) window._dismissStockAlerts(Number(pid));
+      }
+    });
+
+    // Cerrar panel al hacer clic fuera
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('stock-notif-panel');
+      if (!panel || panel.style.display === 'none') return;
+      if (!e.target.closest('#stock-notif-wrap')) {
+        panel.style.display = 'none';
+      }
+    });
+
     window.addEventListener('resize', () => {
       if (window.innerWidth <= 768) {
         document.body.classList.remove('sidebar-collapsed');
@@ -136,17 +202,10 @@
     document.querySelectorAll('.sidebar-nav-item').forEach(i => i.classList.remove('active'));
     if (clickedEl) clickedEl.classList.add('active');
 
-    // Llamar al showView original, simulando click en el tab original
+    // Llamar showView directamente con el target del tab original
     const origTab = document.querySelector(`.nav-tab[data-view="${viewName}"]`);
     if (origTab) {
-      // Clonar evento para que showView reciba el event.target correcto
-      const fakeEvent = { target: origTab };
-      const origShowView = window.showView;
-      if (origShowView) {
-        // showView usa `event.target.classList.add('active')` — necesitamos
-        // parchear temporalmente window.event o llamar de forma directa
-        origTab.click();
-      }
+      if (window.showView) window.showView(viewName, { target: origTab });
     } else {
       // Fallback: llamar showViewDirect si existe
       if (window.showViewDirect) window.showViewDirect(viewName);
@@ -290,9 +349,9 @@
   /* ── 15. Parchear showView para cerrar mobile sidebar al navegar ── */
   const _origShowView = window.showView;
   if (_origShowView) {
-    window.showView = function(name) {
+    window.showView = function(name, evt) {
       closeMobileSidebar();
-      _origShowView.call(this, name);
+      _origShowView.call(this, name, evt);
       // Diferir sincronización hasta después de que showView actualice el DOM
       setTimeout(syncActiveItem, 0);
       // También re-sincronizar usuario (por si acaba de hacer login)

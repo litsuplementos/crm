@@ -83,6 +83,16 @@ let filtroTiempoDash = 'mes';
 let filtroTiempoVentas = 'mes';
 let filtroFechaDesdeDash = null;
 let filtroFechaHastaDash = null;
+let filtroFechaDesdeVentas = null;
+let filtroFechaHastaVentas = null;
+let _exportColumnasSeleccionadas = null;
+let _savedFiltroEstado = '';
+let _savedFiltroProducto = '';
+let _savedFiltroUbicacion = '';
+let _savedFiltroAgente = '';
+let _savedFiltroEstadoClientes = '';
+let _exportSource = 'ventas';
+let _exportColumnasSeleccionadasClientes = null;
 let _clientesFielesUmbral = 5;
 let _clientesFielesDescuento = 10;
 let _clientesFielesCache = null;
@@ -277,7 +287,10 @@ function describeFiltroTiempo(source) {
     return `Este mes: del ${primerDia.toLocaleDateString('es-BO', opts)} al ${ultimoDia.toLocaleDateString('es-BO', opts)}`;
   }
   if (filtro === 'año') {
-    return `Este año: del 1 de enero al 31 de diciembre de ${hoy.getFullYear()}`;
+    const year = hoy.getFullYear();
+    const primerDia = new Date(year, 0, 1);
+    const ultimoDia = new Date(year, 12, 0);
+    return `Este año: del ${primerDia.toLocaleDateString('es-BO', opts)} al ${ultimoDia.toLocaleDateString('es-BO', opts)}`;
   }
   return '';
 }
@@ -307,12 +320,21 @@ function getFechaLimite(filtro) {
 function ventasEnFiltroTiempo(venta, source) {
   const filtro = source === 'ventas' ? filtroTiempoVentas : filtroTiempoDash;
 
-  if (source === 'dash' && filtro === 'personalizado') {
-    if (!filtroFechaDesdeDash && !filtroFechaHastaDash) return true;
-    const fechaVenta = venta.updated_at ? new Date(venta.updated_at) : new Date(venta.fecha + 'T00:00:00');
-    const desde = filtroFechaDesdeDash ? new Date(filtroFechaDesdeDash + 'T00:00:00') : new Date(0);
-    const hasta = filtroFechaHastaDash ? new Date(filtroFechaHastaDash + 'T23:59:59') : new Date();
-    return fechaVenta >= desde && fechaVenta <= hasta;
+  if (filtro === 'personalizado') {
+    if (source === 'dash') {
+      if (!filtroFechaDesdeDash && !filtroFechaHastaDash) return true;
+      const fechaVenta = venta.updated_at ? new Date(venta.updated_at) : new Date(venta.fecha + 'T00:00:00');
+      const desde = filtroFechaDesdeDash ? new Date(filtroFechaDesdeDash + 'T00:00:00') : new Date(0);
+      const hasta = filtroFechaHastaDash ? new Date(filtroFechaHastaDash + 'T23:59:59') : new Date();
+      return fechaVenta >= desde && fechaVenta <= hasta;
+    }
+    if (source === 'ventas') {
+      if (!filtroFechaDesdeVentas && !filtroFechaHastaVentas) return true;
+      const fechaVenta = venta.updated_at ? new Date(venta.updated_at) : new Date(venta.fecha + 'T00:00:00');
+      const desde = filtroFechaDesdeVentas ? new Date(filtroFechaDesdeVentas + 'T00:00:00') : new Date(0);
+      const hasta = filtroFechaHastaVentas ? new Date(filtroFechaHastaVentas + 'T23:59:59') : new Date();
+      return fechaVenta >= desde && fechaVenta <= hasta;
+    }
   }
 
   if (filtro === 'todos') return true;
@@ -437,15 +459,40 @@ async function initApp() {
   await _loadUserConfig();
   _setupEventDelegationOnce();
 
+  if (Inventario?.loadStockData) await Inventario.loadStockData();
   renderDashboard();       
 
   _nrGeoInit = false;
   renderVentas();
   populateProductoFilter();
-  setArchivoFiltro(false);
+  if (mostrarArchivados) {
+    setArchivoFiltro(true);
+  } else {
+    setArchivoFiltro(false);
+  }
+  if (_savedFiltroEstado) {
+    const el = document.getElementById('filter-status');
+    if (el) el.value = _savedFiltroEstado;
+  }
+  if (_savedFiltroProducto) {
+    const el = document.getElementById('filter-producto');
+    if (el) el.value = _savedFiltroProducto;
+  }
+  if (_savedFiltroUbicacion) {
+    const el = document.getElementById('filter-ubicacion');
+    if (el) el.value = _savedFiltroUbicacion;
+  }
+  if (_savedFiltroAgente) {
+    const el = document.getElementById('filter-agente');
+    if (el) el.value = _savedFiltroAgente;
+  }
+  renderVentas();
   if (currentUser.rol === 'admin') { renderUsers(); renderProductos(); }
   iniciarChequeoRecordatorios();
   await Objetivos.init();
+
+  document.getElementById('view-dashboard')?.classList.add('active');
+  _checkStockAlerts();
 }
 
 let _eventDelegationRegistered = false;
@@ -501,6 +548,22 @@ function clearDashFechaRange() {
   onFiltroTiempoChange('todos', 'dash');
 }
 
+function onVentasFechaRangeChange() {
+  const desde = document.getElementById('ventas-date-desde').value;
+  const hasta = document.getElementById('ventas-date-hasta').value;
+  if (!desde && !hasta) return;
+  filtroFechaDesdeVentas = desde || null;
+  filtroFechaHastaVentas = hasta || null;
+  filteredCache.invalidate();
+  renderVentas();
+  _saveUserConfig('filtro_fecha_desde_ventas', filtroFechaDesdeVentas || '');
+  _saveUserConfig('filtro_fecha_hasta_ventas', filtroFechaHastaVentas || '');
+}
+
+function clearVentasFechaRange() {
+  onFiltroTiempoChange('todos', 'ventas');
+}
+
 async function _saveUserConfig(clave, valor) {
   if (!currentUser?.id) return;
   try {
@@ -541,6 +604,10 @@ async function _loadUserConfig() {
         filtroTiempoVentas = row.valor;
         const el = document.getElementById('filtro-tiempo-ventas');
         if (el) el.value = filtroTiempoVentas;
+        if (filtroTiempoVentas === 'personalizado') {
+          const dateRangeWrap = document.getElementById('ventas-date-range');
+          if (dateRangeWrap) dateRangeWrap.style.display = 'flex';
+        }
       }
       if (row.clave === 'filtro_tiempo') {
         if (!data.some(r => r.clave === 'filtro_tiempo_dash')) {
@@ -572,6 +639,40 @@ async function _loadUserConfig() {
         filtroFechaHastaDash = row.valor;
         const el = document.getElementById('dash-date-hasta');
         if (el) el.value = row.valor;
+      }
+      if (row.clave === 'filtro_fecha_desde_ventas' && row.valor) {
+        filtroFechaDesdeVentas = row.valor;
+        const el = document.getElementById('ventas-date-desde');
+        if (el) el.value = row.valor;
+      }
+      if (row.clave === 'filtro_fecha_hasta_ventas' && row.valor) {
+        filtroFechaHastaVentas = row.valor;
+        const el = document.getElementById('ventas-date-hasta');
+        if (el) el.value = row.valor;
+      }
+      if (row.clave === 'export_columnas') {
+        _exportColumnasSeleccionadas = row.valor || null;
+      }
+      if (row.clave === 'export_columnas_clientes') {
+        _exportColumnasSeleccionadasClientes = row.valor || null;
+      }
+      if (row.clave === 'filtro_estado_ventas' && row.valor) {
+        _savedFiltroEstado = row.valor;
+      }
+      if (row.clave === 'filtro_producto_ventas' && row.valor) {
+        _savedFiltroProducto = row.valor;
+      }
+      if (row.clave === 'filtro_ubicacion_ventas' && row.valor) {
+        _savedFiltroUbicacion = row.valor;
+      }
+      if (row.clave === 'filtro_agente_ventas' && row.valor) {
+        _savedFiltroAgente = row.valor;
+      }
+      if (row.clave === 'filtro_archivados_ventas') {
+        mostrarArchivados = row.valor === 'true';
+      }
+      if (row.clave === 'filtro_estado_clientes' && row.valor) {
+        _savedFiltroEstadoClientes = row.valor;
       }
     }
     dashboardCache.invalidate();
@@ -903,6 +1004,32 @@ async function onAgentFilterChange() {
   renderVentas();
 }
 
+function onFilterStatusChange() {
+  const val = document.getElementById('filter-status').value;
+  _saveUserConfig('filtro_estado_ventas', val);
+  renderVentas();
+}
+function onFilterProductoChange() {
+  const val = document.getElementById('filter-producto').value;
+  _saveUserConfig('filtro_producto_ventas', val);
+  renderVentas();
+}
+function onFilterUbicacionChange() {
+  const val = document.getElementById('filter-ubicacion').value;
+  _saveUserConfig('filtro_ubicacion_ventas', val);
+  renderVentas();
+}
+function onFilterAgenteChange() {
+  const val = document.getElementById('filter-agente').value;
+  _saveUserConfig('filtro_agente_ventas', val);
+  renderVentas();
+}
+function onClientesFilterEstadoChange() {
+  const val = document.getElementById('clientes-filter-estado').value;
+  _saveUserConfig('filtro_estado_clientes', val);
+  ClientesView.render();
+}
+
 async function onFiltroTiempoChange(valor, source) {
   if (source === 'dash') {
     filtroTiempoDash = valor;
@@ -921,6 +1048,19 @@ async function onFiltroTiempoChange(valor, source) {
     }
   } else {
     filtroTiempoVentas = valor;
+    const dateRangeWrap = document.getElementById('ventas-date-range');
+
+    if (valor === 'personalizado') {
+      if (dateRangeWrap) dateRangeWrap.style.display = 'flex';
+    } else {
+      if (dateRangeWrap) dateRangeWrap.style.display = 'none';
+      filtroFechaDesdeVentas = null;
+      filtroFechaHastaVentas = null;
+      const desdeEl = document.getElementById('ventas-date-desde');
+      const hastaEl = document.getElementById('ventas-date-hasta');
+      if (desdeEl) desdeEl.value = '';
+      if (hastaEl) hastaEl.value = '';
+    }
   }
 
   const mesLabel = document.getElementById('mes-actual-label');
@@ -980,14 +1120,17 @@ async function syncData() {
     btn.classList.remove('syncing');
     _syncing = false;
   }
+  if (Inventario?.loadStockData) await Inventario.loadStockData();
+  _checkStockAlerts();
 }
 
 // NAV
-function showView(name) {
+function showView(name, evt) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
-  event.target.classList.add('active');
+  const target = evt?.target || window.event?.target;
+  if (target) target.classList.add('active');
   if (name === 'nuevo-registro') { showNuevoRegistro(); return; }
   if (name === 'ventas') renderVentas();
   if (name === 'clientes') ClientesView.load();
@@ -1145,12 +1288,19 @@ function renderDashboard() {
 
   const prods = dashboardCache.prods;
   const maxP = Math.max(...Object.values(prods), 1);
-  document.getElementById('prod-chart').innerHTML = Object.entries(prods)
+  const salesHtml = Object.entries(prods)
     .sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => `
     <div class="bar-row"><div class="bar-label">${k}</div>
     <div class="bar-track"><div class="bar-fill" style="width:${(v/maxP*100).toFixed(0)}%;background:var(--accent)"></div></div>
     <div class="bar-count">${v}</div></div>`).join('')
     || '<p style="color:var(--text3);font-size:13px;">Sin datos</p>';
+  const stockList = (Inventario?.getAllStock?.() || []);
+  const stockHtml = stockList.length > 0 ? stockList.map(p => `
+    <div class="stock-row"><span class="stock-row-name">${p.productName}</span><span class="stock-row-qty" style="color:${p.color}">${p.stockActual}</span></div>
+  `).join('') : '';
+  document.getElementById('prod-chart').innerHTML = `<div class="prod-chart-sales">${salesHtml}</div>${stockHtml ? `<div class="prod-chart-divider"></div><div class="prod-chart-stock">${stockHtml}</div>` : ''}`;
+  const prodCard = document.getElementById('prod-chart').closest('.dash-card');
+  if (prodCard) prodCard.classList.add('dash-card-prod');
 
   const sCounts = dashboardCache.sCounts;
   const maxS = Math.max(...Object.values(sCounts), 1);
@@ -1265,7 +1415,9 @@ function getFiltered() {
     filteredCache._agente    === agente &&
     filteredCache._tiempo    === filtroTiempoVentas &&
     filteredCache._archivado === mostrarArchivados &&
-    filteredCache._mesCustom === mesCustom
+    filteredCache._mesCustom === mesCustom &&
+    filteredCache._fechaDesde === filtroFechaDesdeVentas &&
+    filteredCache._fechaHasta === filtroFechaHastaVentas
   ) {
     return filteredCache.result;
   }
@@ -1297,6 +1449,8 @@ function getFiltered() {
   filteredCache._tiempo    = filtroTiempoVentas;
   filteredCache._archivado = mostrarArchivados;
   filteredCache._mesCustom = mesCustom;
+  filteredCache._fechaDesde = filtroFechaDesdeVentas;
+  filteredCache._fechaHasta = filtroFechaHastaVentas;
 
   return result;
 }
@@ -1386,6 +1540,7 @@ function setArchivoFiltro(archivado) {
   mostrarArchivados = archivado;
   currentPage = 1;
   filteredCache.invalidate(); // FIX #6
+  _saveUserConfig('filtro_archivados_ventas', archivado ? 'true' : '');
   document.getElementById('tab-activos').classList.toggle('archivo-tab-active', !archivado);
   document.getElementById('tab-archivados').classList.toggle('archivo-tab-active', archivado);
 
@@ -1704,6 +1859,7 @@ document.addEventListener('keydown', (e) => {
       { id: 'stat-modal', closeFunc: closeStatModal },
       { id: 'toggle-producto-modal', closeFunc: closeToggleProductoModal },
       { id: 'guia-modal', closeFunc: closeGuiaModal },
+      { id: 'export-modal', closeFunc: closeExportModal },
     ];
     for (const { id, closeFunc } of modals) {
       const modal = document.getElementById(id);
@@ -1884,6 +2040,59 @@ async function getVendidosEditables() {
   } catch(e) {
     console.error('Error leyendo config:', e);
     return false;
+  }
+}
+
+// NOTIFICACIÓN DE STOCK
+let _stockAlertsDismissed = new Set();
+
+window._dismissStockAlerts = function(productId) {
+  if (productId != null) {
+    _stockAlertsDismissed.add(productId);
+  } else {
+    const alerts = (Inventario?.getStockAlerts?.() || []);
+    alerts.forEach(a => _stockAlertsDismissed.add(a.productId));
+  }
+  _checkStockAlerts();
+};
+
+window._dismissAllStockAlerts = function() {
+  const alerts = (Inventario?.getStockAlerts?.() || []);
+  alerts.forEach(a => _stockAlertsDismissed.add(a.productId));
+  const panel = document.getElementById('stock-notif-panel');
+  if (panel) panel.style.display = 'none';
+  _checkStockAlerts();
+};
+
+function _checkStockAlerts() {
+  const alerts = (Inventario?.getStockAlerts?.() || []);
+  const btn = document.getElementById('stock-notif-btn');
+  const badge = document.getElementById('stock-notif-count');
+  const panel = document.getElementById('stock-notif-panel');
+  const list = document.getElementById('stock-notif-list');
+  if (!btn) return;
+
+  const nuevos = alerts.filter(a => !_stockAlertsDismissed.has(a.productId));
+  if (nuevos.length > 0) {
+    const hasBajo = nuevos.some(a => a.level === 'bajo');
+    btn.style.display = '';
+    btn.classList.toggle('has-bajo', hasBajo);
+    btn.classList.toggle('has-medio', !hasBajo);
+    if (badge) badge.textContent = nuevos.length > 9 ? '9+' : nuevos.length;
+
+    if (list) {
+      list.innerHTML = nuevos.map(a => `
+        <div class="stock-notif-item">
+          <span class="stock-notif-name">${a.productName}</span>
+          <span class="stock-notif-badge" style="color:${a.level === 'bajo' ? 'var(--red)' : 'var(--orange)'}">${a.label}</span>
+          <span class="stock-notif-qty">${a.stockActual}</span>
+          <button class="stock-notif-dismiss" data-pid="${a.productId}" title="Descartar">✕</button>
+        </div>
+      `).join('');
+    }
+  } else {
+    btn.style.display = 'none';
+    if (panel) panel.style.display = 'none';
   }
 }
 
@@ -2385,7 +2594,9 @@ function renderRoscaAnual() {
           text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">
           Por mes
         </div>
-        ${leyenda}
+        <div class="leyenda-list" style="overflow-y:auto;max-height:180px;">
+          ${leyenda}
+        </div>
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
           <div style="font-size:12px;color:var(--text3);">Total año</div>
           <div style="font-size:15px;font-weight:700;color:var(--text);">${totalUnidades} unidades</div>
@@ -2413,6 +2624,320 @@ function renderRoscaAnual() {
   });
  
   Objetivos.render();
+}
+
+// ── EXPORT ──
+const EXPORT_COLUMNS_VENTAS = [
+  { key:'fecha',       label:'Fecha',          get: v => v.fecha || '' },
+  { key:'cliente',     label:'Cliente',        get: v => v.cliente?.nombre || '' },
+  { key:'celular',     label:'Celular',        get: v => v.cliente?.celular || '' },
+  { key:'productos',   label:'Productos',      get: v => (v.venta_items||[]).map(it => it.productos?.nombre).filter(Boolean).join(', ') },
+  { key:'monto',       label:'Monto',          get: v => v.monto_total ? `Bs.${Number(v.monto_total).toFixed(2)}` : '' },
+  { key:'lugar',       label:'Lugar',          get: v => v.cliente?.ubicacion || '' },
+  { key:'estado',      label:'Estado',         get: v => { const map={vendido:'✅ Vendido',rellamada:'🔁 Rellamada',seguimiento:'🔄 Seguimiento',interesado:'🌟 Interesado',agendar:'📅 Agendar',sin_respuesta:'📵 Sin respuesta',enviado:'📦 Enviado',no_interesado:'👎 No interesado',cancelado:'❌ Cancelado',spam:'🚫 SPAM'}; return map[v.estado]||v.estado||''; } },
+  { key:'notas',       label:'Notas',          get: v => v.notas || '' },
+  { key:'actualizado', label:'Actualizado en', get: v => v.updated_at ? new Date(v.updated_at).toLocaleDateString('es-BO',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '' },
+  { key:'agente',      label:'Agente',         get: v => v.agente?.nombre || '' },
+];
+
+const EXPORT_COLUMNS_CLIENTES = [
+  { key:'nombre',            label:'Nombre',             get: c => c.nombre || '' },
+  { key:'celular',           label:'Celular',            get: c => c.celular || '' },
+  { key:'ubicacion',         label:'Ubicación',          get: c => c.ubicacion || '' },
+  { key:'unidades',          label:'Unidades Compradas', get: c => c.total_unidades != null ? String(c.total_unidades) : '' },
+  { key:'monto',             label:'Monto Vendido',      get: c => c.total_monto ? `Bs.${Number(c.total_monto).toFixed(2)}` : '' },
+  { key:'faltas',            label:'Faltas',             get: c => c.total_faltas != null ? String(c.total_faltas) : '' },
+  { key:'sin_respuesta',     label:'Sin Respuesta',      get: c => c.sin_respuesta_count != null ? String(c.sin_respuesta_count) : '' },
+  { key:'estado',            label:'Estado',             get: c => c.flag || '' },
+  { key:'ultima_actualiz',   label:'Última Actualización', get: c => c.ultima_venta ? new Date(c.ultima_venta).toLocaleDateString('es-BO',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '' },
+  { key:'fecha_registro',    label:'Fecha de Registro',  get: c => c.created_at ? new Date(c.created_at).toLocaleDateString('es-BO',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '' },
+];
+
+const _EXPORT_CONFIG = {
+  ventas: {
+    columns: EXPORT_COLUMNS_VENTAS,
+    savedKey: 'export_columnas',
+    savedVar: '_exportColumnasSeleccionadas',
+    title: 'LIT CRM — Registros',
+    filename: 'registros',
+    getData: () => getFiltered(),
+  },
+  clientes: {
+    columns: EXPORT_COLUMNS_CLIENTES,
+    savedKey: 'export_columnas_clientes',
+    savedVar: '_exportColumnasSeleccionadasClientes',
+    title: 'LIT CRM — Clientes',
+    filename: 'clientes',
+    getData: () => {
+      if (typeof ClientesView !== 'undefined' && ClientesView.getFiltered) return ClientesView.getFiltered();
+      return [];
+    },
+  },
+};
+
+function _getExportConfig() {
+  return _EXPORT_CONFIG[_exportSource] || _EXPORT_CONFIG.ventas;
+}
+
+function openExportModal(source) {
+  _exportSource = source || 'ventas';
+  const cfg = _getExportConfig();
+  const data = cfg.getData();
+  document.getElementById('export-count').textContent = data.length;
+
+  const list = document.getElementById('export-columns-list');
+  list.innerHTML = cfg.columns.map(c => `
+    <label style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;transition:background 0.15s;"
+      onmouseenter="this.style.background='var(--surface2)'" onmouseleave="this.style.background=''">
+      <input type="checkbox" data-key="${c.key}" checked style="accent-color:var(--accent);">
+      <span style="font-size:13px;">${c.label}</span>
+    </label>
+  `).join('');
+
+  const savedVal = cfg.savedVar === '_exportColumnasSeleccionadas' ? _exportColumnasSeleccionadas : _exportColumnasSeleccionadasClientes;
+  if (savedVal) {
+    const saved = savedVal.split(',');
+    list.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.checked = saved.includes(cb.dataset.key);
+    });
+  }
+  list.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.onchange = _guardarColumnasExport;
+  });
+
+  function actualizarFormatCards() {
+    document.querySelectorAll('.export-format-card').forEach(c => {
+      const r = c.querySelector('input[type=radio]');
+      c.style.borderColor = r?.checked ? 'var(--accent)' : 'var(--border)';
+      c.style.background = r?.checked ? 'var(--accent-glow)' : '';
+    });
+  }
+  document.querySelectorAll('.export-format-card').forEach(card => {
+    card.onclick = () => {
+      const radio = card.querySelector('input[type=radio]');
+      if (radio) radio.checked = true;
+      actualizarFormatCards();
+    };
+  });
+  document.querySelectorAll('input[name="export-format"]').forEach(radio => {
+    radio.onchange = actualizarFormatCards;
+  });
+  actualizarFormatCards();
+  document.getElementById('export-progress').style.display = 'none';
+  document.getElementById('export-btn').disabled = false;
+  document.getElementById('export-btn').textContent = '📤 Exportar';
+  document.getElementById('export-modal').classList.add('open');
+}
+
+function closeExportModal() {
+  document.getElementById('export-modal').classList.remove('open');
+}
+
+function selectAllColumns(selected) {
+  document.querySelectorAll('#export-columns-list input[type=checkbox]').forEach(cb => cb.checked = selected);
+  _guardarColumnasExport();
+}
+
+function _guardarColumnasExport() {
+  const cfg = _getExportConfig();
+  const checked = [...document.querySelectorAll('#export-columns-list input[type=checkbox]:checked')]
+    .map(cb => cb.dataset.key);
+  const val = checked.length === cfg.columns.length ? null : checked.join(',');
+  if (cfg.savedVar === '_exportColumnasSeleccionadas') {
+    _exportColumnasSeleccionadas = val;
+  } else {
+    _exportColumnasSeleccionadasClientes = val;
+  }
+  _saveUserConfig(cfg.savedKey, val || '');
+}
+
+function _cargarLibreria(url, globalCheck) {
+  if (eval(`typeof ${globalCheck} !== 'undefined'`)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error(`No se pudo cargar ${url}`));
+    document.head.appendChild(s);
+  });
+}
+
+function _getSelectedColumns() {
+  const cfg = _getExportConfig();
+  return cfg.columns.filter(c =>
+    document.querySelector(`#export-columns-list input[data-key="${c.key}"]`)?.checked
+  );
+}
+
+async function doExport() {
+  const format = document.querySelector('input[name="export-format"]:checked')?.value;
+  if (!format) { toast('⚠️ Selecciona un formato', 'error'); return; }
+
+  const cols = _getSelectedColumns();
+  if (cols.length === 0) { toast('⚠️ Selecciona al menos una columna', 'error'); return; }
+
+  const data = _getExportConfig().getData();
+  if (data.length === 0) { toast('⚠️ No hay registros para exportar', 'error'); return; }
+
+  const progress = document.getElementById('export-progress');
+  const progressText = document.getElementById('export-progress-text');
+  const btn = document.getElementById('export-btn');
+  progress.style.display = 'flex';
+  btn.disabled = true;
+  btn.textContent = '⏳ Generando...';
+
+  try {
+    if (format === 'excel') {
+      await _exportarExcel(data, cols);
+    } else {
+      await _exportarPDF(data, cols);
+    }
+  } catch(e) {
+    toast('⚠️ Error al exportar: ' + e.message, 'error');
+    console.error(e);
+  } finally {
+    progress.style.display = 'none';
+    btn.disabled = false;
+    btn.textContent = '📤 Exportar';
+    closeExportModal();
+  }
+}
+
+async function _exportarExcel(data, cols) {
+  const pt = document.getElementById('export-progress-text');
+  pt.textContent = 'Cargando librería Excel...';
+  await _cargarLibreria('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js', 'XLSX');
+
+  pt.textContent = 'Generando Excel...';
+  const rows = data.map(v => {
+    const row = {};
+    cols.forEach(c => { row[c.label] = c.get(v); });
+    return row;
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+
+  const colWidths = cols.map(c => ({ wch: Math.max(c.label.length * 2, 12) }));
+  ws['!cols'] = colWidths;
+
+  const cfg = _getExportConfig();
+  XLSX.utils.book_append_sheet(wb, ws, cfg.filename);
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/octet-stream' });
+  _descargarBlob(blob, `${cfg.filename}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+async function _exportarPDF(data, cols) {
+  const pt = document.getElementById('export-progress-text');
+  pt.textContent = 'Cargando librería PDF...';
+  await _cargarLibreria('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'jspdf');
+
+  pt.textContent = 'Generando PDF...';
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+
+  const C = {
+    accent: [99,102,241], green: [16,150,100], text: [20,20,40],
+    text2: [80,80,110], text3: [140,140,170], border: [210,210,230],
+    surface2: [248,248,252], bg: [255,255,255], white: [255,255,255],
+  };
+  const setFill = c => doc.setFillColor(c[0],c[1],c[2]);
+  const setTextC = c => doc.setTextColor(c[0],c[1],c[2]);
+
+  setFill(C.bg); doc.rect(0,0,W,H,'F');
+  const cfg = _getExportConfig();
+  setFill(C.accent); doc.rect(0,0,W,16,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(12); setTextC(C.white);
+  doc.text(cfg.title, 8, 11);
+  doc.setFontSize(6); doc.setFont('helvetica','normal'); setTextC([220,220,255]);
+  doc.text(`Generado: ${new Date().toLocaleString('es-BO')}`, W-6, 11, { align:'right' });
+
+  const hoy = new Date();
+  const filtroLabel = _exportSource === 'ventas' ? describeFiltroTiempo('ventas') : '';
+  doc.setFontSize(7); doc.setFont('helvetica','normal'); setTextC(C.text2);
+  doc.text(`${data.length} registros · ${filtroLabel}`, 8, 22);
+
+  const headers = cols.map(c => c.label);
+  const colKey = cols.map(c => c.key);
+  const colW = cols.map((_, i) => Math.max(16, Math.min(55, 270 / cols.length)));
+
+  const rows = data.map(v => cols.map(c => c.get(v)));
+
+  let y = 28;
+  const rowH = 6.5;
+  const lineH = 3.8;
+  const margin = 6;
+  const usableW = W - margin * 2;
+
+  // Header row
+  setFill(C.surface2); doc.rect(margin, y, usableW, rowH, 'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(7); setTextC(C.text);
+  let x = margin;
+  headers.forEach((h, i) => {
+    doc.text(h, x + 1.5, y + 4.5);
+    x += colW[i % colW.length];
+  });
+  y += rowH;
+
+  // Data rows
+  doc.setFont('helvetica','normal'); doc.setFontSize(6);
+  let page = 1;
+  for (const row of rows) {
+    if (y + rowH > H - 10) {
+      // Footer
+      setTextC(C.text3); doc.setFontSize(6);
+      doc.text(`Página ${page}`, W/2, H-4, { align:'center' });
+      doc.addPage();
+      page++;
+      setFill(C.bg); doc.rect(0,0,W,H,'F');
+      y = margin;
+
+      // Header row again
+      setFill(C.surface2); doc.rect(margin, y, usableW, rowH, 'F');
+      doc.setFont('helvetica','bold'); doc.setFontSize(7); setTextC(C.text);
+      x = margin;
+      headers.forEach((h, i) => {
+        doc.text(h, x + 1.5, y + 4.5);
+        x += colW[i % colW.length];
+      });
+      y += rowH;
+      doc.setFont('helvetica','normal'); doc.setFontSize(6);
+    }
+
+    x = margin;
+    row.forEach((val, i) => {
+      const cellW = colW[i % colW.length];
+      setTextC(C.text2);
+      const text = String(val || '');
+      const lines = doc.splitTextToSize(text, cellW - 3);
+      lines.forEach((line, li) => {
+        if (li > 0 && y + lineH > H - 10) { y += lineH; }
+        doc.text(line, x + 1.5, y + 4 + li * lineH);
+      });
+      x += cellW;
+    });
+    y += rowH;
+  }
+
+  setTextC(C.text3); doc.setFontSize(6);
+  doc.text(`Página ${page}`, W/2, H-4, { align:'center' });
+
+  const blob = doc.output('blob');
+  _descargarBlob(blob, `${cfg.filename}_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+function _descargarBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // INIT

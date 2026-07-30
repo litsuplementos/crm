@@ -859,7 +859,7 @@ async function saveNuevoRegistro() {
     if (errI) throw errI;
     if (url) await db.from('ventas').update({ comprobante_url: url }).eq('id', savedId);
 
-    // ── Historial acumulado: solo si la venta quedó como vendido ──
+    // ── Historial acumulado + descuento de stock: solo si la venta quedó como vendido ──
     if (estadoFinal === 'vendido') {
       const mesVenta = fecha.slice(0, 7); // 'YYYY-MM'
       const totalUnidades = items.reduce((s, it) => s + (it.cantidad || 1), 0);
@@ -871,7 +871,43 @@ async function saveNuevoRegistro() {
         p_monto:      montoFinal,
       });
       _clientesFielesCache = null; // invalidar para que recargue
+
+      // ── Decrementar stock (inventario_movimientos) solo la primera vez que llega a vendido ──
+      const esNuevo = !ventaId;
+      const estadoAnterior = esNuevo ? null : (ventasIndex[parseInt(ventaId)]?.estado || null);
+      const primerVendido = esNuevo || estadoAnterior !== 'vendido';
+      if (primerVendido) {
+        for (const item of items) {
+          const cantidad = item.cantidad || 1;
+          const { data: stockRow } = await db.from('inventario_stock')
+            .select('stock_inicial')
+            .eq('producto_id', item.producto_id)
+            .maybeSingle();
+          const stockActual = stockRow?.stock_inicial ?? 0;
+          const stockPosterior = stockActual - cantidad;
+          const { error: errMov } = await db.from('inventario_movimientos').insert({
+            producto_id: item.producto_id,
+            tipo: 'venta',
+            cantidad: cantidad,
+            stock_anterior: stockActual,
+            stock_posterior: stockPosterior,
+            ubicacion: null,
+            notas: `Venta automática #${savedId}`,
+            usuario_id: currentUser.id,
+          });
+          if (errMov) throw errMov;
+
+          if (stockRow) {
+            const { error: errUpd } = await db.from('inventario_stock')
+              .update({ stock_inicial: stockPosterior })
+              .eq('producto_id', item.producto_id);
+            if (errUpd) throw errUpd;
+          }
+        }
+      }
     }
+
+    if (window._checkStockAlerts) window._checkStockAlerts();
 
     // Actualizar memoria local
     const old       = ventasIndex[savedId];

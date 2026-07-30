@@ -37,6 +37,188 @@ body.sidebar-collapsed .topbar {
   left: var(--sidebar-collapsed-w);
 }
 
+/* Botón notificación de stock en topbar */
+#stock-notif-btn {
+  position: relative;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 10px;
+  color: var(--text2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s;
+}
+#stock-notif-btn:hover {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+#stock-notif-btn.has-bajo:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.stock-notif-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  line-height: 1;
+}
+#stock-notif-btn.has-medio .stock-notif-count {
+  background: var(--orange);
+}
+#stock-notif-btn.has-bajo .stock-notif-count {
+  background: var(--red);
+}
+
+@media (max-width: 768px) {
+  #stock-notif-btn { padding: 4px 7px; }
+  #stock-notif-btn svg { width: 14px; height: 14px; }
+}
+
+/* Panel desplegable de alertas de stock */
+.stock-notif-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  min-width: 300px;
+  max-width: 360px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+  overflow: hidden;
+}
+
+.stock-notif-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.stock-notif-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.stock-notif-header-close {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.stock-notif-header-close:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.stock-notif-list {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.stock-notif-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.stock-notif-item:last-child {
+  border-bottom: none;
+}
+
+.stock-notif-name {
+  flex: 1;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stock-notif-badge {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stock-notif-qty {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  min-width: 28px;
+  text-align: right;
+}
+
+.stock-notif-dismiss {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.stock-notif-dismiss:hover {
+  color: var(--red);
+  background: rgba(239,68,68,0.1);
+}
+
+.stock-notif-footer {
+  border-top: 1px solid var(--border);
+  padding: 8px 14px;
+  text-align: center;
+}
+
+.stock-notif-footer button {
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+.stock-notif-footer button:hover {
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
+@media (max-width: 768px) {
+  .stock-notif-panel {
+    position: fixed;
+    top: 52px;
+    right: 14px;
+    left: 14px;
+    max-width: none;
+    min-width: 0;
+  }
+}
+
 /* ══════════════════════════════
    SIDEBAR
    ══════════════════════════════ */
@@ -162,8 +344,9 @@ body.sidebar-collapsed .sidebar-toggle svg {
 }
 
 .sidebar-nav-item:hover {
-  color: var(--text2);
+  color: var(--text);
   background: var(--surface2);
+  border-left-color: var(--border);
 }
 
 .sidebar-nav-item.active {
@@ -171,6 +354,20 @@ body.sidebar-collapsed .sidebar-toggle svg {
   background: var(--accent-glow);
   border-left-color: var(--accent);
   font-weight: 600;
+  box-shadow: inset 3px 0 0 0 var(--accent);
+}
+
+.sidebar-nav-item.active::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  border-radius: 3px 0 0 3px;
+  background: var(--accent);
+  opacity: 0.5;
 }
 
 .sidebar-nav-icon {

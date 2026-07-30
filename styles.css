@@ -305,6 +305,10 @@ button {
   transition: background 0.3s, border-color 0.3s;
   min-width: 0;
 }
+.dash-grid > .dash-card { height: 300px; display: flex; flex-direction: column; }
+.dash-grid #city-chart { flex: 1; min-height: 0; overflow-y: auto; }
+.dash-grid .today-list { flex: 1; max-height: none; min-height: 0; }
+.dash-grid #status-chart { flex: 1; min-height: 0; overflow-y: auto; }
 .dash-card-title {
   font-family: 'Syne', 'Noto Color Emoji', sans-serif; font-weight: 700; font-size: 12px;
   margin-bottom: 12px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px;
@@ -314,6 +318,13 @@ button {
 .bar-track { flex: 1; background: var(--surface3); border-radius: 4px; height: 6px; overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
 .bar-count { font-size: 12px; color: var(--text2); min-width: 18px; text-align: right; font-weight: 600; }
+.dash-card-prod #prod-chart { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.prod-chart-sales { flex: 1; overflow-y: auto; min-height: 0; }
+.prod-chart-divider { height: 1px; background: var(--border); margin: 6px 0; flex-shrink: 0; }
+.prod-chart-stock { flex: 1; overflow-y: auto; min-height: 0; }
+.stock-row { display: flex; align-items: center; justify-content: space-between; padding: 3px 0; font-size: 12px; }
+.stock-row-name { color: var(--text2); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stock-row-qty { font-weight: 700; font-size: 13px; margin-left: 8px; flex-shrink: 0; }
 .today-list { max-height: 230px; overflow-y: auto; }
 .today-item { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border); }
 .today-item:last-child { border-bottom: none; }
@@ -353,6 +364,15 @@ button {
   box-shadow: 0 2px 8px var(--accent-glow);
 }
 .add-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+.export-btn {
+  display: flex; align-items: center; gap: 5px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px 14px;
+  color: var(--text2); font-family: 'Syne', 'Noto Color Emoji', sans-serif; font-weight: 700; font-size: 13px;
+  cursor: pointer; white-space: nowrap; transition: all 0.2s;
+}
+.export-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
 
 /* ── TABLE ── */
 .table-wrap {
@@ -496,12 +516,17 @@ td.td-actions { white-space: nowrap; }
   cursor: pointer; transition: all 0.2s;
 }
 .btn-secondary:hover { border-color: var(--accent); color: var(--text); }
+.export-format-card { user-select: none; }
+.export-format-card:has(input:checked) { border-color: var(--accent) !important; background: var(--accent-glow); }
+
 .btn-save {
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   border: none; border-radius: var(--radius-sm); padding: 9px 20px;
   color: white; font-family: 'Syne', 'Noto Color Emoji', sans-serif; font-weight: 700; font-size: 14px;
   cursor: pointer; transition: opacity 0.2s;
   box-shadow: 0 2px 8px var(--accent-glow);
+}
+.btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .btn-save:hover { opacity: 0.9; }
 
@@ -641,6 +666,9 @@ td.td-actions { white-space: nowrap; }
   gap: 20px;
   align-items: start;
 }
+
+.leyenda-list { scrollbar-width: none; -ms-overflow-style: none; }
+.leyenda-list::-webkit-scrollbar { display: none; }
 
 /* Estado / advertencia dinámica */
 .obj-estado {
