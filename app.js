@@ -1576,8 +1576,19 @@ function deleteUser(id) {
     document.getElementById('delete-user-confirm-input').value = '';
     document.getElementById('delete-user-confirm-input').style.borderColor = '';
     document.getElementById('delete-user-error').style.display = 'none';
+    document.getElementById('delete-user-warning').style.display = 'none';
+    document.getElementById('delete-user-inv-warning').style.display = 'none';
     document.getElementById('delete-user-modal').classList.add('open');
     document.getElementById('delete-user-confirm-input').focus();
+
+    Promise.all([
+      db.from('inventario_movimientos').select('*', { count: 'exact', head: true }).eq('usuario_id', u.id),
+      db.from('inventario_stock').select('*', { count: 'exact', head: true }).eq('usuario_id', u.id)
+    ]).then(([movRes, stockRes]) => {
+      if ((movRes.count || 0) + (stockRes.count || 0) > 0) {
+        document.getElementById('delete-user-inv-warning').style.display = '';
+      }
+    });
 
     document.getElementById('delete-user-confirm-btn').onclick = async () => {
       const typed = document.getElementById('delete-user-confirm-input').value.trim();
@@ -1603,7 +1614,7 @@ function deleteUser(id) {
         const { error } = await db.from('usuarios').delete().eq('id', id);
         if (error) throw error;
         toast('🗑️ Usuario eliminado');
-        _usersCache = null; // FIX #9
+        _usersCache = null;
         renderUsers();
         await loadAgents();
         buildAgentSelector();

@@ -834,6 +834,13 @@
         ⚠️ Este agente tiene ventas registradas y no puede eliminarse.
         Puedes desactivarlo en su lugar.
       </div>
+      <div id="delete-user-inv-warning"
+        style="display:none;color:var(--orange);font-size:12px;margin-top:6px;
+              background:#fff3e0;border:1px solid var(--orange);
+              border-radius:6px;padding:8px 12px;">
+        ⚠️ Este usuario tiene movimientos de inventario. Si lo eliminas,
+        los registros se conservarán pero se perderá la referencia al usuario.
+      </div>
       <div class="modal-actions" style="margin-top:20px;">
         <button class="btn-secondary" onclick="closeDeleteUserModal()">Cancelar</button>
         <button id="delete-user-confirm-btn" style="background:var(--red);border:none;border-radius:var(--radius-sm);padding:11px 24px;color:white;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">Eliminar</button>
