@@ -824,6 +824,26 @@ async function saveNuevoRegistro() {
     let cId = clienteId ? parseInt(clienteId) : null;
     let savedId;
 
+    // ── Validar stock disponible antes de escribir, si la venta quedará como vendido ──
+    let stockVentaMap = null;
+    if (estadoFinal === 'vendido') {
+      stockVentaMap = {};
+      const prodIds = [...new Set(items.map(it => it.producto_id))];
+      const { data: stockRows, error: errStock } = await db.from('inventario_stock')
+        .select('producto_id, stock_inicial')
+        .in('producto_id', prodIds);
+      if (errStock) throw errStock;
+      (stockRows || []).forEach(r => { stockVentaMap[r.producto_id] = r.stock_inicial; });
+      for (const item of items) {
+        const cantidad = item.cantidad || 1;
+        const stockActual = stockVentaMap[item.producto_id] ?? 0;
+        if (stockActual < cantidad) {
+          const prodNombre = allProductos.find(p => p.id === item.producto_id)?.nombre || 'Producto';
+          throw new Error(`Stock insuficiente para "${prodNombre}": disponible ${stockActual} — configura stock en Inventario → Ajustes`);
+        }
+      }
+    }
+
     if (ventaId) {
       if (!cId) throw new Error('Cliente ID faltante en edición');
       const [,,{ error: errV }] = await Promise.all([
@@ -879,11 +899,7 @@ async function saveNuevoRegistro() {
       if (primerVendido) {
         for (const item of items) {
           const cantidad = item.cantidad || 1;
-          const { data: stockRow } = await db.from('inventario_stock')
-            .select('stock_inicial')
-            .eq('producto_id', item.producto_id)
-            .maybeSingle();
-          const stockActual = stockRow?.stock_inicial ?? 0;
+          const stockActual = stockVentaMap?.[item.producto_id] ?? 0;
           const stockPosterior = stockActual - cantidad;
           const { error: errMov } = await db.from('inventario_movimientos').insert({
             producto_id: item.producto_id,
@@ -893,11 +909,11 @@ async function saveNuevoRegistro() {
             stock_posterior: stockPosterior,
             ubicacion: null,
             notas: `Venta automática #${savedId}`,
-            usuario_id: currentUser.id,
+            usuario_id: agenteId,
           });
           if (errMov) throw errMov;
 
-          if (stockRow) {
+          if (stockVentaMap && stockVentaMap[item.producto_id] !== undefined) {
             const { error: errUpd } = await db.from('inventario_stock')
               .update({ stock_inicial: stockPosterior })
               .eq('producto_id', item.producto_id);
