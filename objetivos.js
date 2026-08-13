@@ -268,7 +268,7 @@ const Objetivos = (() => {
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
           <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;
                       text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);">
-            🎯 Objetivo del Día — Equipo
+            ${_ic('target', 14)} Objetivo del Día — Equipo
           </div>
         </div>
         <div style="text-align:center;padding:32px 0;color:var(--text3);font-size:13px;">
@@ -315,7 +315,7 @@ const Objetivos = (() => {
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;
                     text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);">
-          🎯 Objetivo del Día — Equipo
+          ${_ic('target', 14)} Objetivo del Día — Equipo
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
@@ -404,28 +404,28 @@ const Objetivos = (() => {
     let estadoHTML = '';
     if (_antesDeJornada()) {
       estadoHTML = `<div class="obj-estado" style="background:var(--blue-bg);border-color:var(--blue);color:var(--blue);">
-        🌅 Jornada inicia a las ${_minToTime(_horario.mañana.inicio)}</div>`;
+        ${_ic('sunrise', 14)} Jornada inicia a las ${_minToTime(_horario.mañana.inicio)}</div>`;
     } else if (unidades >= _meta) {
-      estadoHTML = `<div class="obj-estado obj-estado-ok">🎉 ¡Objetivo del día cumplido!</div>`;
+      estadoHTML = `<div class="obj-estado obj-estado-ok">${_ic('party-popper', 15)} ¡Objetivo del día cumplido!</div>`;
     } else if (_enPausa()) {
       estadoHTML = `<div class="obj-estado" style="background:var(--yellow-bg);border-color:var(--yellow);color:var(--yellow);">
-        ☕ Pausa — regresa a las ${_minToTime(_horario.tarde.inicio)}</div>`;
+        ${_ic('coffee', 14)} Pausa — regresa a las ${_minToTime(_horario.tarde.inicio)}</div>`;
     } else if (_jornadaTerminada()) {
       estadoHTML = `<div class="obj-estado" style="background:var(--red-bg);border-color:var(--red);color:var(--red);">
-        🏁 Jornada finalizada (${_minToTime(_horario.mañana.inicio)}–${_minToTime(_horario.tarde.fin)})</div>`;
+        ${_ic('flag', 14)} Jornada finalizada (${_minToTime(_horario.mañana.inicio)}–${_minToTime(_horario.tarde.fin)})</div>`;
     } else if (deficit > 0) {
       estadoHTML = `<div class="obj-estado obj-estado-warn" style="border-color:${colorProg};color:${colorProg};">
-        ⚠️ Vas ${deficit} unidad${deficit !== 1 ? 'es' : ''} por detrás del ritmo</div>`;
+        ${_ic('triangle-alert', 14)} Vas ${deficit} unidad${deficit !== 1 ? 'es' : ''} por detrás del ritmo</div>`;
     } else {
       estadoHTML = `<div class="obj-estado obj-estado-ok">
-        ✅ ${superavit > 0 ? `+${superavit} sobre el ritmo` : '¡En ritmo perfecto!'}</div>`;
+        ${_ic('circle-check', 14)} ${superavit > 0 ? `+${superavit} sobre el ritmo` : '¡En ritmo perfecto!'}</div>`;
     }
 
     // ── Bloque de comisión ──
     const comisionHTML = comisionActiva
       ? `<div style="background:var(--green-bg);border:1.5px solid var(--green);border-radius:10px;padding:12px 16px;margin-bottom:10px;">
           <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">
-            💰 Comisión del 3% ACTIVA
+            ${_ic('wallet', 14)} Comisión del 3% ACTIVA
           </div>
           <div style="display:flex;align-items:baseline;gap:6px;">
             <span style="font-size:28px;font-weight:800;color:var(--green);">${unidadesConComision}</span>
@@ -437,7 +437,7 @@ const Objetivos = (() => {
         </div>`
       : `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:10px;">
           <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">
-            💰 Comisión del 3% (Se reinicia cada mes)
+            ${_ic('wallet', 14)} Comisión del 3% (Se reinicia cada mes)
           </div>
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="flex:1;">
@@ -460,7 +460,7 @@ const Objetivos = (() => {
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;
                     text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);">
-          🎯 Objetivo del Día
+          ${_ic('target', 14)} Objetivo del Día
         </div>
         <div style="font-size:26px;line-height:1;" title="Estado actual">${emojiActual}</div>
       </div>
@@ -502,7 +502,7 @@ const Objetivos = (() => {
       <div style="padding-top:8px;border-top:1px solid var(--border);
                   font-size:11px;color:var(--text3);line-height:1.9;">
         ${!_jornadaTerminada() && !_antesDeJornada() && !_enPausa()
-          ? `<div>⏱ Quedan <b style="color:var(--text);">${minRest} min</b> efectivos en la jornada</div>`
+          ? `<div>${_ic('timer', 13)} Quedan <b style="color:var(--text);">${minRest} min</b> efectivos en la jornada</div>`
           : ''}
       </div>
     `;
@@ -653,14 +653,14 @@ const Objetivos = (() => {
 async function saveConfigObjetivoDia() {
   const val = parseInt(document.getElementById('config-objetivo-dia').value) || 5;
   await Objetivos.setMeta(val);
-  toast(`✅ Objetivo: ${val} unidades/día`, 'success');
+  toast(_ic('circle-check', 15) + ' Objetivo: ' + val + ' unidades/día', 'success');
 }
 
 async function saveConfigEmojisActivos(activo) {
   await Objetivos.setEmojisActivos(activo);
   document.getElementById('toggle-emojis-span').style.background =
     activo ? 'var(--green)' : 'var(--border)';
-  toast(activo ? '✅ Emojis activados' : '🔕 Emojis desactivados', 'success');
+  toast(activo ? _ic('circle-check', 15) + ' Emojis activados' : _ic('bell-off', 15) + ' Emojis desactivados', 'success');
 }
 
 async function saveConfigHorario() {
@@ -670,33 +670,33 @@ async function saveConfigHorario() {
   const tFin = document.getElementById('horario-tarde-fin').value;
 
   if (!mIn || !mFin || !tIn || !tFin) {
-    toast('⚠️ Completa todos los horarios', 'error'); return;
+    toast(_ic('triangle-alert', 15) + ' Completa todos los horarios', 'error'); return;
   }
 
   const toMin = str => { const [h,m] = str.split(':').map(Number); return h*60+(m||0); };
   const mInM = toMin(mIn), mFinM = toMin(mFin), tInM = toMin(tIn), tFinM = toMin(tFin);
 
   if (mInM === 0 || mFinM === 0 || tInM === 0 || tFinM === 0) {
-    toast('⚠️ Ningún horario puede ser 00:00', 'error'); return;
+    toast(_ic('triangle-alert', 15) + ' Ningún horario puede ser 00:00', 'error'); return;
   }
   if (mFinM <= mInM) {
-    toast('⚠️ El fin de mañana debe ser mayor que el inicio', 'error'); return;
+    toast(_ic('triangle-alert', 15) + ' El fin de mañana debe ser mayor que el inicio', 'error'); return;
   }
   if (tInM <= mFinM) {
-    toast('⚠️ El inicio de tarde debe ser posterior al fin de mañana', 'error'); return;
+    toast(_ic('triangle-alert', 15) + ' El inicio de tarde debe ser posterior al fin de mañana', 'error'); return;
   }
   if (tFinM <= tInM) {
-    toast('⚠️ El fin de tarde debe ser mayor que el inicio de tarde', 'error'); return;
+    toast(_ic('triangle-alert', 15) + ' El fin de tarde debe ser mayor que el inicio de tarde', 'error'); return;
   }
 
   await Objetivos.setHorario('mañana', mIn, mFin);
   await Objetivos.setHorario('tarde', tIn, tFin);
   Objetivos.afterHorarioSaved();
-  toast('✅ Horario laboral guardado', 'success');
+  toast(_ic('circle-check', 15) + ' Horario laboral guardado', 'success');
 }
 
 async function saveConfigUmbralComision() {
   const val = parseInt(document.getElementById('config-umbral-comision').value) || 150;
   await Objetivos.setUmbralComision(val);
-  toast(`✅ Umbral de comisión: ${val} unidades/mes`, 'success');
+  toast(_ic('circle-check', 15) + ' Umbral de comisión: ' + val + ' unidades/mes', 'success');
 }

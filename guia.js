@@ -196,15 +196,9 @@ function _injectGuiaEditorCSS() {
 async function renderGuia() {
   _injectGuiaEditorCSS();
   try {
-    const [{ data: prods, error: errProds }, { data: guiaData, error: errGuia }] =
-      await Promise.all([
-        db.from('productos').select('id,nombre').eq('activo', true).order('nombre'),
-        db.from('guia_atencion').select('producto_id,contenido'),
-      ]);
-    if (errProds) throw errProds;
-    if (errGuia) throw errGuia;
-
-    const guiaMap = Object.fromEntries((guiaData || []).map(g => [g.producto_id, g]));
+    await DataStore.ensure('guia');
+    const prods = (allProductos || []).filter(p => p.activo);
+    const guiaMap = DataStore.guiaMap || {};
     const wrap = document.getElementById('guia-productos-wrap');
 
     wrap.innerHTML = prods.map(prod => {
@@ -227,7 +221,7 @@ async function renderGuia() {
       </div>`;
     }).join('');
 
-    (guiaData || []).forEach(g => {
+    Object.values(guiaMap).forEach(g => {
       if (!_guiaCache.has(g.producto_id)) _guiaCache.set(g.producto_id, g);
     });
     prods.forEach(p => {
@@ -235,7 +229,7 @@ async function renderGuia() {
     });
 
   } catch(e) {
-    toast('❌ Error: ' + e.message, 'error');
+    toast(_ic('circle-x', 15) + ' Error: ' + esc(e.message), 'error');
   }
 }
 
@@ -319,7 +313,13 @@ function openGuiaProductoModal(prodId, prodNombre) {
     return;
   }
 
-  // Primera vez: fetch y guardar en caché
+  // Primera vez: leer del DataStore (si ya fue cargado) o consultar la BD
+  const fromMap = DataStore.guiaMap ? DataStore.guiaMap[prodId] : undefined;
+  if (fromMap) {
+    _guiaCache.set(prodId, fromMap);
+    render(fromMap);
+    return;
+  }
   db.from('guia_atencion').select('*').eq('producto_id', prodId).maybeSingle()
     .then(({ data: guia }) => {
       _guiaCache.set(prodId, guia);
@@ -361,14 +361,20 @@ async function openGuiaEditor(prodId, prodNombre) {
   if (_guiaCache.has(prodId)) {
     guia = _guiaCache.get(prodId);
   } else {
-    const { data, error } = await db.from('guia_atencion')
-      .select('*').eq('producto_id', prodId).maybeSingle();
-    if (error && error.code !== 'PGRST116') {
-      toast('❌ Error: ' + error.message, 'error');
-      return;
+    const fromMap = DataStore.guiaMap ? DataStore.guiaMap[prodId] : undefined;
+    if (fromMap) {
+      _guiaCache.set(prodId, fromMap);
+      guia = fromMap;
+    } else {
+      const { data, error } = await db.from('guia_atencion')
+        .select('*').eq('producto_id', prodId).maybeSingle();
+      if (error && error.code !== 'PGRST116') {
+        toast(_ic('circle-x', 15) + ' Error: ' + esc(error.message), 'error');
+        return;
+      }
+      _guiaCache.set(prodId, data);
+      guia = data;
     }
-    _guiaCache.set(prodId, data);
-    guia = data;
   }
 
   const norm   = _normalizeContenido(guia?.contenido);
@@ -420,7 +426,7 @@ async function openGuiaEditor(prodId, prodNombre) {
       </div>
       <div class="modal-actions" style="padding:14px 16px;border-top:1px solid var(--border);flex-shrink:0;">
         <button class="btn-secondary" onclick="_closeGuiaEditorAndReturn()">Cancelar</button>
-        <button class="btn-save" onclick="saveGuiaContenido(${prodId},${guiaId ? guiaId : 'null'})">💾 Guardar</button>
+        <button class="btn-save" onclick="saveGuiaContenido(${prodId},${guiaId ? guiaId : 'null'})">${_ic('save', 15)} Guardar</button>
       </div>
     </div>`;
 
@@ -797,12 +803,13 @@ async function saveGuiaContenido(prodId, guiaId) {
 
     // Actualizar caché con el objeto completo y correcto — no borrar
     _guiaCache.set(prodId, { id: savedId, producto_id: prodId, contenido });
+    DataStore.guiaMap[prodId] = { id: savedId, producto_id: prodId, contenido };
 
-    toast('✅ Guía actualizada', 'success');
+    toast(_ic('circle-check', 15) + ' Guía actualizada', 'success');
     _closeGuiaEditor();
     renderGuia();
     setTimeout(() => openGuiaProductoModal(prodId, _guiaActiveProdNombre), 100);
   } catch(e) {
-    toast('❌ Error: ' + e.message, 'error');
+    toast(_ic('circle-x', 15) + ' Error: ' + esc(e.message), 'error');
   }
 }

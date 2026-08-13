@@ -28,15 +28,16 @@
   }
 
   const NAV_ITEMS = [
-    { id: 'dashboard', icon: '📊', label: 'Dashboard',   view: 'dashboard',  always: true },
-    { id: 'ventas', icon: '📋', label: 'Registros', view: 'ventas', always: true },
-    { id: 'clientes', icon: '👥', label: 'Clientes', view: 'clientes', always: true },
-    { id: 'productos', icon: '📦', label: 'Productos',    view: 'productos',  tabId: 'tab-productos' },
-    { id: 'inventario', icon: '📦', label: 'Inventario', view: 'inventario', always: true },
-    { id: 'guia', icon: '📚', label: 'Guía AC', view: 'guia', always: true },
-    { id: 'config', icon: '⚙️',  label: 'Ajustes', view: 'config',  tabId: 'tab-config' },
-    { id: 'usuarios', icon: '🔐', label: 'Usuarios', view: 'usuarios', tabId: 'tab-usuarios' },
-    { id: 'memorias', icon: '🗄️',  label: 'Memorias', view: 'memorias', always: true },
+    { id: 'dashboard', icon: 'layout-dashboard', label: 'Dashboard', view: 'dashboard', always: true, color: 'var(--accent)' },
+    { id: 'ventas', icon: 'clipboard-list', label: 'Registros', view: 'ventas', always: true, color: 'var(--blue)' },
+    { id: 'clientes', icon: 'users', label: 'Clientes', view: 'clientes', always: true, color: 'var(--orange)' },
+    { id: 'productos', icon: 'package', label: 'Productos', view: 'productos', tabId: 'tab-productos', color: 'var(--green)' },
+    { id: 'inventario', icon: 'package-search', label: 'Inventario', view: 'inventario', always: true, color: 'var(--accent2)' },
+    { id: 'almacen', icon: 'truck', label: 'Almacén', view: 'almacen', tabId: 'tab-almacen', color: 'var(--blue)' },
+    { id: 'guia', icon: 'book-open', label: 'Guía AC', view: 'guia', always: true, color: 'var(--orange)' },
+    { id: 'config', icon: 'settings', label: 'Ajustes', view: 'config', tabId: 'tab-config', color: 'var(--text2)' },
+    { id: 'usuarios', icon: 'lock-keyhole', label: 'Usuarios', view: 'usuarios', tabId: 'tab-usuarios', color: 'var(--green)' },
+    { id: 'memorias', icon: 'database', label: 'Memorias', view: 'memorias', always: true, color: 'var(--accent2)' },
   ];
 
   /* 4. Construir el DOM del sidebar */
@@ -179,8 +180,9 @@
       el.dataset.view = item.view;
       el.dataset.label = item.label;
       el.setAttribute('title', '');
+      el.style.setProperty('--nav-ico', item.color || 'var(--text3)');
       el.innerHTML = `
-        <span class="sidebar-nav-icon">${item.icon}</span>
+        <span class="sidebar-nav-icon">${_ic(item.icon, 16)}</span>
         <span class="sidebar-nav-label">${item.label}</span>
       `;
       el.addEventListener('click', () => {

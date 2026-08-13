@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LIT CRM — Gestión de Clientes</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@1.31.0/dist/umd/lucide.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -32,8 +32,8 @@
       <label>Contraseña</label>
       <div style="position:relative;">
         <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" style="width:100%;padding-right:40px;">
-        <button type="button" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'👁️':'🙈'"
-          style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;">👁️</button>
+        <button type="button" onclick="togglePassVisibility(this)"
+          style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;color:var(--text3);"><i data-lucide="eye" width="16" height="16"></i></button>
       </div>
     </div>
     <button class="btn-primary" onclick="doLogin()">Ingresar →</button>
@@ -62,14 +62,15 @@
   </div>
 
   <div class="nav-tabs">
-    <div class="nav-tab active" data-view="dashboard" onclick="showView('dashboard')">📊 Dashboard</div>
-    <div class="nav-tab" data-view="ventas" onclick="showView('ventas')">📋 Registros</div>
-    <div class="nav-tab" data-view="clientes" onclick="showView('clientes')">👥 Clientes</div>
-    <div class="nav-tab" id="tab-productos" data-view="productos" onclick="showView('productos')" style="display:none;">📦 Productos</div>
-    <div class="nav-tab" data-view="guia" onclick="showView('guia')">📚 Guía AC</div>
-    <div class="nav-tab" id="tab-config" data-view="config" onclick="showView('config')" style="display:none;">⚙️ Ajustes</div>
-    <div class="nav-tab" id="tab-usuarios" data-view="usuarios" onclick="showView('usuarios')" style="display:none;">🔐 Usuarios</div>
-    <div class="nav-tab" id="tab-memorias" data-view="memorias" onclick="showView('memorias')" style="display:none;">🗄️ Memorias</div>
+    <div class="nav-tab active" data-view="dashboard" onclick="showView('dashboard')"><i data-lucide="layout-dashboard" width="15" height="15"></i> Dashboard</div>
+    <div class="nav-tab" data-view="ventas" onclick="showView('ventas')"><i data-lucide="clipboard-list" width="15" height="15"></i> Registros</div>
+    <div class="nav-tab" data-view="clientes" onclick="showView('clientes')"><i data-lucide="users" width="15" height="15"></i> Clientes</div>
+    <div class="nav-tab" id="tab-productos" data-view="productos" onclick="showView('productos')" style="display:none;"><i data-lucide="package" width="15" height="15"></i> Productos</div>
+    <div class="nav-tab" data-view="guia" onclick="showView('guia')"><i data-lucide="book-open" width="15" height="15"></i> Guía AC</div>
+    <div class="nav-tab" id="tab-almacen" data-view="almacen" onclick="showView('almacen')" style="display:none;"><i data-lucide="truck" width="15" height="15"></i> Almacén</div>
+    <div class="nav-tab" id="tab-config" data-view="config" onclick="showView('config')" style="display:none;"><i data-lucide="settings" width="15" height="15"></i> Ajustes</div>
+    <div class="nav-tab" id="tab-usuarios" data-view="usuarios" onclick="showView('usuarios')" style="display:none;"><i data-lucide="lock-keyhole" width="15" height="15"></i> Usuarios</div>
+    <div class="nav-tab" id="tab-memorias" data-view="memorias" onclick="showView('memorias')" style="display:none;"><i data-lucide="database" width="15" height="15"></i> Memorias</div>
   </div>
 
   <div class="main">
@@ -153,9 +154,18 @@
               </div>
             </div>
     
+            <!-- Ubicación del Almacén (descuenta stock físico) -->
+            <div class="field">
+              <label><i data-lucide="map-pin" width="14" height="14" style="vertical-align:-2px;"></i> Ubicación del Almacén <span style="color:var(--text3);font-weight:400;font-size:10px;">(stock que se descuenta)</span></label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <select class="smart-input" id="nr-alm-departamento" style="font-size:12px;padding:8px 10px;" onchange="onNrAlmDepChange()"><option value="">— Departamento —</option></select>
+                <select class="smart-input" id="nr-alm-lugar" disabled style="font-size:12px;padding:8px 10px;"><option value="">— Lugar —</option></select>
+              </div>
+            </div>
+
             <!-- Ubicación -->
             <div class="field">
-              <label>Ubicación <span style="color:var(--text3);font-weight:400;font-size:10px;">(selecciona o escribe)</span></label>
+              <label>Ubicación del Cliente<span style="color:var(--text3);font-weight:400;font-size:10px;">(selecciona o escribe)</span></label>
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
                 <select class="smart-input" id="nr-sel-departamento" style="font-size:12px;padding:8px 10px;" onchange="onNrDepChange()"><option value="">— Departamento —</option></select>
                 <select class="smart-input" id="nr-sel-provincia" disabled style="font-size:12px;padding:8px 10px;" onchange="onNrProvChange()"><option value="">— Provincia —</option></select>
@@ -182,16 +192,16 @@
             <div class="field">
               <label>Estado</label>
               <div class="quick-chips" id="nr-quick-chips">
-                <span class="quick-chip"        data-estado="rellamada"     onclick="setNrEstado('rellamada',this)">🔁 Rellamada</span>
-                <span class="quick-chip"        data-estado="seguimiento"   onclick="setNrEstado('seguimiento',this)">🔄 Seguimiento</span>
-                <span class="quick-chip yellow active" data-estado="interesado"    onclick="setNrEstado('interesado',this)">🌟 Interesado</span>
-                <span class="quick-chip"        data-estado="agendar"       onclick="setNrEstado('agendar',this)">📅 Agendar</span>
-                <span class="quick-chip red"    data-estado="sin_respuesta" onclick="setNrEstado('sin_respuesta',this)">📵 Sin respuesta</span>
-                <span class="quick-chip"        data-estado="no_interesado" onclick="setNrEstado('no_interesado',this)">👎 No interesado</span>
-                <span class="quick-chip"        data-estado="enviado"       onclick="setNrEstado('enviado',this)">📦 Enviado</span>
-                <span class="quick-chip green"  data-estado="vendido"       onclick="setNrEstado('vendido',this)">✅ Vendido</span>
-                <span class="quick-chip red"    data-estado="cancelado"     onclick="setNrEstado('cancelado',this)">❌ Cancelado</span>
-                <span class="quick-chip red"    data-estado="spam"          onclick="setNrEstado('spam',this)">🚫 SPAM</span>
+                <span class="quick-chip accent"     data-estado="rellamada"     onclick="setNrEstado('rellamada',this)"><i data-lucide="rotate-ccw" width="13" height="13"></i> Rellamada</span>
+                <span class="quick-chip blue"       data-estado="seguimiento"   onclick="setNrEstado('seguimiento',this)"><i data-lucide="refresh-cw" width="13" height="13"></i> Seguimiento</span>
+                <span class="quick-chip yellow active" data-estado="interesado"    onclick="setNrEstado('interesado',this)"><i data-lucide="star" width="13" height="13"></i> Interesado</span>
+                <span class="quick-chip orange"     data-estado="agendar"       onclick="setNrEstado('agendar',this)"><i data-lucide="calendar" width="13" height="13"></i> Agendar</span>
+                <span class="quick-chip red"        data-estado="sin_respuesta" onclick="setNrEstado('sin_respuesta',this)"><i data-lucide="phone-off" width="13" height="13"></i> Sin respuesta</span>
+                <span class="quick-chip gray"       data-estado="no_interesado" onclick="setNrEstado('no_interesado',this)"><i data-lucide="thumbs-down" width="13" height="13"></i> No interesado</span>
+                <span class="quick-chip blue"       data-estado="enviado"       onclick="setNrEstado('enviado',this)"><i data-lucide="package" width="13" height="13"></i> Enviado</span>
+                <span class="quick-chip green"      data-estado="vendido"       onclick="setNrEstado('vendido',this)"><i data-lucide="circle-check" width="13" height="13"></i> Vendido</span>
+                <span class="quick-chip red"        data-estado="cancelado"     onclick="setNrEstado('cancelado',this)"><i data-lucide="circle-x" width="13" height="13"></i> Cancelado</span>
+                <span class="quick-chip gray"       data-estado="spam"          onclick="setNrEstado('spam',this)"><i data-lucide="ban" width="13" height="13"></i> SPAM</span>
               </div>
             </div>
     
@@ -226,7 +236,7 @@
                 <input class="smart-input" type="datetime-local" id="nr-recordatorio" style="flex:1;">
                 <button type="button" onclick="_activarSonido(this)"
                   style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--text2);cursor:pointer;white-space:nowrap;">
-                  🔔 Activar sonido
+                  <i data-lucide="bell" width="14" height="14" style="vertical-align:-2px;"></i> Activar sonido
                 </button>
               </div>
             </div>
@@ -236,20 +246,24 @@
               <label>Comprobante <span style="color:var(--text3);font-weight:400;font-size:11px;">(imagen o PDF, máx 5MB)</span></label>
               <input type="file" id="nr-comprobante" accept="image/jpeg,image/png,image/webp,application/pdf"
                 style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 14px;color:var(--text2);font-size:13px;cursor:pointer;"
-                onchange="const f=this.files[0],w=document.getElementById('nr-comprobante-preview');if(!f)return;if(f.type==='application/pdf'){w.innerHTML='<div style=\'margin-top:8px;font-size:13px;color:var(--accent2)\'>📄 '+f.name+'</div>';return;}const r=new FileReader();r.onload=e=>{const img=document.createElement('img');img.src=e.target.result;img.style.cssText='max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);margin-top:8px';w.innerHTML='';w.appendChild(img)};r.readAsDataURL(f)">
+                onchange="const f=this.files[0],w=document.getElementById('nr-comprobante-preview');if(!f)return;if(f.type==='application/pdf'){w.innerHTML='<div style=\'margin-top:8px;font-size:13px;color:var(--accent2)\'>'+_ic('file-text',14)+' '+f.name+'</div>';return;}const r=new FileReader();r.onload=e=>{const img=document.createElement('img');img.src=e.target.result;img.style.cssText='max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);margin-top:8px';w.innerHTML='';w.appendChild(img)};r.readAsDataURL(f)">
               <div id="nr-comprobante-preview"></div>
             </div>
-    
+
             <!-- Acciones -->
             <div style="display:flex;gap:9px;justify-content:space-between;align-items:center;padding-top:8px;padding-bottom:24px;">
               <button id="nr-delete-btn" onclick="nrDeleteVenta()"
                 style="display:none;background:var(--red-bg);border:1px solid var(--red);border-radius:var(--radius-sm);
                         padding:9px 16px;color:var(--red);font-size:14px;font-weight:700;cursor:pointer;">
-                🗑️ Eliminar
+                <i data-lucide="trash-2" width="15" height="15" style="vertical-align:-2px;"></i> Eliminar
               </button>
-              <div style="display:flex;gap:9px;margin-left:auto;">
+              <div style="display:flex;gap:9px;align-items:center;margin-left:auto;">
+                <div id="nr-recibo-preview"></div>
+                <button type="button" class="btn-secondary" id="nr-recibo-btn" onclick="generarReciboVenta()" style="display:none;white-space:nowrap;">
+                  <i data-lucide="file-text" width="15" height="15" style="vertical-align:-2px;"></i> Generar recibo
+                </button>
                 <button class="btn-secondary" onclick="cerrarNuevoRegistro()">Cancelar</button>
-                <button class="btn-save" id="nr-save-btn" onclick="saveNuevoRegistro()">💾 Guardar Registro</button>
+                <button class="btn-save" id="nr-save-btn" onclick="saveNuevoRegistro()"><i data-lucide="save" width="15" height="15" style="vertical-align:-2px;"></i> Guardar</button>
               </div>
             </div>
     
@@ -268,7 +282,7 @@
             <!-- Botón editar guía — solo admin, visible cuando hay producto seleccionado -->
             <button id="nr-guia-edit-btn" style="display:none;"
               onclick="abrirEditorGuiaDesdeNr()"
-              class="icon-btn">✏️ Editar guía</button>
+              class="icon-btn"><i data-lucide="pencil" width="14" height="14"></i> Editar guía</button>
           </div>
     
           <!-- Contenido de la guía -->
@@ -276,7 +290,7 @@
     
             <!-- Estado vacío — sin producto seleccionado -->
             <div id="nr-guia-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;min-height:300px;color:var(--text3);text-align:center;padding:40px;">
-              <div style="font-size:48px;margin-bottom:16px;">📋</div>
+              <div style="font-size:48px;margin-bottom:16px;"><i data-lucide="clipboard-list" width="48" height="48"></i></div>
               <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Sin producto seleccionado</div>
               <div style="font-size:13px;line-height:1.6;">Selecciona un producto en el formulario<br>para ver aquí la guía de atención al cliente.</div>
             </div>
@@ -308,12 +322,12 @@
             <div style="font-size:12px;color:var(--text3);" id="dash-periodo"></div>
             <select class="filter-select" id="filtro-tiempo-dash" onchange="onFiltroTiempoChange(this.value, 'dash')"
               style="font-size:13px;">
-              <option value="todos">🗓 Todos</option>
-              <option value="dia">📅 Hoy</option>
-              <option value="semana">📆 Semana</option>
-              <option value="mes">🗃 Mes</option>
-              <option value="año">📊 Año</option>
-              <option value="personalizado">📅 Personalizado</option>
+              <option value="todos">Todos</option>
+              <option value="dia">Hoy</option>
+              <option value="semana">Semana</option>
+              <option value="mes">Mes</option>
+              <option value="año">Año</option>
+              <option value="personalizado">Personalizado</option>
             </select>
             <select class="filter-select" id="filtro-mes-especifico" onchange="onFiltroMesChange(this.value)"
               style="font-size:13px;display:none;">
@@ -322,7 +336,7 @@
               <input type="date" id="dash-date-desde" class="filter-select" onchange="onDashFechaRangeChange()" style="font-size:12px;padding:4px 6px;">
               <span style="color:var(--text3);font-size:11px;">a</span>
               <input type="date" id="dash-date-hasta" class="filter-select" onchange="onDashFechaRangeChange()" style="font-size:12px;padding:4px 6px;">
-              <button onclick="clearDashFechaRange()" class="icon-btn" title="Limpiar rango" style="padding:2px 5px;font-size:11px;">✕</button>
+              <button onclick="clearDashFechaRange()" class="icon-btn" title="Limpiar rango" style="padding:2px 5px;font-size:11px;"><i data-lucide="x" width="12" height="12"></i></button>
             </div>
           </div>
         </div>
@@ -332,15 +346,15 @@
       <!-- Segunda fila: Enviados e Interesados expandidos -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
 
-        <!-- ENVIADOS -->
+        <!-- STOCK -->
         <div class="dash-card">
-          <div class="dash-card-title">📦 Enviados <span id="dash-enviados-count" style="color:var(--blue);"></span></div>
-          <div id="dash-enviados-list" style="max-height:220px;overflow-y:auto;"></div>
+          <div class="dash-card-title"><i data-lucide="boxes" width="15" height="15" style="vertical-align:-2px;"></i> Stock <span id="dash-stock-count" style="color:var(--accent2);"></span></div>
+          <div id="dash-stock-list" style="max-height:220px;overflow-y:auto;"></div>
         </div>
 
         <!-- INTERESADOS -->
         <div class="dash-card" style="border:2px solid var(--green);box-shadow:0 0 18px rgba(16,185,129,0.18);animation:interesadosPulse 2.5s ease-in-out infinite;">
-          <div class="dash-card-title" style="color:var(--green);">🌟 Interesados — ¡Consigue la venta! <span id="dash-interesados-count" style="color:var(--green);"></span></div>
+          <div class="dash-card-title" style="color:var(--green);"><i data-lucide="star" width="15" height="15" style="vertical-align:-2px;"></i> Interesados — ¡Consigue la venta! <span id="dash-interesados-count" style="color:var(--green);"></span></div>
           <div id="dash-interesados-list" style="max-height:220px;overflow-y:auto;"></div>
         </div>
 
@@ -348,7 +362,7 @@
 
       <!-- Podio clientes fieles -->
       <div class="dash-card" style="margin-bottom:14px;">
-        <div class="dash-card-title">🏆 Clientes Fieles (Top por unidades compradas)</div>
+        <div class="dash-card-title"><i data-lucide="trophy" width="15" height="15" style="vertical-align:-2px;"></i> Clientes Fieles (Top por unidades compradas)</div>
         <div id="dash-clientes-fieles"></div>
       </div>
 
@@ -356,7 +370,7 @@
 
         <div class="dash-card" id="card-rosca-anual">
           <div class="dash-card-title">
-            🍩 Ventas del año
+            <i data-lucide="donut" width="15" height="15" style="vertical-align:-2px;"></i> Ventas del año
             <span id="dash-rosca-year" style="font-size:12px;color:var(--text3);font-weight:400;margin-left:6px;"></span>
           </div>
           <div id="dash-rosca-anual">
@@ -364,7 +378,7 @@
           </div>
         </div>
 
-        <!-- 🎯 Panel objetivo del día -->
+        <!-- Panel objetivo del día -->
         <div class="dash-card" id="card-objetivo-dia">
           <div id="obj-panel-derecho"></div>
         </div>
@@ -372,12 +386,12 @@
       </div>
 
       <div class="dash-grid">
-        <div class="dash-card"><div class="dash-card-title">📦 Por Producto</div><div id="prod-chart"></div></div>
-        <div class="dash-card"><div class="dash-card-title">📍 Top Ubicaciones</div><div id="city-chart"></div></div>
-        <div class="dash-card"><div class="dash-card-title">📞 Pendientes</div><div class="today-list" id="today-list"></div></div>
-        <div class="dash-card"><div class="dash-card-title">🔄 Pipeline</div><div id="status-chart"></div></div>
+        <div class="dash-card"><div class="dash-card-title"><i data-lucide="package" width="15" height="15" style="vertical-align:-2px;"></i> Por Producto</div><div id="prod-chart"></div></div>
+        <div class="dash-card"><div class="dash-card-title"><i data-lucide="map-pin" width="15" height="15" style="vertical-align:-2px;"></i> Top Ubicaciones</div><div id="city-chart"></div></div>
+        <div class="dash-card"><div class="dash-card-title"><i data-lucide="phone" width="15" height="15" style="vertical-align:-2px;"></i> Pendientes</div><div class="today-list" id="today-list"></div></div>
+        <div class="dash-card"><div class="dash-card-title"><i data-lucide="refresh-cw" width="15" height="15" style="vertical-align:-2px;"></i> Pipeline</div><div id="status-chart"></div></div>
         <div class="dash-card" id="agents-card" style="display:none;grid-column:span 4;">
-          <div class="dash-card-title">👤 Rendimiento por Agente</div>
+          <div class="dash-card-title"><i data-lucide="user" width="15" height="15" style="vertical-align:-2px;"></i> Rendimiento por Agente</div>
           <div id="agents-chart"></div>
         </div>
       </div>
@@ -391,8 +405,8 @@
             <div style="display:flex;align-items:center;gap:12px;">
               <div class="section-title" style="margin:0;">Registros</div>
               <div style="display:flex;gap:0;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;">
-                <button id="tab-activos" onclick="setArchivoFiltro(false)" class="archivo-tab archivo-tab-active">📋 Activos</button>
-                <button id="tab-archivados" onclick="setArchivoFiltro(true)" class="archivo-tab">🔒 Archivados</button>
+                <button id="tab-activos" onclick="setArchivoFiltro(false)" class="archivo-tab archivo-tab-active"><i data-lucide="clipboard-list" width="13" height="13" style="vertical-align:-2px;"></i> Activos</button>
+                <button id="tab-archivados" onclick="setArchivoFiltro(true)" class="archivo-tab"><i data-lucide="lock" width="13" height="13" style="vertical-align:-2px;"></i> Archivados</button>
               </div>
               <div class="section-sub" id="ventas-count">Cargando...</div>
             </div>            
@@ -400,14 +414,12 @@
         </div>
         <div style="display:flex;gap:8px;">
           <button class="add-btn" onclick="showNuevoRegistro()">+ Nuevo Registro</button>
-          <button class="export-btn" onclick="openExportModal('ventas')">📤 Exportar</button>
+          <button class="export-btn" onclick="openExportModal('ventas')"><i data-lucide="upload" width="14" height="14" style="vertical-align:-2px;"></i> Exportar</button>
         </div>
       </div>
       <div class="toolbar">
-        <input class="search-box" type="text" id="search-input" placeholder="🔍  Nombre, celular, producto, notas..." oninput="debouncedRenderVentas()">
-        <select class="filter-select" id="filter-status" onchange="onFilterStatusChange()">
-          <option value="">Todos los estados</option>
-        </select>
+        <input class="search-box" type="text" id="search-input" placeholder="Nombre, celular, producto, notas..." oninput="debouncedRenderVentas()">
+        <div class="cselect" id="filter-status"></div>
         <select class="filter-select" id="filter-producto" onchange="onFilterProductoChange()">
           <option value="">Todos los productos</option>
         </select>
@@ -415,21 +427,21 @@
           <option value="">Todas las ubicaciones</option>
         </select>
         <select class="filter-select" id="filter-agente" onchange="onFilterAgenteChange()" style="display:none;">
-          <option value="">👥 Todos los agentes</option>
+          <option value="">Todos los agentes</option>
         </select>
         <select class="filter-select" id="filtro-tiempo-ventas" onchange="onFiltroTiempoChange(this.value, 'ventas')">
-          <option value="todos">🗓 Todos los tiempos</option>
-          <option value="dia">📅 Hoy</option>
-          <option value="semana">📆 Esta semana</option>
-          <option value="mes">🗃 Este mes</option>
-          <option value="año">📊 Este año</option>
-          <option value="personalizado">📅 Personalizado</option>
+          <option value="todos">Todos los tiempos</option>
+          <option value="dia">Hoy</option>
+          <option value="semana">Esta semana</option>
+          <option value="mes">Este mes</option>
+          <option value="año">Este año</option>
+          <option value="personalizado">Personalizado</option>
         </select>
         <div style="display:none;align-items:center;gap:4px;" id="ventas-date-range">
           <input type="date" id="ventas-date-desde" class="filter-select" onchange="onVentasFechaRangeChange()" style="font-size:12px;padding:4px 6px;">
           <span style="color:var(--text3);font-size:11px;">a</span>
           <input type="date" id="ventas-date-hasta" class="filter-select" onchange="onVentasFechaRangeChange()" style="font-size:12px;padding:4px 6px;">
-          <button onclick="clearVentasFechaRange()" class="icon-btn" title="Limpiar rango" style="padding:2px 5px;font-size:11px;">✕</button>
+          <button onclick="clearVentasFechaRange()" class="icon-btn" title="Limpiar rango" style="padding:2px 5px;font-size:11px;"><i data-lucide="x" width="12" height="12"></i></button>
         </div>
       </div>
       <div class="table-wrap desktop-table">
@@ -462,22 +474,10 @@
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="search-box" type="text" id="clientes-search"
-            placeholder="🔍 Nombre, celular, ubicación..."
+            placeholder="Nombre, celular, ubicación..."
             oninput="debouncedRenderClientes()" style="min-width:220px;">
-          <select class="filter-select" id="clientes-filter-estado" onchange="onClientesFilterEstadoChange()">
-            <option value="">Todos los estados</option>
-            <option value="rellamada">🔁 Rellamada</option>
-            <option value="seguimiento">🔄 Seguimiento</option>
-            <option value="interesado">🌟 Interesado</option>
-            <option value="agendar">📅 Agendar</option>
-            <option value="sin_respuesta">📵 Sin respuesta</option>
-            <option value="no_interesado">👎 No interesado</option>
-            <option value="enviado">📦 Enviado</option>
-            <option value="vendido">✅ Vendido</option>
-            <option value="cancelado">❌ Cancelado</option>
-            <option value="spam">🚫 SPAM</option>
-          </select>
-          <button class="export-btn" onclick="openExportModal('clientes')">📤 Exportar</button>
+          <div class="cselect" id="clientes-filter-estado"></div>
+          <button class="export-btn" onclick="openExportModal('clientes')"><i data-lucide="upload" width="14" height="14" style="vertical-align:-2px;"></i> Exportar</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -525,9 +525,9 @@
 
     <!-- CONFIG -->
     <div class="view" id="view-config"><div class="view-scroll-wrap">
-      <div class="section-title" style="margin-bottom:20px;">⚙️ Configuración</div>
+      <div class="section-title" style="margin-bottom:20px;"><i data-lucide="settings" width="18" height="18" style="vertical-align:-3px;"></i> Configuración</div>
       <div class="config-card">
-        <div class="config-card-title">🔓 Permisos de edición</div>
+        <div class="config-card-title"><i data-lucide="lock-open" width="15" height="15" style="vertical-align:-2px;"></i> Permisos de edición</div>
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;">
           <div>
             <div style="font-size:14px;font-weight:600;margin-bottom:3px;">Permitir edición de registros vendidos</div>
@@ -542,7 +542,7 @@
       </div>
 
       <div class="config-card">
-        <div class="config-card-title">🏆 Clientes Fieles</div>
+        <div class="config-card-title"><i data-lucide="trophy" width="15" height="15" style="vertical-align:-2px;"></i> Clientes Fieles</div>
         <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
           Define cuántas unidades acumuladas califican a un cliente como fiel y el descuento que se les aplicará automáticamente.
         </div>
@@ -558,14 +558,14 @@
               style="width:100%;">
           </div>
         </div>
-        <button class="btn-save" onclick="saveConfigClientesFieles()">💾 Guardar configuración de fieles</button>
+        <button class="btn-save" onclick="saveConfigClientesFieles()"><i data-lucide="save" width="15" height="15" style="vertical-align:-2px;"></i> Guardar configuración de fieles</button>
         <div style="font-size:12px;color:var(--text3);margin-top:10px;">
           Al registrar el celular de un cliente fiel en el formulario, el descuento se precargará automáticamente.
         </div>
       </div>
 
       <div class="config-card">
-        <div class="config-card-title">🎯 Objetivo de unidades por día</div>
+        <div class="config-card-title"><i data-lucide="target" width="15" height="15" style="vertical-align:-2px;"></i> Objetivo de unidades por día</div>
         <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
           Define cuántas unidades mínimas debe vender cada agente por día (jornada de 8h).
           Esto activa los emojis animados y el panel de seguimiento.
@@ -576,7 +576,7 @@
             min="1" max="100" placeholder="10" style="width:100%;">
         </div>
         <button class="btn-save" onclick="saveConfigObjetivoDia()">
-          💾 Guardar objetivo
+          <i data-lucide="save" width="15" height="15" style="vertical-align:-2px;"></i> Guardar objetivo
         </button>
         <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);
             display:flex;align-items:center;justify-content:space-between;">
@@ -595,7 +595,7 @@
       </div>
 
       <div class="config-card">
-        <div class="config-card-title">💰 Umbral de comisión mensual</div>
+        <div class="config-card-title"><i data-lucide="wallet" width="15" height="15" style="vertical-align:-2px;"></i> Umbral de comisión mensual</div>
         <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
           Define cuántas unidades debe vender un consultor dentro del mes para activar
           la comisión del 3% por unidad adicional.
@@ -606,7 +606,7 @@
             min="1" max="9999" placeholder="150" style="width:100%;">
         </div>
         <button class="btn-save" onclick="saveConfigUmbralComision()">
-          💾 Guardar umbral
+          <i data-lucide="save" width="15" height="15" style="vertical-align:-2px;"></i> Guardar umbral
         </button>
         <div style="font-size:13px;color:var(--text3);margin-top:8px;">
           Ejemplo: 150. Desde la unidad 151 el agente gana +3% de comisión por unidad vendidad.
@@ -614,7 +614,7 @@
       </div>
 
       <div class="config-card">
-        <div class="config-card-title">🕐 Horario laboral</div>
+        <div class="config-card-title"><i data-lucide="clock" width="15" height="15" style="vertical-align:-2px;"></i> Horario laboral</div>
         <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
           Define los turnos de trabajo. Los emojis y el ritmo se calculan sobre este horario.
         </div>
@@ -622,7 +622,7 @@
           <div>
             <div style="font-size:12px;font-weight:700;color:var(--text3);
                         text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">
-              🌅 Turno Mañana
+              <i data-lucide="sunrise" width="14" height="14" style="vertical-align:-2px;"></i> Turno Mañana
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
               <div class="field">
@@ -638,7 +638,7 @@
           <div>
             <div style="font-size:12px;font-weight:700;color:var(--text3);
                         text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">
-              🌆 Turno Tarde
+              <i data-lucide="sunset" width="14" height="14" style="vertical-align:-2px;"></i> Turno Tarde
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
               <div class="field">
@@ -652,19 +652,19 @@
             </div>
           </div>
         </div>
-        <button class="btn-save" onclick="saveConfigHorario()">💾 Guardar horario</button>
+        <button class="btn-save" onclick="saveConfigHorario()"><i data-lucide="save" width="15" height="15" style="vertical-align:-2px;"></i> Guardar horario</button>
         <div style="font-size:11px;color:var(--text3);margin-top:8px;">
           Los emojis se distribuyen uniformemente a lo largo de la jornada según el horario configurado.
         </div>
       </div>
 
       <div class="config-card">
-        <div class="config-card-title">📋 Reglas automáticas</div>
+        <div class="config-card-title"><i data-lucide="clipboard-list" width="15" height="15" style="vertical-align:-2px;"></i> Reglas automáticas</div>
         <div style="font-size:13px;color:var(--text2);line-height:2.2;">
-          🔁 <b style="color:var(--text);">3× Rellamada</b> → Se archiva automáticamente como <b>No interesado</b><br>
-          📵 <b style="color:var(--text);">4× Sin respuesta</b> → Se archiva automáticamente como <b>No interesado</b><br>
-          ❌ <b style="color:var(--text);">2× Cancelado</b> → Estado cambia a <b>SPAM</b> automáticamente<br>
-          ⚠️ El admin puede editar manualmente cualquier estado para revertirlo
+          <i data-lucide="rotate-ccw" width="13" height="13" style="vertical-align:-2px;"></i> <b style="color:var(--text);">3× Rellamada</b> → Se archiva automáticamente como <b>No interesado</b><br>
+          <i data-lucide="phone-off" width="13" height="13" style="vertical-align:-2px;"></i> <b style="color:var(--text);">4× Sin respuesta</b> → Se archiva automáticamente como <b>No interesado</b><br>
+          <i data-lucide="circle-x" width="13" height="13" style="vertical-align:-2px;"></i> <b style="color:var(--text);">2× Cancelado</b> → Estado cambia a <b>SPAM</b> automáticamente<br>
+          <i data-lucide="triangle-alert" width="13" height="13" style="vertical-align:-2px;"></i> El admin puede editar manualmente cualquier estado para revertirlo
         </div>
       </div>
     </div></div>
@@ -700,6 +700,17 @@
       <div id="inventario-wrap"></div>
     </div></div>
 
+    <!-- ALMACÉN (admin) -->
+    <div class="view" id="view-almacen"><div class="view-scroll-wrap">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Almacén</div>
+          <div class="section-sub">Stock por departamento, lugar y ubicación</div>
+        </div>
+      </div>
+      <div id="almacen-wrap"></div>
+    </div></div>
+
   </div>
 </div>
 
@@ -726,8 +737,8 @@
         <div class="field" style="display:flex;align-items:flex-end;">
           <label style="display:block;width:100%;">Estado</label>
           <select class="smart-input" id="p-activo">
-            <option value="true">✅ Activo</option>
-            <option value="false">🚫 Inactivo</option>
+            <option value="true">Activo</option>
+            <option value="false">Inactivo</option>
           </select>
         </div>
       </div>
@@ -743,7 +754,7 @@
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" onclick="closeProductoModal()">Cancelar</button>
-        <button class="btn-save" onclick="saveProducto()">💾 Guardar</button>
+        <button class="btn-save" onclick="saveProducto()"><i data-lucide="save" width="15" height="15" style="vertical-align:-2px;"></i> Guardar</button>
       </div>
     </div>
   </div>
@@ -767,8 +778,8 @@
           <label>Contraseña</label>
           <div style="position:relative;">
             <input class="smart-input" type="password" id="u-pass" placeholder="••••••••" style="padding-right:40px;">
-            <button type="button" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'👁️':'🙈'"
-              style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;">👁️</button>
+            <button type="button" onclick="togglePassVisibility(this)"
+              style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;color:var(--text3);"><i data-lucide="eye" width="16" height="16"></i></button>
           </div>
         </div>
         <div class="field"><label>Rol</label>
@@ -780,19 +791,19 @@
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" onclick="closeUserModal()">Cancelar</button>
-        <button class="btn-save" onclick="saveUser()">💾 Guardar</button>
+        <button class="btn-save" onclick="saveUser()"><i data-lucide="save" width="15" height="15" style="vertical-align:-2px;"></i> Guardar</button>
       </div>
     </div>
   </div>
 </div>
 
-<div class="toast" id="toast"><span class="toast-icon">ℹ️</span><span id="toast-msg">Listo</span></div>
+<div class="toast" id="toast"><span class="toast-icon"><i data-lucide="info" width="16" height="16"></i></span><span id="toast-msg">Listo</span></div>
 
 <!-- MODAL ELIMINAR REGISTRO -->
 <div class="modal-overlay" id="delete-modal">
   <div class="modal" style="max-width:420px;">
     <div class="modal-header">
-      <div class="modal-title" style="color:var(--red);">🗑️ Eliminar registro</div>
+      <div class="modal-title" style="color:var(--red);"><i data-lucide="trash-2" width="16" height="16" style="vertical-align:-2px;"></i> Eliminar registro</div>
       <button class="modal-close" onclick="closeDeleteModal()">×</button>
     </div>
     <div class="modal-body">
@@ -803,7 +814,7 @@
       <div style="font-size:13px;color:var(--text2);margin-bottom:4px;">Cliente: <b style="color:var(--text);" id="delete-modal-nombre"></b></div>
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:15px;font-weight:700;color:var(--accent2);letter-spacing:1px;" id="delete-modal-celular"></div>
       <input class="smart-input" id="delete-confirm-input" placeholder="Escribe el celular aquí..." autocomplete="off" type="tel">
-      <div id="delete-modal-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;">⚠️ El celular no coincide</div>
+      <div id="delete-modal-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;"><i data-lucide="triangle-alert" width="13" height="13" style="vertical-align:-2px;"></i> El celular no coincide</div>
       <div class="modal-actions" style="margin-top:20px;">
         <button class="btn-secondary" onclick="closeDeleteModal()">Cancelar</button>
         <button id="delete-confirm-btn" style="background:var(--red);border:none;border-radius:var(--radius-sm);padding:11px 24px;color:white;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">Eliminar</button>
@@ -816,7 +827,7 @@
 <div class="modal-overlay" id="delete-user-modal">
   <div class="modal" style="max-width:420px;">
     <div class="modal-header">
-      <div class="modal-title" style="color:var(--red);">🗑️ Eliminar usuario</div>
+      <div class="modal-title" style="color:var(--red);"><i data-lucide="trash-2" width="16" height="16" style="vertical-align:-2px;"></i> Eliminar usuario</div>
       <button class="modal-close" onclick="closeDeleteUserModal()">×</button>
     </div>
     <div class="modal-body">
@@ -826,19 +837,19 @@
       </p>
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:15px;font-weight:700;color:var(--accent2);" id="delete-user-nombre"></div>
       <input class="smart-input" id="delete-user-confirm-input" placeholder="Escribe el nombre aquí..." autocomplete="off">
-      <div id="delete-user-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;">⚠️ El nombre no coincide</div>
+      <div id="delete-user-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;"><i data-lucide="triangle-alert" width="13" height="13" style="vertical-align:-2px;"></i> El nombre no coincide</div>
       <div id="delete-user-warning"
         style="display:none;color:var(--yellow);font-size:12px;margin-top:6px;
               background:var(--yellow-bg);border:1px solid var(--yellow);
               border-radius:6px;padding:8px 12px;">
-        ⚠️ Este agente tiene ventas registradas y no puede eliminarse.
+        <i data-lucide="triangle-alert" width="13" height="13" style="vertical-align:-2px;"></i> Este agente tiene ventas registradas y no puede eliminarse.
         Puedes desactivarlo en su lugar.
       </div>
       <div id="delete-user-inv-warning"
         style="display:none;color:var(--orange);font-size:12px;margin-top:6px;
               background:#fff3e0;border:1px solid var(--orange);
               border-radius:6px;padding:8px 12px;">
-        ⚠️ Este usuario tiene movimientos de inventario. Si lo eliminas,
+        <i data-lucide="triangle-alert" width="13" height="13" style="vertical-align:-2px;"></i> Este usuario tiene movimientos de inventario. Si lo eliminas,
         los registros se conservarán pero se perderá la referencia al usuario.
       </div>
       <div class="modal-actions" style="margin-top:20px;">
@@ -853,7 +864,7 @@
 <div class="modal-overlay" id="delete-producto-modal">
   <div class="modal" style="max-width:420px;">
     <div class="modal-header">
-      <div class="modal-title" style="color:var(--red);">🗑️ Eliminar producto</div>
+      <div class="modal-title" style="color:var(--red);"><i data-lucide="trash-2" width="16" height="16" style="vertical-align:-2px;"></i> Eliminar producto</div>
       <button class="modal-close" onclick="closeDeleteProductoModal()">×</button>
     </div>
     <div class="modal-body">
@@ -863,9 +874,9 @@
       </p>
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:15px;font-weight:700;color:var(--accent2);" id="delete-producto-nombre"></div>
       <input class="smart-input" id="delete-producto-confirm-input" placeholder="Escribe el nombre aquí..." autocomplete="off">
-      <div id="delete-producto-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;">⚠️ El nombre no coincide</div>
+      <div id="delete-producto-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;"><i data-lucide="triangle-alert" width="13" height="13" style="vertical-align:-2px;"></i> El nombre no coincide</div>
       <div id="delete-producto-warning" style="display:none;color:var(--red);font-size:12px;margin-top:6px;background:var(--red-bg);border:1px solid var(--red);border-radius:6px;padding:8px 12px;">
-        ⚠️ Este producto tiene ventas registradas y no puede eliminarse. Puedes desactivarlo en su lugar.
+        <i data-lucide="triangle-alert" width="13" height="13" style="vertical-align:-2px;"></i> Este producto tiene ventas registradas y no puede eliminarse. Puedes desactivarlo en su lugar.
       </div>
       <div class="modal-actions" style="margin-top:20px;">
         <button class="btn-secondary" onclick="closeDeleteProductoModal()">Cancelar</button>
@@ -892,7 +903,7 @@
     <div class="modal-header">
       <div class="modal-title" id="guia-modal-title"></div>
       <div style="display:flex;gap:6px;">
-        <button class="icon-btn" id="guia-edit-btn" style="display:none;">✏️ Editar</button>
+        <button class="icon-btn" id="guia-edit-btn" style="display:none;"><i data-lucide="pencil" width="14" height="14" style="vertical-align:-2px;"></i> Editar</button>
         <button class="modal-close" onclick="closeGuiaModal()">×</button>
       </div>
     </div>
@@ -915,7 +926,7 @@
       <div id="toggle-producto-warning"
         style="display:none;background:var(--yellow-bg);border:1px solid var(--yellow);
                border-radius:8px;padding:10px 14px;font-size:13px;color:var(--yellow);">
-        ⚠️ Los registros existentes que usan este producto no se verán afectados.
+        <i data-lucide="triangle-alert" width="13" height="13" style="vertical-align:-2px;"></i> Los registros existentes que usan este producto no se verán afectados.
       </div>
       <div class="modal-actions" style="margin-top:20px;">
         <button class="btn-secondary" onclick="closeToggleProductoModal()">Cancelar</button>
@@ -928,7 +939,7 @@
 <div class="modal-overlay" id="export-modal">
   <div class="modal" style="max-width:500px;">
     <div class="modal-header">
-      <div class="modal-title" id="export-modal-title">📤 Exportar</div>
+      <div class="modal-title" id="export-modal-title"><i data-lucide="upload" width="16" height="16" style="vertical-align:-2px;"></i> Exportar</div>
       <button class="modal-close" onclick="closeExportModal()">×</button>
     </div>
     <div class="modal-body">
@@ -940,7 +951,7 @@
         <div style="display:flex;gap:8px;">
           <label class="export-format-card" data-format="excel" style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border:2px solid var(--accent);border-radius:10px;cursor:pointer;transition:all 0.2s;">
             <input type="radio" name="export-format" value="excel" checked style="accent-color:var(--accent);">
-            <span style="font-size:22px;">📗</span>
+            <i data-lucide="file-spreadsheet" width="22" height="22" style="color:var(--green);flex-shrink:0;"></i>
             <div>
               <div style="font-weight:600;font-size:13px;">Excel</div>
               <div style="font-size:11px;color:var(--text3);">.xlsx</div>
@@ -948,7 +959,7 @@
           </label>
           <label class="export-format-card" data-format="pdf" style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border:2px solid var(--border);border-radius:10px;cursor:pointer;transition:all 0.2s;">
             <input type="radio" name="export-format" value="pdf" style="accent-color:var(--accent);">
-            <span style="font-size:22px;">📄</span>
+            <i data-lucide="file-text" width="22" height="22" style="color:var(--red);flex-shrink:0;"></i>
             <div>
               <div style="font-weight:600;font-size:13px;">PDF</div>
               <div style="font-size:11px;color:var(--text3);">.pdf</div>
@@ -970,7 +981,7 @@
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" onclick="closeExportModal()">Cancelar</button>
-        <button class="btn-save" onclick="doExport()" id="export-btn">📤 Exportar</button>
+        <button class="btn-save" onclick="doExport()" id="export-btn">Exportar</button>
       </div>
     </div>
   </div>
@@ -982,9 +993,11 @@
 <script src="memorias.js"></script>
 <script src="objetivos.js"></script>
 <script src="inventario.js"></script>
+<script src="almacen.js"></script>
 <script>
   initTheme();
   initializeSession();
+  if (window.lucide) lucide.createIcons();
 </script>
 <script src="sidebar.js"></script>
 </body>

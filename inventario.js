@@ -1,5 +1,7 @@
 // inventario.js — Módulo de Inventario
 // 3 pestañas: Ajustes (stock_inicial + umbrales), Movimiento de Stock, Historial
+// Movimientos: Reposición (suma) y Corrección (ajusta a un valor absoluto).
+// Las ventas se descuentan automáticamente desde nuevo-registro.js.
 
 const Inventario = (() => {
   let _tab = 'ajustes';
@@ -10,9 +12,9 @@ const Inventario = (() => {
   const PAGE_SIZE = 20;
 
   function _getStockStatus(stockActual, umbralBajo, umbralModerado) {
-    if (umbralBajo > 0 && stockActual <= umbralBajo) return { level: 'bajo', color: 'var(--red)', label: '🔴 Bajo' };
-    if (umbralModerado > 0 && stockActual <= umbralModerado) return { level: 'medio', color: 'var(--orange)', label: '🟠 Moderado' };
-    return { level: 'alto', color: 'var(--green)', label: '🟢 Alto' };
+    if (umbralBajo > 0 && stockActual <= umbralBajo) return { level: 'bajo', color: 'var(--red)', label: 'Bajo' };
+    if (umbralModerado > 0 && stockActual <= umbralModerado) return { level: 'medio', color: 'var(--orange)', label: 'Moderado' };
+    return { level: 'alto', color: 'var(--green)', label: 'Alto' };
   }
 
   async function render() {
@@ -27,24 +29,11 @@ const Inventario = (() => {
   }
 
   async function _loadData() {
+    await DataStore.ensure('inventario');
     _productos = (allProductos || []).filter(p => p.activo);
-
-    const [stockRes, movRes] = await Promise.allSettled([
-      db.from('inventario_stock').select('*, usuarios:usuario_id (id, nombre)'),
-      db.from('inventario_movimientos')
-        .select(`
-          id, producto_id, tipo, cantidad, stock_anterior, stock_posterior, ubicacion, notas, usuario_id, created_at,
-          productos:producto_id (id, nombre),
-          usuarios:usuario_id (id, nombre)
-        `)
-        .order('created_at', { ascending: false })
-    ]);
-
-    const stockRows = stockRes.status === 'fulfilled' ? (stockRes.value.data || []) : [];
     _stockMap = {};
-    stockRows.forEach(r => { _stockMap[r.producto_id] = r; });
-
-    _movimientos = movRes.status === 'fulfilled' ? (movRes.value.data || []) : [];
+    (DataStore.inventarioStock || []).forEach(r => { _stockMap[r.producto_id] = r; });
+    _movimientos = DataStore.inventarioMovimientos || [];
   }
 
   function _calcStockActual(productId) {
@@ -52,17 +41,67 @@ const Inventario = (() => {
     return stock ? stock.stock_inicial : 0;
   }
 
+  // Redistribuye TODAS las ubicaciones de almacen_stock de un producto para que
+  // SUM(almacen_stock) == nuevoTotal (modelo: stock_inicial es el total maestro).
+  async function _repartirAlmacen(productoId, nuevoTotal) {
+    try {
+      const { data: filas } = await db.from('almacen_stock')
+        .select('id, stock').eq('producto_id', productoId);
+      const rows = filas || [];
+      if (!rows.length) return;
+      const cortes = _repartirTotal(rows.map(r => r.stock || 0), nuevoTotal);
+      const res = await Promise.all(rows.map((r, i) =>
+        db.from('almacen_stock')
+          .update({ stock: cortes[i], usuario_id: currentUser.id })
+          .eq('id', r.id)
+      ));
+      const err = res.find(r => r.error);
+      if (err) console.error('inventario: repartir almacén', err.error);
+    } catch (e) {
+      console.error('inventario: repartir almacén', e);
+    }
+  }
+
+  // Ubicación por defecto de un departamento desde DataStore (solo lectura):
+  // 'Principal' (sin dirección) o, si no existe, la primera del departamento.
+  function _nrUbicacionDept(dep) {
+    const ubs = DataStore.ubicaciones || [];
+    return ubs.find(u => u.departamento === dep && u.lugar === 'Principal' && !u.ubicacion) ||
+           ubs.find(u => u.departamento === dep) || null;
+  }
+
+  // Stock actual de un producto en el departamento indicado (solo lectura).
+  function _nrStockDeptActual(productoId, dep) {
+    const ub = _nrUbicacionDept(dep);
+    if (!ub) return 0;
+    const r = (DataStore.almacenStock || []).find(x => x.producto_id === productoId && x.ubicacion_id === ub.id);
+    return r ? r.stock : 0;
+  }
+
+  // En modo Corrección, precarga el campo "Nuevo stock" con el stock actual
+  // del departamento seleccionado (no el general).
+  function _updateCorreccionPrefill() {
+    const tipo = document.querySelector('input[name="inv-tipo"]:checked')?.value;
+    if (tipo !== 'correccion') return;
+    const productoId = parseInt(document.getElementById('inv-producto')?.value);
+    const dep = document.querySelector('.inv-geo-dep')?.value?.trim();
+    const input = document.getElementById('inv-cantidad');
+    if (!input) return;
+    input.value = productoId && dep ? _nrStockDeptActual(productoId, dep) : 0;
+    input.min = '0';
+  }
+
   function _renderContent(wrap) {
     wrap.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
-        <button class="inv-tab-btn ${_tab === 'ajustes' ? 'active' : ''}" onclick="Inventario.switchTab('ajustes')">⚙️ Ajustes</button>
-        <button class="inv-tab-btn ${_tab === 'movimiento' ? 'active' : ''}" onclick="Inventario.switchTab('movimiento')">📦 Movimiento de Stock</button>
-        <button class="inv-tab-btn ${_tab === 'historial' ? 'active' : ''}" onclick="Inventario.switchTab('historial')">📋 Historial</button>
-        <span style="color:var(--green); font-size:13px">🟢 Alto</span>
-        <span style="color:var(--orange); font-size:13px">🟠 Moderado</span>
-        <span style="color:var(--red); font-size:13px">🔴 Bajo</span>
+        <button class="inv-tab-btn ${_tab === 'ajustes' ? 'active' : ''}" onclick="Inventario.switchTab('ajustes')">${_ic('settings', 14)} Ajustes</button>
+        <button class="inv-tab-btn ${_tab === 'movimiento' ? 'active' : ''}" onclick="Inventario.switchTab('movimiento')">${_ic('package', 14)} Movimiento de Stock</button>
+        <button class="inv-tab-btn ${_tab === 'historial' ? 'active' : ''}" onclick="Inventario.switchTab('historial')">${_ic('clipboard-list', 14)} Historial</button>
+        <span style="color:var(--green); font-size:13px;display:inline-flex;align-items:center;gap:5px;">${_ic('circle', 10, { fill: 'var(--green)', stroke: 'var(--green)' })} Alto</span>
+        <span style="color:var(--orange); font-size:13px;display:inline-flex;align-items:center;gap:5px;">${_ic('circle', 10, { fill: 'var(--orange)', stroke: 'var(--orange)' })} Moderado</span>
+        <span style="color:var(--red); font-size:13px;display:inline-flex;align-items:center;gap:5px;">${_ic('circle', 10, { fill: 'var(--red)', stroke: 'var(--red)' })} Bajo</span>
         <div style="flex:1;"></div>
-        ${_tab === 'ajustes' ? '<button class="inv-btn inv-btn-primary" onclick="Inventario.saveAllAjustes()" style="padding:8px 16px;font-size:12px;">💾 Guardar Todos</button>' : ''}
+        ${_tab === 'ajustes' ? '<button class="inv-btn inv-btn-primary" onclick="Inventario.saveAllAjustes()" style="padding:8px 16px;font-size:12px;">' + _ic('save', 14) + ' Guardar Todos</button>' : ''}
       </div>
       <div id="inv-tab-content"></div>
       <style>
@@ -84,6 +123,7 @@ const Inventario = (() => {
         .inv-btn-sm:hover{border-color:var(--accent2);}
         .inv-badge-venta{background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;}
         .inv-badge-reposicion{background:rgba(16,185,129,0.1);color:var(--green);border:1px solid rgba(16,185,129,0.3);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;}
+        .inv-badge-correccion{background:rgba(59,130,246,0.1);color:var(--blue);border:1px solid rgba(59,130,246,0.3);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;}
         .stock-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:0.3px;}
         .stock-badge.alto{background:rgba(16,185,129,0.12);color:var(--green);border:1px solid rgba(16,185,129,0.3);}
         .stock-badge.medio{background:rgba(249,115,22,0.12);color:var(--orange);border:1px solid rgba(249,115,22,0.3);}
@@ -156,7 +196,7 @@ const Inventario = (() => {
       const { error } = await db.from('inventario_stock')
         .update({ stock_inicial: stockInicial, umbral_bajo: umbralBajo, umbral_moderado: umbralModerado, usuario_id: currentUser.id })
         .eq('producto_id', productoId);
-      if (error) { toast('❌ Error: ' + error.message, 'error'); return; }
+      if (error) { toast(_ic('circle-x', 15) + ' Error: ' + esc(error.message), 'error'); return; }
     } else {
       const { error } = await db.from('inventario_stock').insert({
         producto_id: productoId,
@@ -165,10 +205,14 @@ const Inventario = (() => {
         umbral_moderado: umbralModerado,
         usuario_id: currentUser.id
       });
-      if (error) { toast('❌ Error: ' + error.message, 'error'); return; }
+      if (error) { toast(_ic('circle-x', 15) + ' Error: ' + esc(error.message), 'error'); return; }
     }
 
-    toast('✅ Ajuste guardado', 'success');
+    // Mantener el invariante: SUM(almacen_stock) === stock_inicial (reparto proporcional).
+    await _repartirAlmacen(productoId, stockInicial);
+
+    toast(_ic('circle-check', 15) + ' Ajuste guardado', 'success');
+    await DataStore.refresh('inventario', 'almacen');
     await render();
     if (window._checkStockAlerts) window._checkStockAlerts();
   }
@@ -197,12 +241,15 @@ const Inventario = (() => {
           });
           if (error) { fail++; continue; }
         }
+        // Mantener el invariante: SUM(almacen_stock) === stock_inicial.
+        await _repartirAlmacen(pid, stockInicial);
         ok++;
       } catch { fail++; }
     }
 
-    if (fail) toast(`⚠️ ${ok} guardados, ${fail} fallidos`, 'warning');
-    else toast(`✅ ${ok} ajustes guardados`, 'success');
+    if (fail) toast(_ic('triangle-alert', 15) + ' ' + ok + ' guardados, ' + fail + ' fallidos', 'warning');
+    else toast(_ic('circle-check', 15) + ' ' + ok + ' ajustes guardados', 'success');
+    await DataStore.refresh('inventario', 'almacen');
     await render();
     if (window._checkStockAlerts) window._checkStockAlerts();
   }
@@ -236,21 +283,21 @@ const Inventario = (() => {
           <label>Tipo de movimiento</label>
           <div style="display:flex;gap:12px;">
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text);">
-              <input type="radio" name="inv-tipo" value="venta" checked> Venta
+              <input type="radio" name="inv-tipo" value="reposicion" checked onchange="Inventario.onTipoChange()"> Reposición
             </label>
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text);">
-              <input type="radio" name="inv-tipo" value="reposicion"> Reposición
+              <input type="radio" name="inv-tipo" value="correccion" onchange="Inventario.onTipoChange()"> Corrección
             </label>
           </div>
         </div>
 
         <div class="inv-field">
-          <label>Cantidad</label>
-          <input type="number" id="inv-cantidad" min="1" value="1" placeholder="Cantidad...">
+          <label id="inv-cantidad-label">Cantidad a agregar</label>
+          <input type="number" id="inv-cantidad" min="0" value="1" placeholder="Cantidad...">
         </div>
 
         <div class="inv-field">
-          <label>Ubicación <span style="color:var(--text3);font-weight:400;font-size:10px;">(selecciona o escribe)</span></label>
+          <label>Ubicación <span style="color:var(--text3);font-weight:400;font-size:10px;">(selecciona el departamento o escribe)</span></label>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
             <select class="inv-geo-dep" style="font-size:12px;"><option value="">— Departamento —</option></select>
             <select class="inv-geo-prov" disabled style="font-size:12px;"><option value="">— Provincia —</option></select>
@@ -258,6 +305,8 @@ const Inventario = (() => {
           </div>
           <input id="inv-ubicacion" placeholder="O escribe la ubicación directamente...">
         </div>
+
+        <div style="font-size:11px;color:var(--text3);margin-bottom:12px;">${_ic('lightbulb', 13)} Al guardar una <b>Reposición</b> o <b>Corrección</b> se crea o actualiza la ubicación del <b>Almacén</b> por <b>Departamento</b>. Lugar y Ubicación se editan luego en <b>Almacén → ${_ic('map-pin', 13)} Ubicaciones</b>.</div>
 
         <div class="inv-field">
           <label>Notas <span style="color:var(--text3);font-weight:400;">(opcional)</span></label>
@@ -288,49 +337,158 @@ const Inventario = (() => {
     stockEl.style.color = st.color;
     if (statusEl) statusEl.innerHTML = `<span class="stock-badge ${st.level}" style="font-size:12px;">${st.label}</span>`;
     info.style.display = 'block';
+
+    const tipo = document.querySelector('input[name="inv-tipo"]:checked')?.value;
+    if (tipo === 'correccion') _updateCorreccionPrefill();
+  }
+
+  function onTipoChange() {
+    const tipo = document.querySelector('input[name="inv-tipo"]:checked')?.value;
+    const label = document.getElementById('inv-cantidad-label');
+    const input = document.getElementById('inv-cantidad');
+    if (!label || !input) return;
+    if (tipo === 'correccion') {
+      label.textContent = 'Nuevo stock (valor absoluto del departamento)';
+      input.min = '0';
+      _updateCorreccionPrefill();
+    } else {
+      label.textContent = 'Cantidad a agregar';
+      input.min = '1';
+      input.value = '1';
+    }
   }
 
   async function saveMovimiento() {
     const productoId = parseInt(document.getElementById('inv-producto')?.value);
     const tipo = document.querySelector('input[name="inv-tipo"]:checked')?.value;
-    const cantidad = parseInt(document.getElementById('inv-cantidad')?.value) || 0;
+    const cantidad = parseInt(document.getElementById('inv-cantidad')?.value);
     const ubicacion = document.getElementById('inv-ubicacion')?.value?.trim();
     const notas = document.getElementById('inv-notas')?.value?.trim();
+    const dep = document.querySelector('.inv-geo-dep')?.value?.trim();
 
-    if (!productoId) { toast('⚠️ Selecciona un producto', 'error'); return; }
-    if (cantidad <= 0) { toast('⚠️ La cantidad debe ser mayor a 0', 'error'); return; }
+    if (!productoId) { toast(_ic('triangle-alert', 15) + ' Selecciona un producto', 'error'); return; }
+    if (isNaN(cantidad) || cantidad < 0) { toast(_ic('triangle-alert', 15) + ' Ingresa una cantidad válida', 'error'); return; }
+    if (tipo === 'reposicion' && cantidad <= 0) { toast(_ic('triangle-alert', 15) + ' La cantidad a agregar debe ser mayor a 0', 'error'); return; }
+    if ((tipo === 'reposicion' || tipo === 'correccion') && !dep) {
+      toast(_ic('triangle-alert', 15) + ' Selecciona el Departamento (necesario para actualizar el Almacén)', 'error'); return;
+    }
 
     const stockActual = _calcStockActual(productoId);
 
-    if (tipo === 'venta' && cantidad > stockActual) {
-      toast(`⚠️ Stock insuficiente. Disponible: ${stockActual}`, 'error');
-      return;
+    // Ubicación del departamento y su stock actual (la corrección actúa sobre esta).
+    let ubicacionId = null;
+    let stockUbiActual = 0;
+    try {
+      ubicacionId = await _nrGetOrCreateUbicacion(dep);
+      if (ubicacionId) {
+        const { data: filas } = await db.from('almacen_stock')
+          .select('stock').eq('producto_id', productoId).eq('ubicacion_id', ubicacionId);
+        stockUbiActual = filas?.[0]?.stock ?? 0;
+      }
+    } catch (e) {
+      console.error('almacen: ubicación movimiento', e);
     }
 
-    const stockPosterior = tipo === 'venta' ? stockActual - cantidad : stockActual + cantidad;
+    // Corrección: la ubicación del departamento queda con `cantidad` (absoluto), las demás
+    // NO cambian y el stock general se recalcula a la nueva suma real.
+    // Reposición: suma `cantidad` a la ubicación del departamento y al stock general.
+    let stockPosterior;
+    if (tipo === 'correccion') {
+      try {
+        const { data: sumRows } = await db.from('almacen_stock')
+          .select('stock').eq('producto_id', productoId);
+        const sumActual = (sumRows || []).reduce((a, r) => a + (r.stock || 0), 0);
+        stockPosterior = sumActual - stockUbiActual + cantidad;
+      } catch (e) {
+        console.error('almacen: suma corrección', e);
+        stockPosterior = stockActual - stockUbiActual + cantidad;
+      }
+    } else {
+      stockPosterior = stockActual + cantidad;
+    }
+
+    // El historial muestra el stock del departamento en corrección; stock general en el resto.
+    const logAnterior = tipo === 'correccion' ? stockUbiActual : stockActual;
+    const logPosterior = tipo === 'correccion' ? cantidad : stockPosterior;
 
     const { error } = await db.from('inventario_movimientos').insert({
       producto_id: productoId,
       tipo: tipo,
       cantidad: cantidad,
-      stock_anterior: stockActual,
-      stock_posterior: stockPosterior,
+      stock_anterior: logAnterior,
+      stock_posterior: logPosterior,
       ubicacion: ubicacion || null,
       notas: notas || null,
       usuario_id: currentUser.id
     });
 
-    if (error) { toast('❌ Error: ' + error.message, 'error'); return; }
+    if (error) { toast(_ic('circle-x', 15) + ' Error: ' + esc(error.message), 'error'); return; }
 
-    const { error: errUpd } = await db.from('inventario_stock')
-      .update({ stock_inicial: stockPosterior })
-      .eq('producto_id', productoId);
-    if (errUpd) { toast('❌ Error: ' + errUpd.message, 'error'); return; }
+    // Asegurar la fila de inventario_stock (upsert conserva umbrales y crea si falta)
+    const s = _stockMap[productoId];
+    const { error: errUpd } = await db.from('inventario_stock').upsert({
+      producto_id: productoId,
+      stock_inicial: stockPosterior,
+      umbral_bajo: s?.umbral_bajo ?? 0,
+      umbral_moderado: s?.umbral_moderado ?? 0,
+      usuario_id: currentUser.id
+    }, { onConflict: 'producto_id' });
+    if (errUpd) { toast(_ic('circle-x', 15) + ' Error: ' + esc(errUpd.message), 'error'); return; }
 
-    const label = tipo === 'venta' ? 'Venta' : 'Reposición';
-    toast(`✅ ${label} registrada: ${stockActual} → ${stockPosterior}`, 'success');
+    // ── Sincronizar el stock del Almacén (SUM(almacen_stock) === stock_inicial) ──
+    let almMsg = null;
+    try {
+      if (ubicacionId) {
+        if (tipo === 'correccion') {
+          // La ubicación del departamento queda con el valor escrito (absoluto).
+          // El trigger SQL sync_stock_inicial_from_almacen recalcula el total general.
+          const { error: errAlm } = await db.from('almacen_stock').upsert({
+            producto_id: productoId,
+            ubicacion_id: ubicacionId,
+            stock: cantidad,
+            usuario_id: currentUser.id
+          }, { onConflict: 'producto_id,ubicacion_id' });
+          if (errAlm) { console.error('almacen: sync corrección', errAlm); }
+          else almMsg = dep + ': ' + stockUbiActual + ' → ' + cantidad;
+        } else {
+          // Reposición: suma la cantidad a la ubicación del departamento (resto igual).
+          const stockUbiNuevo = stockUbiActual + cantidad;
+          const { error: errAlm } = await db.from('almacen_stock').upsert({
+            producto_id: productoId,
+            ubicacion_id: ubicacionId,
+            stock: stockUbiNuevo,
+            usuario_id: currentUser.id
+          }, { onConflict: 'producto_id,ubicacion_id' });
+          if (errAlm) { console.error('almacen: sync movimiento', errAlm); }
+          else almMsg = 'Almacén sumado en ' + dep + ': ' + stockUbiActual + ' → ' + stockUbiNuevo;
+        }
+      }
+    } catch (e) {
+      console.error('almacen: sync movimiento', e);
+    }
+
+    const label = tipo === 'correccion' ? 'Corrección aplicada' : 'Reposición registrada';
+    toast(_ic('circle-check', 15) + ' ' + label + ': Stock general ' + stockActual + ' → ' + stockPosterior + ' · ' + (almMsg || 'Almacén sin cambio'), 'success');
+    await DataStore.refresh('inventario', 'almacen');
     await render();
     if (window._checkStockAlerts) window._checkStockAlerts();
+  }
+
+  // Encuentra la ubicación por defecto del departamento (lugar='Principal'); si no existe
+  // usa la primera del departamento; si no hay ninguna, la crea automáticamente.
+  async function _nrGetOrCreateUbicacion(dep) {
+    const { data: def } = await db.from('almacen_ubicaciones')
+      .select('id').eq('departamento', dep).eq('lugar', 'Principal').is('ubicacion', null).maybeSingle();
+    if (def) return def.id;
+
+    const { data: primera } = await db.from('almacen_ubicaciones')
+      .select('id').eq('departamento', dep).order('id').limit(1).maybeSingle();
+    if (primera) return primera.id;
+
+    const { data: nueva, error } = await db.from('almacen_ubicaciones')
+      .insert({ departamento: dep, lugar: 'Principal', ubicacion: null }).select('id').single();
+    if (error) { console.error('almacen: crear ubicación', error); return null; }
+    return nueva.id;
   }
 
   // ═══════════════════════════════════════════════
@@ -370,14 +528,16 @@ const Inventario = (() => {
                 : '—';
               const badge = m.tipo === 'venta'
                 ? '<span class="inv-badge-venta">Venta</span>'
-                : '<span class="inv-badge-reposicion">Reposición</span>';
+                : m.tipo === 'correccion'
+                  ? '<span class="inv-badge-correccion">Corrección</span>'
+                  : '<span class="inv-badge-reposicion">Reposición</span>';
               const st = _getStockStatus(m.stock_posterior, _stockMap[m.producto_id]?.umbral_bajo ?? 0, _stockMap[m.producto_id]?.umbral_moderado ?? 0);
               return `<tr>
                 <td style="white-space:nowrap;color:var(--text3);">${fecha}</td>
                 <td style="font-weight:600;">${m.productos?.nombre || '—'}</td>
                 <td>${badge}</td>
-                <td style="text-align:center;font-weight:600;color:${m.tipo === 'venta' ? 'var(--red)' : 'var(--green)'};">
-                  ${m.tipo === 'venta' ? '-' : '+'}${m.cantidad}
+                <td style="text-align:center;font-weight:600;color:${m.tipo === 'venta' ? 'var(--red)' : m.tipo === 'correccion' ? 'var(--blue)' : 'var(--green)'};">
+                  ${m.tipo === 'venta' ? '-' + m.cantidad : m.tipo === 'correccion' ? '→ ' + m.stock_posterior : '+' + m.cantidad}
                 </td>
                 <td style="text-align:center;font-size:12px;color:var(--text2);">${m.stock_anterior} → ${m.stock_posterior}</td>
                 <td><span class="stock-badge ${st.level}" style="font-size:10px;">${st.label}</span></td>
@@ -427,6 +587,8 @@ const Inventario = (() => {
       if (mun) inp.value = `${dep} - ${prov} - ${mun}`;
       else if (prov) inp.value = `${dep} - ${prov}`;
       else if (dep) inp.value = dep;
+      else inp.value = '';
+      _updateCorreccionPrefill();
     }
 
     selDep.onchange = () => {
@@ -472,7 +634,7 @@ const Inventario = (() => {
     }).join('');
 
     wrap.innerHTML = `
-      <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:18px;">📦 Stock de Productos</div>
+      <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:18px;">${_ic('package', 16)} Stock de Productos</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:16px;">
         ${stockHtml}
       </div>
@@ -495,7 +657,8 @@ const Inventario = (() => {
     if (wrap) _renderContent(wrap);
   }
 
-  async function loadStockData() {
+  async function loadStockData(forceRefresh = true) {
+    if (forceRefresh) await DataStore.refresh('inventario', 'almacen');
     await _loadData();
   }
 
@@ -543,5 +706,5 @@ const Inventario = (() => {
     return items;
   }
 
-  return { render, switchTab, goPage, saveAjuste, saveAllAjustes, onProductoChange, saveMovimiento, reset, getStockAlerts, getAllStock, loadStockData };
+  return { render, switchTab, goPage, saveAjuste, saveAllAjustes, onProductoChange, onTipoChange, saveMovimiento, reset, getStockAlerts, getAllStock, loadStockData };
 })();

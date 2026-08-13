@@ -48,6 +48,12 @@ const ClientesView = (() => {
   }
 
   async function load() {
+    if (!document.getElementById('clientes-filter-estado')?.dataset.csel) {
+      _buildCSelect('clientes-filter-estado',
+        [{ value: '', label: 'Todos los estados' }].concat(Object.keys(ESTADOS).map(v => ({ value: v, label: ESTADOS[v].label, icon: ESTADOS[v].icon }))),
+        onClientesFilterEstadoChange);
+      document.getElementById('clientes-filter-estado').dataset.csel = '1';
+    }
     if (_loaded && _data.length > 0) {
       _aplicarFiltroGuardado();
       render();
@@ -73,7 +79,7 @@ const ClientesView = (() => {
         .order('id', { ascending: false })
         .range(from, from + BATCH - 1);
 
-      if (errC) { toast('❌ Error cargando clientes: ' + errC.message, 'error'); return; }
+      if (errC) { toast(_ic('circle-x', 15) + ' Error cargando clientes: ' + esc(errC.message), 'error'); return; }
 
       if (!batch || batch.length === 0) {
         keepGoing = false;
@@ -118,7 +124,7 @@ const ClientesView = (() => {
   function _getFiltered() {
     const search = (document.getElementById('clientes-search')?.value || '').toLowerCase();
     const flag   = document.getElementById('clientes-filter-flag')?.value   || '';
-    const estado = document.getElementById('clientes-filter-estado')?.value || '';
+    const estado = getCSelectValue('clientes-filter-estado') || '';
 
     let estadosIdx = null;
     if (estado) {
@@ -167,10 +173,10 @@ const ClientesView = (() => {
       tr.style.cursor = 'pointer';
 
       const flagBadgeHtml = c.flag === 'spam'
-        ? `<span class="badge badge-spam">🚫 SPAM</span>`
+        ? `<span class="badge badge-spam">${_ic('ban', 12)} SPAM</span>`
         : c.faltas >= 1
-          ? `<span class="badge badge-cancelado">⚠️ ${c.faltas} falta${c.faltas > 1 ? 's' : ''}</span>`
-          : `<span class="badge" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green);">✅ OK</span>`;
+          ? `<span class="badge badge-cancelado">${_ic('triangle-alert', 12)} ${c.faltas} falta${c.faltas > 1 ? 's' : ''}</span>`
+          : `<span class="badge" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green);">${_ic('circle-check', 12)} OK</span>`;
 
       const fechaReg = c.created_at
         ? new Date(c.created_at).toLocaleDateString('es-BO',
@@ -254,7 +260,7 @@ const ClientesView = (() => {
       .eq('cliente_id', c.id)
       .order('id', { ascending: false });
 
-    if (error) { toast('❌ Error cargando historial: ' + error.message, 'error'); return; }
+    if (error) { toast(_ic('circle-x', 15) + ' Error cargando historial: ' + esc(error.message), 'error'); return; }
 
     const vendidas = (ventasCliente || []).filter(v => v.estado === 'vendido');
     const totalUnid  = vendidas.reduce(
@@ -287,8 +293,8 @@ const ClientesView = (() => {
         }).join('')
       : `<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3);">Sin compras registradas</td></tr>`;
 
-    document.getElementById('stat-modal-title').textContent =
-      `👤 ${c.nombre || 'Cliente'} — ${c.celular}`;
+    document.getElementById('stat-modal-title').innerHTML =
+      `${_ic('user', 15)} ${esc(c.nombre || 'Cliente')} — ${esc(c.celular)}`;
 
     document.getElementById('stat-modal-body').innerHTML = `
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
@@ -306,7 +312,7 @@ const ClientesView = (() => {
         </div>
       </div>
 
-      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📋 Historial de compras</div>
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">${_ic('clipboard-list', 13)} Historial de compras</div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;">
           <thead><tr>
@@ -336,7 +342,7 @@ const ClientesView = (() => {
   function _aplicarFiltroGuardado() {
     const el = document.getElementById('clientes-filter-estado');
     if (el && _savedFiltroEstadoClientes) {
-      el.value = _savedFiltroEstadoClientes;
+      setCSelectValue('clientes-filter-estado', _savedFiltroEstadoClientes);
     }
   }
 

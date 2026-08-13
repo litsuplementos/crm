@@ -378,6 +378,7 @@ body.sidebar-collapsed .sidebar-toggle svg {
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--nav-ico, var(--text3));
 }
 
 .sidebar-nav-label {

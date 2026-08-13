@@ -19,6 +19,234 @@ const SessionManager = {
   }
 }
 
+// ICONOS LUCIDE
+function _pascal(s) {
+  return s.split(/[-_]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+}
+function _ic(name, size = 16, extra = {}) {
+  const L = window.lucide;
+  if (!L || !L.icons) return '';
+  const data = L.icons[_pascal(name)];
+  if (!data) return '';
+  const attrs = {
+    xmlns: 'http://www.w3.org/2000/svg',
+    width: size, height: size,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    'stroke-width': 2,
+    'stroke-linecap': 'round',
+    'stroke-linejoin': 'round',
+    'aria-hidden': 'true',
+    ...extra,
+  };
+  const attrStr = Object.entries(attrs).map(([k, v]) => k + '="' + v + '"').join(' ');
+  const inner = data.map(([tag, a]) => {
+    const as = Object.entries(a).map(([k, v]) => k + '="' + v + '"').join(' ');
+    return '<' + tag + ' ' + as + '/>';
+  }).join('');
+  return '<svg ' + attrStr + '>' + inner + '</svg>';
+}
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// CUSTOM SELECT (dropdown con iconos en las opciones)
+const _cselects = {};
+function _buildCSelect(id, opciones, onChange) {
+  const host = document.getElementById(id);
+  if (!host) return;
+  const prev = _cselects[id];
+  if (prev && prev._dispose) prev._dispose();
+  let value = '';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'cselect-btn';
+  const label = document.createElement('span');
+  label.className = 'cs-label';
+  const chev = document.createElement('span');
+  chev.className = 'cselect-chev';
+  chev.innerHTML = _ic('chevron-down', 14);
+  btn.appendChild(label);
+  btn.appendChild(chev);
+  const list = document.createElement('div');
+  list.className = 'cselect-list';
+  function renderLabel() {
+    const opt = opciones.find(o => o.value === value);
+    const t = opt ? opt.label : (opciones[0] ? opciones[0].label : '');
+    label.innerHTML = (opt && opt.icon ? _ic(opt.icon, 14) : '') + '<span>' + esc(t) + '</span>';
+  }
+  function setValue(v, trigger) {
+    value = v;
+    renderLabel();
+    list.querySelectorAll('.cselect-item').forEach(el => el.classList.toggle('sel', el.dataset.value === v));
+    if (trigger && onChange) onChange(v);
+  }
+  function close() { host.classList.remove('open'); }
+  opciones.forEach(o => {
+    const it = document.createElement('div');
+    it.className = 'cselect-item';
+    it.dataset.value = o.value;
+    it.innerHTML = (o.icon ? _ic(o.icon, 13) : '') + '<span>' + esc(o.label) + '</span>';
+    it.addEventListener('click', () => { setValue(o.value, true); close(); });
+    list.appendChild(it);
+  });
+  function onDocClick(e) { if (!host.contains(e.target)) close(); }
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  btn.addEventListener('click', () => host.classList.toggle('open'));
+  document.addEventListener('click', onDocClick);
+  document.addEventListener('keydown', onKey);
+  host.innerHTML = '';
+  host.appendChild(btn);
+  host.appendChild(list);
+  renderLabel();
+  _cselects[id] = {
+    _dispose() { document.removeEventListener('click', onDocClick); document.removeEventListener('keydown', onKey); },
+    value() { return value; },
+    setValue(v, trigger) { setValue(v, !!trigger); },
+  };
+}
+function getCSelectValue(id) { return _cselects[id] ? _cselects[id].value() : ''; }
+function setCSelectValue(id, val) { if (_cselects[id]) _cselects[id].setValue(val, false); }
+
+// ─── Utilidades de stock ────────────────────────────────────────────────
+// Modelo: inventario_stock.stock_inicial es el ÚNICO total maestro.
+// almacen_stock es solo la distribución física y SUM(almacen_stock) === stock_inicial.
+
+// Reparte un total exacto entre ubicaciones (proporcional al stock actual,
+// método del mayor residuo). Devuelve el array con la suma exacta == total.
+function _repartirTotal(stocks, total) {
+  const n = stocks.length;
+  if (!n) return [];
+  if (total <= 0) return stocks.map(() => 0);
+  const base = stocks.reduce((a, b) => a + (b || 0), 0);
+  if (base <= 0) {
+    const cuts = stocks.map(() => Math.floor(total / n));
+    let resto = total - cuts.reduce((a, b) => a + b, 0);
+    for (let i = 0; resto > 0 && i < n; i++) { cuts[i]++; resto--; }
+    return cuts;
+  }
+  const cuts = stocks.map(s => Math.floor(total * (s || 0) / base));
+  let resto = total - cuts.reduce((a, b) => a + b, 0);
+  const cola = stocks
+    .map((s, i) => ({ i, frac: (total * (s || 0) / base) - cuts[i] }))
+    .sort((a, b) => b.frac - a.frac);
+  for (let k = 0; resto > 0 && k < n * 3; k++) {
+    cuts[cola[k % n].i]++;
+    resto--;
+  }
+  return cuts;
+}
+
+// Recalcula inventario_stock.stock_inicial = SUM(almacen_stock) del producto.
+// Idempotente con el trigger SQL almacen_stock_sync_total (respaldo defensivo).
+async function _syncStockInicial(productoId) {
+  try {
+    const { data, error } = await db.from('almacen_stock')
+      .select('stock').eq('producto_id', productoId);
+    if (error) { console.error('syncStockInicial: lectura', error); return; }
+    const total = (data || []).reduce((s, r) => s + (r.stock || 0), 0);
+    const { error: errUpd } = await db.from('inventario_stock')
+      .update({ stock_inicial: total })
+      .eq('producto_id', productoId);
+    if (errUpd) console.error('syncStockInicial: actualización', errUpd);
+  } catch (e) {
+    console.error('syncStockInicial', e);
+  }
+}
+
+// DATASTORE — precarga en memoria (técnica: navegación instantánea).
+// Los módulos (Inventario, Almacén, Guía, Nuevo Registro) leen de aquí en lugar
+// de consultar Supabase en cada apertura. refresh() re-consulta solo lo afectado
+// después de mutaciones.
+const DataStore = {
+  _ready: { almacen: false, inventario: false, guia: false },
+  _errors: { almacen: null, inventario: null, guia: null },
+  ubicaciones: [],
+  almacenStock: [],
+  almacenMovimientos: [],
+  inventarioStock: [],
+  inventarioMovimientos: [],
+  guiaMap: {},
+
+  async _fetchUbicaciones() {
+    const { data, error } = await db.from('almacen_ubicaciones').select('*').order('departamento');
+    if (error) throw error;
+    this.ubicaciones = data || [];
+  },
+  async _fetchAlmacenStock() {
+    const { data, error } = await db.from('almacen_stock').select('*');
+    if (error) throw error;
+    this.almacenStock = data || [];
+  },
+  async _fetchAlmacenMovimientos() {
+    const { data, error } = await db.from('almacen_movimientos')
+      .select(`
+        id, producto_id, origen_id, destino_id, cantidad,
+        stock_origen_anterior, stock_origen_posterior,
+        stock_destino_anterior, stock_destino_posterior,
+        stock_general_anterior, stock_general_posterior,
+        notas, usuario_id, created_at,
+        origen:origen_id (id, departamento, lugar, ubicacion),
+        destino:destino_id (id, departamento, lugar, ubicacion),
+        usuarios:usuario_id (id, nombre)
+      `)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    this.almacenMovimientos = data || [];
+  },
+  async _fetchInventarioStock() {
+    const { data, error } = await db.from('inventario_stock').select('*, usuarios:usuario_id (id, nombre)');
+    if (error) throw error;
+    this.inventarioStock = data || [];
+  },
+  async _fetchInventarioMovimientos() {
+    const { data, error } = await db.from('inventario_movimientos')
+      .select(`
+        id, producto_id, tipo, cantidad, stock_anterior, stock_posterior, ubicacion, notas, usuario_id, created_at,
+        productos:producto_id (id, nombre),
+        usuarios:usuario_id (id, nombre)
+      `)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    this.inventarioMovimientos = data || [];
+  },
+  async _fetchGuia() {
+    const { data, error } = await db.from('guia_atencion').select('producto_id, contenido');
+    if (error) throw error;
+    this.guiaMap = Object.fromEntries((data || []).map(g => [g.producto_id, g]));
+  },
+
+  _branches: {
+    almacen: ['_fetchUbicaciones', '_fetchAlmacenStock', '_fetchAlmacenMovimientos'],
+    inventario: ['_fetchInventarioStock', '_fetchInventarioMovimientos'],
+    guia: ['_fetchGuia'],
+  },
+
+  async _runBranch(branch) {
+    this._errors[branch] = null;
+    const fns = this._branches[branch] || [];
+    await Promise.all(fns.map(fn => this[fn]().catch(e => {
+      this._errors[branch] = e?.message || 'Error al consultar la base de datos';
+      console.error('DataStore:' + branch, e);
+    })));
+  },
+
+  async refresh(...ramas) {
+    const flat = [...new Set(ramas.flat())];
+    await Promise.all(flat.map(r => this._runBranch(r)));
+    flat.forEach(r => { this._ready[r] = true; });
+  },
+
+  async initialize() { await this.refresh('almacen', 'inventario', 'guia'); },
+
+  async ensure(...ramas) {
+    const flat = [...new Set(ramas.flat())];
+    const missing = flat.filter(r => !this._ready[r]);
+    if (missing.length) await this.refresh(missing);
+  },
+};
+
 // CACHÉ DE DASHBOARD
 const dashboardCache = {
   lastVentasCount: 0,
@@ -51,16 +279,16 @@ const filteredCache = {
 };
 
 const ESTADOS = {
-  rellamada: { label: '🔁 Rellamada', badge: 'badge-rellamada',  color: 'var(--accent2)' },
-  seguimiento: { label: '🔄 Seguimiento', badge: 'badge-seguimiento',color: 'var(--blue)' },
-  interesado: { label: '🌟 Interesado', badge: 'badge-interesado', color: 'var(--yellow)' },
-  agendar: { label: '📅 Agendar', badge: 'badge-agendar', color: 'var(--orange)' },
-  sin_respuesta:{ label: '📵 Sin respuesta', badge: 'badge-sinresp', color: 'var(--red)' },
-  no_interesado:{ label: '👎 No interesado', badge: 'badge-noint', color: 'var(--text3)' },
-  enviado: { label: '📦 Enviado', badge: 'badge-enviado', color: 'var(--blue)' },
-  vendido: { label: '✅ Vendido', badge: 'badge-vendido', color: 'var(--green)' },
-  cancelado: { label: '❌ Cancelado', badge: 'badge-cancelado', color: '#f87171' },
-  spam: { label: '🚫 SPAM', badge: 'badge-spam', color: 'var(--text3)' },
+  rellamada: { label: 'Rellamada', icon: 'rotate-ccw', badge: 'badge-rellamada',  color: 'var(--accent2)' },
+  seguimiento: { label: 'Seguimiento', icon: 'refresh-cw', badge: 'badge-seguimiento',color: 'var(--blue)' },
+  interesado: { label: 'Interesado', icon: 'star', badge: 'badge-interesado', color: 'var(--yellow)' },
+  agendar: { label: 'Agendar', icon: 'calendar', badge: 'badge-agendar', color: 'var(--orange)' },
+  sin_respuesta:{ label: 'Sin respuesta', icon: 'phone-off', badge: 'badge-sinresp', color: 'var(--red)' },
+  no_interesado:{ label: 'No interesado', icon: 'thumbs-down', badge: 'badge-noint', color: 'var(--text3)' },
+  enviado: { label: 'Enviado', icon: 'package', badge: 'badge-enviado', color: 'var(--blue)' },
+  vendido: { label: 'Vendido', icon: 'circle-check', badge: 'badge-vendido', color: 'var(--green)' },
+  cancelado: { label: 'Cancelado', icon: 'circle-x', badge: 'badge-cancelado', color: '#f87171' },
+  spam: { label: 'SPAM', icon: 'ban', badge: 'badge-spam', color: 'var(--text3)' },
 };
 
 const ESTADOS_CIERRE = ['vendido', 'no_interesado', 'spam', 'cancelado'];
@@ -216,9 +444,9 @@ function applyTheme(theme) {
   localStorage.setItem('litcrm-theme', theme);
   const btn = document.getElementById('theme-toggle');
   if (btn) {
-    if (theme === 'night') btn.textContent = '☀️ Día';
-    else if (theme === 'day') btn.textContent = '🌙 Noche';
-    else btn.textContent = '🌿 Menta';
+    if (theme === 'night') btn.innerHTML = _ic('sun', 15, { style: 'vertical-align:-2px;' }) + ' Día';
+    else if (theme === 'day') btn.innerHTML = _ic('moon', 15, { style: 'vertical-align:-2px;' }) + ' Noche';
+    else btn.innerHTML = _ic('leaf', 15, { style: 'vertical-align:-2px;' }) + ' Menta';
   }
 }
 
@@ -226,6 +454,13 @@ function toggleTheme() {
   const order = ['white', 'day', 'night'];
   const cur = document.documentElement.getAttribute('data-theme') || 'white';
   applyTheme(order[(order.indexOf(cur) + 1) % 3]);
+}
+
+function togglePassVisibility(btn) {
+  const input = btn.previousElementSibling;
+  const hidden = input.type === 'password';
+  input.type = hidden ? 'text' : 'password';
+  btn.innerHTML = _ic(hidden ? 'eye-off' : 'eye', 16);
 }
 
 // Initialize Session
@@ -242,6 +477,9 @@ function initializeSession() {
     document.getElementById('tab-config').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-usuarios').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-memorias').style.display = '';
+    document.getElementById('tab-almacen').style.display = isAdmin ? '' : 'none';
+    if (window._sidebarRenderNav) window._sidebarRenderNav();
+    if (window._sidebarSyncUser) window._sidebarSyncUser();
     initApp().catch(e => console.error('Error inicializando app:', e));
   }
 }
@@ -371,6 +609,9 @@ async function doLogin() {
     document.getElementById('tab-config').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-usuarios').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-memorias').style.display = '';
+    document.getElementById('tab-almacen').style.display = isAdmin ? '' : 'none';
+    if (window._sidebarRenderNav) window._sidebarRenderNav();
+    if (window._sidebarSyncUser) window._sidebarSyncUser();
     await initApp();
     SessionManager.saveSession(data);
   } catch(e) {
@@ -411,8 +652,12 @@ function doLogout() {
   Inventario.reset();
 
   Objetivos.stop();
-  if (window._sidebarDisconnectObservers) window._sidebarDisconnectObservers();
   currentUser = null;
+  document.getElementById('tab-productos').style.display = 'none';
+  document.getElementById('tab-config').style.display = 'none';
+  document.getElementById('tab-usuarios').style.display = 'none';
+  document.getElementById('tab-almacen').style.display = 'none';
+  if (window._sidebarRenderNav) window._sidebarRenderNav();
   ventas = [];
   ventasIndex = {};
   allAgents = [];
@@ -426,7 +671,7 @@ function doLogout() {
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
   document.getElementById('search-input').value = '';
-  document.getElementById('filter-status').value = '';
+  setCSelectValue('filter-status', '');
   document.getElementById('filter-producto').value = '';
   document.getElementById('filter-ubicacion').value = '';
   showViewDirect('dashboard');
@@ -459,7 +704,7 @@ async function initApp() {
   await _loadUserConfig();
   _setupEventDelegationOnce();
 
-  if (Inventario?.loadStockData) await Inventario.loadStockData();
+  if (Inventario?.loadStockData) { await DataStore.initialize(); await Inventario.loadStockData(false); }
   renderDashboard();       
 
   _nrGeoInit = false;
@@ -471,8 +716,7 @@ async function initApp() {
     setArchivoFiltro(false);
   }
   if (_savedFiltroEstado) {
-    const el = document.getElementById('filter-status');
-    if (el) el.value = _savedFiltroEstado;
+    if (document.getElementById('filter-status')) setCSelectValue('filter-status', _savedFiltroEstado);
   }
   if (_savedFiltroProducto) {
     const el = document.getElementById('filter-producto');
@@ -515,7 +759,7 @@ function _setupEventDelegationOnce() {
       const celular = venta?.cliente?.celular;
       if (celular) {
         navigator.clipboard.writeText(celular).then(() => {
-          toast('📋 Número copiado: ' + celular, 'success');
+          toast(_ic('clipboard', 15) + ' Número copiado: ' + esc(celular), 'success');
         }).catch(() => {});
       }
       return;
@@ -751,9 +995,9 @@ async function renderProductos() {
           </div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button class="icon-btn" onclick="openProductoModal(${p.id})">✏️</button>
-          <button class="icon-btn danger" onclick="toggleProductoActivo(${p.id}, ${p.activo})">${p.activo ? '🚫' : '✅'}</button>
-          <button class="icon-btn danger" onclick="deleteProducto(${p.id})">🗑️</button>
+          <button class="icon-btn" onclick="openProductoModal(${p.id})">${_ic('pencil', 14)}</button>
+          <button class="icon-btn danger" onclick="toggleProductoActivo(${p.id}, ${p.activo})">${p.activo ? _ic('ban', 14) : _ic('circle-check', 14)}</button>
+          <button class="icon-btn danger" onclick="deleteProducto(${p.id})">${_ic('trash-2', 14)}</button>
         </div>
       </div>
       ${promos.length > 0 ? `
@@ -761,11 +1005,11 @@ async function renderProductos() {
         <div style="display:flex;flex-wrap:wrap;gap:5px;">
           ${promos.map(pr => `
             <span style="background:var(--yellow-bg);border:1px solid var(--yellow);color:var(--yellow);padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;">
-              🏷️ ${pr.etiqueta}
+              ${_ic('tag', 12, { style: 'vertical-align:-2px;' })} ${pr.etiqueta}
             </span>`).join('')}
         </div>` : `<div style="font-size:12px;color:var(--text3);">Sin promociones</div>`}
     </div>`;
-  }).join('') || '<div class="empty-state"><div class="emoji">📦</div><p>Sin productos</p></div>';
+  }).join('') || '<div class="empty-state"><div class="emoji">' + _ic('package', 40) + '</div><p>Sin productos</p></div>';
 }
 
 function openProductoModal(id) {
@@ -808,7 +1052,7 @@ function addPromoRow(data) {
         value="${data?.precio_total || ''}">
     </div>
     <button type="button" onclick="this.parentElement.remove()"
-      style="background:var(--red-bg);border:1px solid var(--red);border-radius:6px;padding:6px 9px;color:var(--red);cursor:pointer;margin-top:16px;">✕</button>`;
+      style="background:var(--red-bg);border:1px solid var(--red);border-radius:6px;padding:6px 9px;color:var(--red);cursor:pointer;margin-top:16px;">${_ic('x', 14)}</button>`;
   wrap.appendChild(div);
 }
 
@@ -817,7 +1061,7 @@ async function saveProducto() {
   const nombre = document.getElementById('p-nombre').value.trim();
   const precioBase = parseFloat(document.getElementById('p-precio-base').value) || 0;
   const activo = document.getElementById('p-activo').value === 'true';
-  if (!nombre) { toast('⚠️ El nombre es obligatorio', 'error'); return; }
+  if (!nombre) { toast(_ic('triangle-alert', 15) + ' El nombre es obligatorio', 'error'); return; }
   const rows = document.querySelectorAll('#promos-editor > div');
   const promociones = [];
   for (const row of rows) {
@@ -832,18 +1076,18 @@ async function saveProducto() {
     if (id) {
       const { error } = await db.from('productos').update(payload).eq('id', parseInt(id));
       if (error) throw error;
-      toast('✅ Producto actualizado', 'success');
+      toast(_ic('circle-check', 15) + ' Producto actualizado', 'success');
     } else {
       const { error } = await db.from('productos').insert(payload);
       if (error) throw error;
-      toast('✅ Producto creado', 'success');
+      toast(_ic('circle-check', 15) + ' Producto creado', 'success');
     }
     closeProductoModal();
     // FIX #10 — recargar con soloActivos=false para mantener caché unificado
     await loadProductos(false);
     renderProductos();
     populateProductoFilter();
-  } catch(e) { toast('❌ ' + e.message, 'error'); }
+  } catch(e) { toast(_ic('circle-x', 15) + ' ' + esc(e.message), 'error'); }
 }
 
 function toggleProductoActivo(id, activo) {
@@ -861,7 +1105,7 @@ function toggleProductoActivo(id, activo) {
   document.getElementById('toggle-producto-warning').style.display = activo ? '' : 'none';
 
   const btn = document.getElementById('toggle-producto-confirm-btn');
-  btn.textContent = activo ? '🚫 Desactivar' : '✅ Activar';
+  btn.innerHTML = (activo ? _ic('ban', 14) : _ic('circle-check', 14)) + (activo ? ' Desactivar' : ' Activar');
   btn.style.background = activo ? 'var(--red)' : 'var(--green)';
 
   document.getElementById('toggle-producto-modal').classList.add('open');
@@ -869,13 +1113,13 @@ function toggleProductoActivo(id, activo) {
   btn.onclick = async () => {
     closeToggleProductoModal();
     const { error } = await db.from('productos').update({ activo: !activo }).eq('id', id);
-    if (error) { toast('❌ ' + error.message, 'error'); return; }
+    if (error) { toast(_ic('circle-x', 15) + ' ' + esc(error.message), 'error'); return; }
     prod.activo = !activo;
     _actualizarCardProducto(id, !activo);
     // FIX #5 — marcar filtro de ciudad como dirty no aplica aquí, pero
     // sí invalidar el filtro de productos del modal
     populateProductoFilter();
-    toast(`✅ Producto ${activo ? 'desactivado' : 'activado'}`, 'success');
+    toast(_ic('circle-check', 15) + ' Producto ' + (activo ? 'desactivado' : 'activado'), 'success');
   };
 }
 
@@ -903,7 +1147,7 @@ function _actualizarCardProducto(id, nuevoActivo) {
           precioDiv.appendChild(span);
         }
       }
-      btn.textContent = nuevoActivo ? '🚫' : '✅';
+      btn.innerHTML = nuevoActivo ? _ic('ban', 14) : _ic('circle-check', 14);
       btn.setAttribute('onclick', `toggleProductoActivo(${id}, ${nuevoActivo})`);
       break;
     }
@@ -922,7 +1166,7 @@ async function loadVentas() {
       let query = db.from('ventas')
         .select(`
           id, cliente_id, agente_id, fecha, updated_at, estado, intentos,
-          notas, comprobante_url, archivado, monto_total, descuento_pct, recordatorio, recordatorio_visto,
+          notas, comprobante_url, recibo_url, archivado, monto_total, descuento_pct, recordatorio, recordatorio_visto,
           cliente:cliente_id ( id, celular, nombre, ubicacion, direccion_residencial,
                                producto_interes, notas, faltas, flag ),
           agente:agente_id   ( id, nombre ),
@@ -961,7 +1205,7 @@ async function loadVentas() {
     _clientesFielesCache = null;
 
   } catch(e) {
-    toast('❌ Error: ' + e.message, 'error');
+    toast(_ic('circle-x', 15) + ' Error: ' + esc(e.message), 'error');
     ventas = [];
     ventasIndex = {};
     totalVentasCount = 0;
@@ -980,9 +1224,9 @@ function buildAgentSelector() {
   wrap.innerHTML = `
     <select class="filter-select" id="agent-selector" onchange="onAgentFilterChange()"
       style="background:var(--surface2);border-color:var(--accent);color:var(--accent2);">
-      <option value="all">👥 Todos los agentes</option>
+      <option value="all">Todos los agentes</option>
       ${allAgents.filter(a => a.rol === 'agente').map(a =>
-        `<option value="${a.id}">👤 ${a.nombre}</option>`
+        `<option value="${a.id}">${a.nombre}</option>`
       ).join('')}
     </select>`;
   const sel = document.getElementById('filter-agente');
@@ -991,7 +1235,7 @@ function buildAgentSelector() {
     while (sel.options.length > 1) sel.remove(1);
     allAgents.filter(a => a.rol === 'agente').forEach(a => {
       const o = document.createElement('option');
-      o.value = a.id; o.textContent = '👤 ' + a.nombre;
+      o.value = a.id; o.textContent = a.nombre;
       sel.appendChild(o);
     });
   }
@@ -1005,7 +1249,7 @@ async function onAgentFilterChange() {
 }
 
 function onFilterStatusChange() {
-  const val = document.getElementById('filter-status').value;
+  const val = getCSelectValue('filter-status');
   _saveUserConfig('filtro_estado_ventas', val);
   renderVentas();
 }
@@ -1025,7 +1269,7 @@ function onFilterAgenteChange() {
   renderVentas();
 }
 function onClientesFilterEstadoChange() {
-  const val = document.getElementById('clientes-filter-estado').value;
+  const val = getCSelectValue('clientes-filter-estado');
   _saveUserConfig('filtro_estado_clientes', val);
   ClientesView.render();
 }
@@ -1111,7 +1355,7 @@ async function syncData() {
     Objetivos.render();
     populateProductoFilter();
     _usersCache = null;
-    toast('✅ Datos actualizados', 'success');
+    toast(_ic('circle-check', 15) + ' Datos actualizados', 'success');
     ClientesView.invalidate();
     if (document.getElementById('view-clientes')?.classList.contains('active')) {
       ClientesView.load();
@@ -1140,6 +1384,7 @@ function showView(name, evt) {
   if (name === 'productos') renderProductos();
   if (name === 'guia') renderGuia();
   if (name === 'inventario') Inventario.render();
+  if (name === 'almacen') Almacen.render();
   if (name === 'config' && currentUser.rol === 'admin') loadConfigVendidosEditables();
 }
 
@@ -1149,17 +1394,18 @@ function showViewDirect(name) {
   document.getElementById('view-' + name)?.classList.add('active');
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
   if (name === 'inventario') Inventario.render();
+  if (name === 'almacen') Almacen.render();
 }
 
 // STATUS / BADGE HELPERS
 function statusBadge(estado) {
   const e = ESTADOS[estado] || ESTADOS.rellamada;
-  return `<span class="badge ${e.badge}">${e.label}</span>`;
+  return `<span class="badge ${e.badge}">${_ic(e.icon, 12)} ${e.label}</span>`;
 }
 function flagBadge(cliente) {
   if (!cliente) return '';
-  if (cliente.flag === 'spam') return `<span class="badge badge-spam" title="SPAM: ${cliente.faltas} cancelaciones">🚫 SPAM</span>`;
-  if (cliente.faltas >= 1) return `<span class="badge badge-cancelado" title="${cliente.faltas} cancelación(es)">⚠️ ${cliente.faltas} falta${cliente.faltas > 1 ? 's' : ''}</span>`;
+  if (cliente.flag === 'spam') return `<span class="badge badge-spam" title="SPAM: ${cliente.faltas} cancelaciones">${_ic('ban', 12)} SPAM</span>`;
+  if (cliente.faltas >= 1) return `<span class="badge badge-cancelado" title="${cliente.faltas} cancelación(es)">${_ic('triangle-alert', 12)} ${cliente.faltas} falta${cliente.faltas > 1 ? 's' : ''}</span>`;
   return '';
 }
 function prodChip(nombre) {
@@ -1196,7 +1442,6 @@ function renderDashboard() {
   const montoVendidos = ventasFiltradas
     .filter(v => v.estado === 'vendido')
     .reduce((sum, v) => sum + (parseFloat(v.monto_total) || 0), 0);
-  const enviados  = ventasFiltradas.filter(v => v.estado === 'enviado').length;
   const interesados = ventasFiltradas.filter(v => v.estado === 'interesado').length;
   const seguimiento = ventasFiltradas.filter(v => v.estado === 'seguimiento').length;
   const sinResp = ventasFiltradas.filter(v => v.estado === 'sin_respuesta').length;
@@ -1205,21 +1450,27 @@ function renderDashboard() {
   const dashWrap = document.getElementById('view-dashboard')?.querySelector('.view-scroll-wrap');
   if (dashWrap) dashWrap.style.display = 'none';
 
-  // Llenar card Enviados
-  const enviadosList = ventasFiltradas.filter(v => v.estado === 'enviado');
-  document.getElementById('dash-enviados-count').textContent = `(${enviadosList.length})`;
-  document.getElementById('dash-enviados-list').innerHTML = enviadosList.length === 0
-    ? '<div style="color:var(--text3);font-size:13px;padding:8px;">Sin enviados en este período</div>'
-    : enviadosList.map(v => `
-      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${v.cliente?.nombre || 's/n'}</div>
-          <div style="font-size:11px;color:var(--accent2);">${v.cliente?.celular || ''}</div>
-        </div>
-        <div style="font-size:11px;color:var(--text2);text-align:right;flex-shrink:0;">
-          ${(v.venta_items||[]).map(it=>it.productos?.nombre).filter(Boolean).map(n=>`<span class="prod-chip" style="font-size:10px;">${n}</span>`).join(' ')}
-        </div>
-      </div>`).join('');
+  // Llenar card Stock (lista con colores aleatorios estables por producto)
+  const stockPaleta = ['#f43f5e', '#f97316', '#f59e0b', '#10b981', '#14b8a6', '#0ea5e9', '#6366f1', '#8b5cf6', '#d946ef', '#ec4899'];
+  const stockColor = (nombre) => {
+    let h = 0;
+    for (const c of String(nombre)) h = (h * 31 + c.charCodeAt(0)) | 0;
+    return stockPaleta[Math.abs(h) % stockPaleta.length];
+  };
+  const stockList = (Inventario?.getAllStock?.() || []);
+  document.getElementById('dash-stock-count').textContent = `(${stockList.length})`;
+  document.getElementById('dash-stock-list').innerHTML = stockList.length === 0
+    ? '<div style="color:var(--text3);font-size:13px;padding:8px;">Sin stock configurado</div>'
+    : stockList.map(p => {
+        const color = stockColor(p.productName);
+        const ini = (p.productName || '?')[0].toUpperCase();
+        return `
+      <div class="stock-row">
+        <span class="stock-dot" style="background:${color}1c;color:${color};">${ini}</span>
+        <span class="stock-row-name">${p.productName}</span>
+        <span class="stock-row-qty" style="color:${color};">${p.stockActual}</span>
+      </div>`;
+      }).join('');
 
   // Llenar card Interesados
   const interesadosList = ventasFiltradas.filter(v => v.estado === 'interesado');
@@ -1238,24 +1489,24 @@ function renderDashboard() {
       </div>`).join('');
 
   document.getElementById('stats-grid').innerHTML = `
-    <div class="stat-card"><div class="stat-icon" style="background:var(--accent-glow);">📋</div>
+    <div class="stat-card"><div class="stat-icon" style="background:var(--accent-glow);">${_ic('clipboard-list', 22)}</div>
       <div class="stat-value" style="color:var(--accent2);">${total}</div><div class="stat-label">MOVIMIENTOS</div></div>
 
     <div class="stat-card" onclick="openStatModal('vendido')" style="cursor:pointer;">
-      <div class="stat-icon" style="background:var(--green-bg);">✅</div>
+      <div class="stat-icon" style="background:var(--green-bg);">${_ic('circle-check', 22)}</div>
       <div class="stat-value" style="color:var(--green);">${vendidos}</div>
       <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:4px;">Bs. ${montoVendidos.toFixed(0)}</div>
       <div class="stat-label">UNIDADES VENDIDAS</div>
     </div>
 
     <div class="stat-card" onclick="openStatModal('seguimiento')" style="cursor:pointer;">
-      <div class="stat-icon" style="background:rgba(96,165,250,0.12);">🔄</div>
+      <div class="stat-icon" style="background:rgba(96,165,250,0.12);">${_ic('refresh-cw', 22)}</div>
       <div class="stat-value" style="color:var(--blue);">${seguimiento}</div>
       <div class="stat-label">EN SEGUIMIENTO</div>
     </div>
 
     <div class="stat-card" onclick="openStatModal('sin_respuesta')" style="cursor:pointer;">
-      <div class="stat-icon" style="background:var(--red-bg);">📵</div>
+      <div class="stat-icon" style="background:var(--red-bg);">${_ic('phone-off', 22)}</div>
       <div class="stat-value" style="color:var(--red);">${sinResp}</div><div class="stat-label">SIN RESPUESTA</div>
     </div>
   `;
@@ -1294,11 +1545,7 @@ function renderDashboard() {
     <div class="bar-track"><div class="bar-fill" style="width:${(v/maxP*100).toFixed(0)}%;background:var(--accent)"></div></div>
     <div class="bar-count">${v}</div></div>`).join('')
     || '<p style="color:var(--text3);font-size:13px;">Sin datos</p>';
-  const stockList = (Inventario?.getAllStock?.() || []);
-  const stockHtml = stockList.length > 0 ? stockList.map(p => `
-    <div class="stock-row"><span class="stock-row-name">${p.productName}</span><span class="stock-row-qty" style="color:${p.color}">${p.stockActual}</span></div>
-  `).join('') : '';
-  document.getElementById('prod-chart').innerHTML = `<div class="prod-chart-sales">${salesHtml}</div>${stockHtml ? `<div class="prod-chart-divider"></div><div class="prod-chart-stock">${stockHtml}</div>` : ''}`;
+  document.getElementById('prod-chart').innerHTML = `<div class="prod-chart-sales">${salesHtml}</div>`;
   const prodCard = document.getElementById('prod-chart').closest('.dash-card');
   if (prodCard) prodCard.classList.add('dash-card-prod');
 
@@ -1320,7 +1567,7 @@ function renderDashboard() {
 
   const pending = ventasFiltradas.filter(v => ['seguimiento', 'rellamada', 'interesado', 'agendar'].includes(v.estado)).slice(0, 10);
   document.getElementById('today-list').innerHTML = pending.length === 0
-    ? '<div class="empty-state"><div class="emoji">🎉</div><p>Sin pendientes</p></div>'
+    ? '<div class="empty-state"><div class="emoji">' + _ic('party-popper', 36) + '</div><p>Sin pendientes</p></div>'
     : pending.map(v => `
     <div class="today-item">
       <div class="today-avatar">${(v.cliente?.nombre || '?')[0].toUpperCase()}</div>
@@ -1399,7 +1646,7 @@ function renderDashboard() {
 // FIX #6 — getFiltered con memoización por inputs
 function getFiltered() {
   const search    = document.getElementById('search-input').value.toLowerCase();
-  const status    = document.getElementById('filter-status').value;
+  const status    = getCSelectValue('filter-status');
   const prodId    = document.getElementById('filter-producto').value;
   const ubicacion = document.getElementById('filter-ubicacion').value;
   const agente    = currentUser.rol === 'admin' ? (document.getElementById('filter-agente')?.value || '') : '';
@@ -1493,7 +1740,7 @@ function renderVentas() {
       if (v.archivado) tr.style.opacity = '0.6';
 
       tr.innerHTML = `
-        <td style="color:var(--text2);font-size:12px;">${v.fecha || ''}${v.archivado ? ' 🔒' : ''}</td>
+        <td style="color:var(--text2);font-size:12px;">${v.fecha || ''}${v.archivado ? ' ' + _ic('lock', 10) : ''}</td>
         <td class="td-name">${v.cliente?.nombre || '<span style="color:var(--text3)">s/n</span>'} ${flagBadge(v.cliente)}</td>
         <td class="td-phone">
           ${v.cliente?.celular || ''}
@@ -1502,7 +1749,7 @@ function renderVentas() {
         <td>${v.monto_total ? montoChip(v.monto_total) : ''}</td>
         <td style="max-width:160px;white-space:normal;word-break:break-word;font-size:13px;color:var(--text2);">${ubicacion}</td>
         <td>${statusBadge(v.estado)}${v.estado === 'rellamada' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}${v.estado === 'sin_respuesta' && v.intentos > 1 ? `<span style="font-size:10px;color:var(--text3);margin-left:4px;">${v.intentos}×</span>` : ''}</td>
-        <td style="min-width:280px;max-width:260px;overflow:hidden;white-space:normal;color:var(--text2);font-size:12px;" title="${v.notas || ''}">${v.notas || ''}${v.comprobante_url ? ` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">📎</a>` : ''}</td>
+        <td style="min-width:280px;max-width:260px;overflow:hidden;white-space:normal;color:var(--text2);font-size:12px;" title="${v.notas || ''}">${v.notas || ''}${v.comprobante_url ? ` <a href="${v.comprobante_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);">${_ic('paperclip', 12)}</a>` : ''}</td>
         <td style="font-size:11px;color:var(--text3);white-space:nowrap;">
           ${v.updated_at ? new Date(v.updated_at).toLocaleDateString('es-BO', 
             {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'}
@@ -1544,25 +1791,13 @@ function setArchivoFiltro(archivado) {
   document.getElementById('tab-activos').classList.toggle('archivo-tab-active', !archivado);
   document.getElementById('tab-archivados').classList.toggle('archivo-tab-active', archivado);
 
-  const sel = document.getElementById('filter-status');
-  sel.value = '';
-  const activos = [
-    ['rellamada',     '🔁 Rellamada'],
-    ['seguimiento',   '🔄 Seguimiento'],
-    ['interesado',    '🌟 Interesado'],
-    ['agendar',       '📅 Agendar'],
-    ['sin_respuesta', '📵 Sin respuesta'],
-    ['enviado',       '📦 Enviado'],
-  ];
-  const archivados = [
-    ['vendido',       '✅ Vendido'],
-    ['no_interesado', '👎 No interesado'],
-    ['cancelado',     '❌ Cancelado'],
-    ['spam',          '🚫 SPAM'],
-  ];
+  const activos = ['rellamada', 'seguimiento', 'interesado', 'agendar', 'sin_respuesta', 'enviado'];
+  const archivados = ['vendido', 'no_interesado', 'cancelado', 'spam'];
   const opciones = archivado ? archivados : activos;
-  sel.innerHTML = '<option value="">Todos los estados</option>' +
-    opciones.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  _buildCSelect('filter-status',
+    [{ value: '', label: 'Todos los estados' }].concat(opciones.map(v => ({ value: v, label: ESTADOS[v].label, icon: ESTADOS[v].icon }))),
+    onFilterStatusChange);
+  setCSelectValue('filter-status', '');
 
   renderVentas();
 }
@@ -1571,7 +1806,7 @@ function setArchivoFiltro(archivado) {
 function deleteUser(id) {
   db.from('usuarios').select('*').eq('id', id).single().then(({ data: u }) => {
     if (!u) return;
-    if (u.usuario === 'admin') { toast('⚠️ No se puede eliminar el administrador principal', 'error'); return; }
+    if (u.usuario === 'admin') { toast(_ic('triangle-alert', 15) + ' No se puede eliminar el administrador principal', 'error'); return; }
     document.getElementById('delete-user-nombre').textContent = u.nombre;
     document.getElementById('delete-user-confirm-input').value = '';
     document.getElementById('delete-user-confirm-input').style.borderColor = '';
@@ -1613,12 +1848,12 @@ function deleteUser(id) {
       try {
         const { error } = await db.from('usuarios').delete().eq('id', id);
         if (error) throw error;
-        toast('🗑️ Usuario eliminado');
+        toast(_ic('trash-2', 15) + ' Usuario eliminado');
         _usersCache = null;
         renderUsers();
         await loadAgents();
         buildAgentSelector();
-      } catch(e) { toast('❌ ' + e.message, 'error'); }
+    } catch(e) { toast(_ic('circle-x', 15) + ' ' + esc(e.message), 'error'); }
     };
   });
 }
@@ -1659,12 +1894,20 @@ function deleteProducto(id) {
     try {
       const { error } = await db.from('productos').delete().eq('id', id);
       if (error) throw error;
-      toast('🗑️ Producto eliminado');
+      toast(_ic('trash-2', 15) + ' Producto eliminado');
       // FIX #10 — mantener carga unificada
       await loadProductos(false);
       renderProductos();
       populateProductoFilter();
-    } catch(e) { toast('❌ ' + e.message, 'error'); }
+    } catch(e) {
+      const raw = (e && (e.message || e.details)) || '';
+      const esFK = e && (e.code === '23503' || /violates foreign key constraint/i.test(raw));
+      if (esFK) {
+        toast(_ic('circle-x', 15) + ' No se puede eliminar: el producto ya tiene movimientos o transacciones registradas', 'error');
+      } else {
+        toast(_ic('circle-x', 15) + ' ' + esc(e.message), 'error');
+      }
+    }
   };
 }
 function closeDeleteProductoModal() {
@@ -1709,10 +1952,10 @@ function deleteVenta(id) {
       dashboardCache.invalidate();
       filteredCache.invalidate(); // FIX #6
       _cityFilterDirty = true;   // FIX #5
-      toast('🗑️ Registro eliminado');
+      toast(_ic('trash-2', 15) + ' Registro eliminado');
       renderVentas();
       renderDashboard();
-    } catch(e) { toast('❌ ' + e.message, 'error'); }
+    } catch(e) { toast(_ic('circle-x', 15) + ' ' + esc(e.message), 'error'); }
   };
 }
 function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); }
@@ -1729,7 +1972,7 @@ async function renderUsers() {
   // FIX #9 — usar caché; solo hacer SELECT si no hay datos o fueron invalidados
   if (!_usersCache) {
     const { data, error } = await db.from('usuarios').select('*').order('nombre');
-    if (error) { toast('❌ Error cargando usuarios', 'error'); return; }
+    if (error) { toast(_ic('circle-x', 15) + ' Error cargando usuarios', 'error'); return; }
     _usersCache = data || [];
   }
   const data = _usersCache;
@@ -1743,10 +1986,10 @@ async function renderUsers() {
         </div>
       </div>
       <div class="user-card-actions">
-        <button class="icon-btn" onclick="openUserModal('${u.id}')">✏️ Editar</button>
+        <button class="icon-btn" onclick="openUserModal('${u.id}')">${_ic('pencil', 13)} Editar</button>
         ${u.usuario !== 'admin' ? `
-          <button class="icon-btn danger" onclick="toggleUserActive('${u.id}',${u.activo})">${u.activo ? '🚫 Desactivar' : '✅ Activar'}</button>
-          <button class="icon-btn danger" onclick="deleteUser('${u.id}')">🗑️</button>
+          <button class="icon-btn danger" onclick="toggleUserActive('${u.id}',${u.activo})">${u.activo ? _ic('ban', 13) : _ic('circle-check', 13)} ${u.activo ? 'Desactivar' : 'Activar'}</button>
+          <button class="icon-btn danger" onclick="deleteUser('${u.id}')">${_ic('trash-2', 14)}</button>
         ` : ''}
       </div>
     </div>`).join('');
@@ -1755,9 +1998,9 @@ async function renderUsers() {
 async function toggleUserActive(id, active) {
   if (!confirm(`¿${active ? 'desactivar' : 'activar'} este usuario?`)) return;
   const { error } = await db.from('usuarios').update({ activo: !active }).eq('id', id);
-  if (error) toast('❌ ' + error.message, 'error');
+  if (error) toast(_ic('circle-x', 15) + ' ' + esc(error.message), 'error');
   else {
-    toast(`✅ Usuario ${active ? 'desactivado' : 'activado'}`);
+    toast(_ic('circle-check', 15) + ' Usuario ' + (active ? 'desactivado' : 'activado'));
     _usersCache = null; // FIX #9 — invalidar caché al modificar
     renderUsers();
     await loadAgents();
@@ -1806,7 +2049,7 @@ async function saveUser() {
     rol: document.getElementById('u-rol').value,
     activo: true,
   };
-  if (!data.nombre || !data.usuario || !data.password) { toast('⚠️ Completa todos los campos', 'error'); return; }
+  if (!data.nombre || !data.usuario || !data.password) { toast(_ic('triangle-alert', 15) + ' Completa todos los campos', 'error'); return; }
   try {
     if (id) { const { error } = await db.from('usuarios').update(data).eq('id', id); if (error) throw error; }
     else { const { error } = await db.from('usuarios').insert(data); if (error) throw error; }
@@ -1821,8 +2064,8 @@ async function saveUser() {
     await loadVentas();
     renderDashboard();
     renderVentas();
-    toast('✅ Usuario guardado', 'success');
-  } catch(e) { toast('❌ ' + e.message, 'error'); }
+    toast(_ic('circle-check', 15) + ' Usuario guardado', 'success');
+  } catch(e) { toast(_ic('circle-x', 15) + ' ' + esc(e.message), 'error'); }
 }
 
 // BOLIVIA — Datos geográficos
@@ -1852,7 +2095,7 @@ function onDireccionKeydown(e) {
 let toastTimer;
 function toast(msg, type = '') {
   const el = document.getElementById('toast');
-  document.getElementById('toast-msg').textContent = msg;
+  document.getElementById('toast-msg').innerHTML = msg;
   el.className = 'toast show ' + type;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 4000);
@@ -1901,7 +2144,7 @@ function closeStatModal() {
 
 function renderStatModal() {
   const estado = statModalEstado;
-  const labels = { vendido: '✅ Vendidos', interesado: '🌟 Interesados', sin_respuesta: '📵 Sin respuesta', seguimiento: '🔄 En seguimiento', rellamada: '🔁 Rellamadas', agendar: '📅 Agendar' };
+  const labels = { vendido: 'Vendidos', interesado: 'Interesados', sin_respuesta: 'Sin respuesta', seguimiento: 'En seguimiento', rellamada: 'Rellamadas', agendar: 'Agendar' };
   document.getElementById('stat-modal-title').textContent = labels[estado] || estado;
 
   const filtered = ventas.filter(v => v.estado === estado && ventasEnFiltroTiempo(v, 'dash'));
@@ -1928,7 +2171,7 @@ function renderStatModal() {
 
   document.getElementById('stat-modal-body').innerHTML = `
     <div style="font-size:12px;color:var(--text3);margin-bottom:4px;">${resumenTexto}</div>
-    <div style="font-size:11px;color:var(--accent2);margin-bottom:14px;font-style:italic;">📅 ${periodoTexto}</div>
+    <div style="font-size:11px;color:var(--accent2);margin-bottom:14px;font-style:italic;">${_ic('calendar', 12, { style: 'vertical-align:-2px;' })} ${periodoTexto}</div>
     <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;">
         <thead>
@@ -2032,11 +2275,11 @@ async function saveConfigVendidosEditables(enabled) {
     if (error) throw error;
     const span = document.getElementById('toggle-vendidos-span');
     if (span) span.style.background = enabled ? 'var(--green)' : 'var(--border)';
-    toast(enabled ? '✅ Agentes pueden editar vendidos' : '🔒 Vendidos bloqueados para agentes', 'success');
+    toast(enabled ? _ic('circle-check', 15) + ' Agentes pueden editar vendidos' : _ic('lock', 15) + ' Vendidos bloqueados para agentes', 'success');
     _vendidosEditablesCache = enabled;
   } catch(e) {
     console.error('Error guardando config:', e);
-    toast('❌ Error guardando configuración', 'error');
+    toast(_ic('circle-x', 15) + ' Error guardando configuración', 'error');
   }
 }
 
@@ -2097,7 +2340,7 @@ function _checkStockAlerts() {
           <span class="stock-notif-name">${a.productName}</span>
           <span class="stock-notif-badge" style="color:${a.level === 'bajo' ? 'var(--red)' : 'var(--orange)'}">${a.label}</span>
           <span class="stock-notif-qty">${a.stockActual}</span>
-          <button class="stock-notif-dismiss" data-pid="${a.productId}" title="Descartar">✕</button>
+          <button class="stock-notif-dismiss" data-pid="${a.productId}" title="Descartar">${_ic('x', 12)}</button>
         </div>
       `).join('');
     }
@@ -2269,12 +2512,12 @@ function _mostrarNotificacionRecordatorio(venta) {
       <button onclick="_silenciarRecordatorio()"
         style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.35);
                border-radius:6px;padding:6px 12px;color:white;cursor:pointer;font-size:13px;font-weight:600;">
-        🔕 Silenciar
+        ${_ic('bell-off', 14)} Silenciar
       </button>
       <button onclick="_marcarRecordatorioVisto(${venta.id});_dismissRecordatorio()"
         style="background:white;border:none;border-radius:6px;padding:6px 16px;
               color:var(--accent);cursor:pointer;font-size:13px;font-weight:700;">
-        ✓ VISTO
+        ${_ic('check', 14)} VISTO
       </button>
     </div>
   `;
@@ -2297,7 +2540,7 @@ function _silenciarRecordatorio() {
   if (_bipAudio) { _bipAudio.pause(); _bipAudio.src = ''; _bipAudio = null; }
   // Solo silencia el audio, el banner sigue visible
   const btn = document.querySelector('#recordatorio-banner button[onclick="_silenciarRecordatorio()"]');
-  if (btn) { btn.textContent = '🔇 Silenciado'; btn.disabled = true; btn.style.opacity = '0.5'; }
+  if (btn) { btn.innerHTML = _ic('bell-off', 14) + ' Silenciado'; btn.disabled = true; btn.style.opacity = '0.5'; }
 }
 
 function _dismissRecordatorio() {
@@ -2357,7 +2600,7 @@ function _activarSonido(btn) {
     btn.style.background = 'var(--green-bg)';
     btn.style.borderColor = 'var(--green)';
     btn.style.color = 'var(--green)';
-    btn.textContent = '✅ Sonido activado';
+    btn.innerHTML = _ic('circle-check', 14) + ' Sonido activado';
     btn.disabled = true;
     const status = document.getElementById('sonido-status');
     if (status) {
@@ -2368,7 +2611,7 @@ function _activarSonido(btn) {
   } catch(e) {
     const status = document.getElementById('sonido-status');
     if (status) {
-      status.textContent = '⚠️ No se pudo activar el sonido en este navegador.';
+      status.innerHTML = _ic('triangle-alert', 13, { style: 'vertical-align:-2px;' }) + ' No se pudo activar el sonido en este navegador.';
       status.style.display = '';
       status.style.color = 'var(--red)';
     }
@@ -2386,9 +2629,9 @@ async function saveConfigClientesFieles() {
     _clientesFielesUmbral = umbral;
     _clientesFielesDescuento = desc;
     _clientesFielesCache = null;
-    toast('✅ Configuración de clientes fieles guardada', 'success');
+    toast(_ic('circle-check', 15) + ' Configuración de clientes fieles guardada', 'success');
     renderDashboard();
-  } catch(e) { toast('❌ ' + e.message, 'error'); }
+  } catch(e) { toast(_ic('circle-x', 15) + ' ' + esc(e.message), 'error'); }
 }
 
 function _getClientesFieles() {
@@ -2437,7 +2680,13 @@ function renderClientesFieles() {
   }
 
   const maxU = (top[0] || resto[0])?.unidades || 1;
-  const medallas = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+  const medallas = [
+    _ic('medal', 14, { style: 'color:#fbbf24;' }),
+    _ic('medal', 14, { style: 'color:#cbd5e1;' }),
+    _ic('medal', 14, { style: 'color:#d97706;' }),
+    _ic('award', 14, { style: 'color:var(--text3);' }) + ' 4',
+    _ic('award', 14, { style: 'color:var(--text3);' }) + ' 5',
+  ];
 
   const topHTML = top.length
     ? top.map((c, i) => `
@@ -2645,7 +2894,7 @@ const EXPORT_COLUMNS_VENTAS = [
   { key:'productos',   label:'Productos',      get: v => (v.venta_items||[]).map(it => it.productos?.nombre).filter(Boolean).join(', ') },
   { key:'monto',       label:'Monto',          get: v => v.monto_total ? `Bs.${Number(v.monto_total).toFixed(2)}` : '' },
   { key:'lugar',       label:'Lugar',          get: v => v.cliente?.ubicacion || '' },
-  { key:'estado',      label:'Estado',         get: v => { const map={vendido:'✅ Vendido',rellamada:'🔁 Rellamada',seguimiento:'🔄 Seguimiento',interesado:'🌟 Interesado',agendar:'📅 Agendar',sin_respuesta:'📵 Sin respuesta',enviado:'📦 Enviado',no_interesado:'👎 No interesado',cancelado:'❌ Cancelado',spam:'🚫 SPAM'}; return map[v.estado]||v.estado||''; } },
+  { key:'estado',      label:'Estado',         get: v => { const e = ESTADOS[v.estado]; return e ? e.label : (v.estado || ''); } },
   { key:'notas',       label:'Notas',          get: v => v.notas || '' },
   { key:'actualizado', label:'Actualizado en', get: v => v.updated_at ? new Date(v.updated_at).toLocaleDateString('es-BO',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '' },
   { key:'agente',      label:'Agente',         get: v => v.agente?.nombre || '' },
@@ -2736,7 +2985,7 @@ function openExportModal(source) {
   actualizarFormatCards();
   document.getElementById('export-progress').style.display = 'none';
   document.getElementById('export-btn').disabled = false;
-  document.getElementById('export-btn').textContent = '📤 Exportar';
+  document.getElementById('export-btn').innerHTML = _ic('upload', 15) + ' Exportar';
   document.getElementById('export-modal').classList.add('open');
 }
 
@@ -2782,20 +3031,20 @@ function _getSelectedColumns() {
 
 async function doExport() {
   const format = document.querySelector('input[name="export-format"]:checked')?.value;
-  if (!format) { toast('⚠️ Selecciona un formato', 'error'); return; }
+  if (!format) { toast(_ic('triangle-alert', 15) + ' Selecciona un formato', 'error'); return; }
 
   const cols = _getSelectedColumns();
-  if (cols.length === 0) { toast('⚠️ Selecciona al menos una columna', 'error'); return; }
+  if (cols.length === 0) { toast(_ic('triangle-alert', 15) + ' Selecciona al menos una columna', 'error'); return; }
 
   const data = _getExportConfig().getData();
-  if (data.length === 0) { toast('⚠️ No hay registros para exportar', 'error'); return; }
+  if (data.length === 0) { toast(_ic('triangle-alert', 15) + ' No hay registros para exportar', 'error'); return; }
 
   const progress = document.getElementById('export-progress');
   const progressText = document.getElementById('export-progress-text');
   const btn = document.getElementById('export-btn');
   progress.style.display = 'flex';
   btn.disabled = true;
-  btn.textContent = '⏳ Generando...';
+  btn.innerHTML = _ic('loader', 15) + ' Generando...';
 
   try {
     if (format === 'excel') {
@@ -2804,12 +3053,12 @@ async function doExport() {
       await _exportarPDF(data, cols);
     }
   } catch(e) {
-    toast('⚠️ Error al exportar: ' + e.message, 'error');
+    toast(_ic('triangle-alert', 15) + ' Error al exportar: ' + esc(e.message), 'error');
     console.error(e);
   } finally {
     progress.style.display = 'none';
     btn.disabled = false;
-    btn.textContent = '📤 Exportar';
+    btn.innerHTML = _ic('upload', 15) + ' Exportar';
     closeExportModal();
   }
 }

@@ -38,17 +38,17 @@ let _agenteStoragePage = 1;
 let _agenteStorageItems = [];
 
 const _ESTADOS_LABELS = {
-  todos: { label: 'Todos', emoji: '🗂️', color: '#6366f1' },
-  vendido: { label: 'Vendido', emoji: '✅', color: '#22d3a4' },
-  rellamada: { label: 'Rellamada',  emoji: '🔁', color: '#a78bfa' },
-  seguimiento: { label: 'Seguimiento', emoji: '🔄', color: '#60a5fa' },
-  interesado: { label: 'Interesado', emoji: '🌟', color: '#fbbf24' },
-  agendar: { label: 'Agendar', emoji: '📅', color: '#fb923c' },
-  sin_respuesta: { label: 'Sin respuesta', emoji: '📵', color: '#f87171' },
-  no_interesado: { label: 'No interesado', emoji: '👎', color: '#94a3b8' },
-  enviado: { label: 'Enviado', emoji: '📦', color: '#60a5fa' },
-  cancelado: { label: 'Cancelado', emoji: '❌', color: '#f87171' },
-  spam: { label: 'SPAM', emoji: '🚫', color: '#94a3b8' },
+  todos: { label: 'Todos', icon: 'folder', color: '#6366f1' },
+  vendido: { label: 'Vendido', icon: 'circle-check', color: '#22d3a4' },
+  rellamada: { label: 'Rellamada', icon: 'rotate-ccw', color: '#a78bfa' },
+  seguimiento: { label: 'Seguimiento', icon: 'rotate-cw', color: '#60a5fa' },
+  interesado: { label: 'Interesado', icon: 'star', color: '#fbbf24' },
+  agendar: { label: 'Agendar', icon: 'calendar', color: '#fb923c' },
+  sin_respuesta: { label: 'Sin respuesta', icon: 'phone-off', color: '#f87171' },
+  no_interesado: { label: 'No interesado', icon: 'thumbs-down', color: '#94a3b8' },
+  enviado: { label: 'Enviado', icon: 'package', color: '#60a5fa' },
+  cancelado: { label: 'Cancelado', icon: 'circle-x', color: '#f87171' },
+  spam: { label: 'SPAM', icon: 'ban', color: '#94a3b8' },
 };
 
 // HELPERS DE PARSEO CSV
@@ -111,7 +111,7 @@ async function _verCSVStorageAgente(path) {
     _renderAgenteCSVPanel();
   } catch(e) {
     _agenteCSVAbierto = null;
-    toast('❌ Error cargando: ' + e.message, 'error');
+    toast(_ic('circle-x', 15) + ' Error cargando: ' + e.message, 'error');
     _renderAgenteCSVPanel();
   }
 }
@@ -174,7 +174,7 @@ function _renderAgenteCSVPanel() {
         gap:8px;
       ">
         <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:16px;">📊</span>
+          <span style="font-size:16px;display:inline-flex;">${_ic('file-spreadsheet', 18)}</span>
           <div>
             <div style="font-weight:700;font-size:13px;color:var(--text);">${fileName}</div>
             <div style="font-size:11px;color:var(--text3);">
@@ -188,7 +188,7 @@ function _renderAgenteCSVPanel() {
             <input
               id="agente-csv-busqueda"
               type="text"
-              placeholder="🔍 Nombre o celular..."
+              placeholder="Nombre o celular..."
               value="${_agenteCSVBusqueda}"
               oninput="_onAgenteCSVBusqueda(this.value)"
               style="
@@ -297,7 +297,7 @@ function _renderAgenteCSVPanel() {
                         onmouseover="this.style.background='var(--accent)';this.style.color='white'"
                         onmouseout="this.style.background='var(--accent-glow)';this.style.color='var(--accent2)'"
                       >
-                        ➕ Registrar
+                        ${_ic('plus', 13)} Registrar
                       </button>
                     </td>
                   </tr>`;
@@ -356,7 +356,7 @@ async function _registrarDesdeMemoria(celular, nombre, producto, ubicacion) {
     }
   }
 
-  toast(`📋 Datos precargados desde memoria — ${nombre || celular}`, 'success');
+  toast(_ic('clipboard-list', 15) + ' Datos precargados desde memoria — ' + esc(nombre || celular), 'success');
 }
 
 // UI AGENTE (solo lectura)
@@ -366,9 +366,9 @@ function _renderMemoriasAgente() {
 
   wrap.innerHTML = `
     <div class="config-card">
-      <div class="config-card-title">🗄️ Mis respaldos</div>
+      <div class="config-card-title">${_ic('archive', 16)} Mis respaldos</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">
-        Aquí puedes ver los respaldos mensuales de tus registros. Haz clic en 👁️ para ver el contenido y usar <b>➕ Registrar</b> para pasar un contacto directamente al formulario.
+        Aquí puedes ver los respaldos mensuales de tus registros. Haz clic en ${_ic('eye', 14)} para ver el contenido y usar <b>${_ic('plus', 12)} Registrar</b> para pasar un contacto directamente al formulario.
       </div>
 
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px;">
@@ -379,7 +379,7 @@ function _renderMemoriasAgente() {
             ${_buildMesesOptions()}
           </select>
         </div>
-        <button class="btn-secondary" onclick="_cargarRespaldosAgente()">🔄 Actualizar</button>
+        <button class="btn-secondary" onclick="_cargarRespaldosAgente()">${_ic('rotate-ccw', 14)} Actualizar</button>
       </div>
 
       <!-- Panel del CSV abierto (persistente) -->
@@ -472,7 +472,7 @@ function _renderAgenteStoragePage() {
               .replace(/^\w/, c => c.toUpperCase())
           : base;
         const size = f.metadata?.size ? `${(f.metadata.size/1024).toFixed(1)} KB` : '';
-        const icon = isPdf ? '📄' : '📊';
+        const icon = isPdf ? _ic('file-text', 20) : _ic('file-spreadsheet', 20);
         const badge = isPdf
           ? `<span style="background:rgba(99,102,241,0.15);border:1px solid #6366f1;color:#a5b4fc;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">PDF</span>`
           : `<span style="background:rgba(34,211,164,0.15);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">CSV</span>`;
@@ -497,9 +497,9 @@ function _renderAgenteStoragePage() {
           </div>
           <div style="display:flex;gap:6px;">
             ${isPdf
-              ? `<button class="icon-btn" onclick="_verPDFStorageAgente('${filePath}')" title="Ver PDF">👁️</button>`
-              : `<button class="icon-btn${isOpen ? '' : ''}" onclick="_verCSVStorageAgente('${filePath}')" title="${isOpen ? 'Cerrar' : 'Ver contenido'}" style="${isOpen ? 'background:var(--accent);color:white;border-color:var(--accent);' : ''}">👁️</button>`}
-            <button class="icon-btn" onclick="_descargarStorageAgente('${filePath}','${f.name}')" title="Descargar">💾</button>
+              ? `<button class="icon-btn" onclick="_verPDFStorageAgente('${filePath}')" title="Ver PDF">${_ic('eye', 14)}</button>`
+              : `<button class="icon-btn${isOpen ? '' : ''}" onclick="_verCSVStorageAgente('${filePath}')" title="${isOpen ? 'Cerrar' : 'Ver contenido'}" style="${isOpen ? 'background:var(--accent);color:white;border-color:var(--accent);' : ''}">${_ic('eye', 14)}</button>`}
+            <button class="icon-btn" onclick="_descargarStorageAgente('${filePath}','${f.name}')" title="Descargar">${_ic('download', 14)}</button>
           </div>
         </div>`;
       }).join('')}
@@ -529,7 +529,7 @@ async function _verPDFStorageAgente(path) {
     const url = URL.createObjectURL(data);
     window.open(url, '_blank');
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
+  } catch(e) { toast(_ic('circle-x', 15) + ' Error: ' + e.message, 'error'); }
 }
 
 async function _descargarStorageAgente(path, nombre) {
@@ -540,8 +540,8 @@ async function _descargarStorageAgente(path, nombre) {
     a.href     = URL.createObjectURL(data);
     a.download = nombre;
     a.click();
-    toast('💾 Descargado', 'success');
-  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
+    toast(_ic('download', 15) + ' Descargado', 'success');
+  } catch(e) { toast(_ic('circle-x', 15) + ' Error: ' + e.message, 'error'); }
 }
 
 // UI PRINCIPAL (Admin)
@@ -577,22 +577,22 @@ function _renderMemoriasUI() {
           color:${isActive ? v.color : 'var(--text2)'};
           user-select:none;
         ">
-        ${v.emoji} ${v.label}
+        ${_ic(v.icon, 12)} ${v.label}
       </span>`;
   }).join('');
 
   // Selector de agentes para admin
   const agentesOptions = `
-    <option value="todos">👥 Todos los agentes</option>
+    <option value="todos">Todos los agentes</option>
     ${(allAgents || []).filter(a => a.rol === 'agente').map(a =>
-      `<option value="${a.id}" data-nombre="${a.nombre}">👤 ${a.nombre}</option>`
+      `<option value="${a.id}" data-nombre="${a.nombre}">${a.nombre}</option>`
     ).join('')}
   `;
 
   wrap.innerHTML = `
     <!-- SECCIÓN 1: CREAR RESPALDO -->
     <div class="config-card" id="memoria-seccion-crear">
-      <div class="config-card-title">📦 Crear respaldo mensual</div>
+      <div class="config-card-title">${_ic('package', 16)} Crear respaldo mensual</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">
         Selecciona el mes, agente y los estados a incluir. Puedes exportar como CSV plano o PDF con diseño.
         Al guardar en Supabase, el archivo se guarda en la carpeta del agente correspondiente.
@@ -613,7 +613,7 @@ function _renderMemoriasUI() {
           </select>
         </div>
         <button class="btn-save" onclick="_generarPreviewMemoria()" id="mem-btn-preview">
-          🔍 Previsualizar
+          ${_ic('search', 15)} Previsualizar
         </button>
       </div>
 
@@ -638,22 +638,22 @@ function _renderMemoriasUI() {
           <!-- CSV local -->
           <button class="btn-save" onclick="_exportarCSVLocal()" id="mem-btn-csv-local"
             style="background:var(--green);display:flex;align-items:center;gap:6px;">
-            💾 CSV — PC
+            ${_ic('download', 15)} CSV — PC
           </button>
           <!-- CSV Supabase -->
           <button class="btn-save" onclick="_exportarCSVStorage()" id="mem-btn-csv-storage"
             style="background:var(--blue);display:flex;align-items:center;gap:6px;">
-            ☁️ CSV — Supabase
+            ${_ic('cloud-upload', 15)} CSV — Supabase
           </button>
           <!-- PDF local -->
           <button class="btn-save" onclick="_exportarPDFLocal()" id="mem-btn-pdf-local"
             style="background:var(--accent2);color:#0a0a0f;display:flex;align-items:center;gap:6px;">
-            🖨️ PDF — PC
+            ${_ic('printer', 15)} PDF — PC
           </button>
           <!-- PDF Supabase -->
           <button class="btn-save" onclick="_exportarPDFStorage()" id="mem-btn-pdf-storage"
             style="background:var(--accent);display:flex;align-items:center;gap:6px;">
-            ☁️ PDF — Supabase
+            ${_ic('cloud-upload', 15)} PDF — Supabase
           </button>
         </div>
 
@@ -664,11 +664,11 @@ function _renderMemoriasUI() {
 
     <!-- SECCIÓN 2: RESPALDOS GUARDADOS -->
     <div class="config-card" id="memoria-seccion-storage">
-      <div class="config-card-title">🗄️ Respaldos guardados</div>
+      <div class="config-card-title">${_ic('archive', 16)} Respaldos guardados</div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
-        <button class="btn-secondary" onclick="_cargarRespaldosStorage()">🔄 Actualizar lista</button>
+        <button class="btn-secondary" onclick="_cargarRespaldosStorage()">${_ic('rotate-ccw', 14)} Actualizar lista</button>
         <label class="btn-secondary" style="cursor:pointer;">
-          📂 Importar CSV desde PC
+          ${_ic('folder-open', 14)} Importar CSV desde PC
           <input type="file" accept=".csv" style="display:none;" onchange="_importarCSVLocal(this)">
         </label>
       </div>
@@ -677,11 +677,11 @@ function _renderMemoriasUI() {
       <div style="margin-bottom:12px;">
         <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;display:block;">Ver respaldos de:</label>
         <select class="filter-select" id="mem-storage-agente-filtro" style="min-width:200px;font-size:14px;" onchange="_cargarRespaldosStorage()">
-          <option value="todos">👥 Todos los agentes</option>
+          <option value="todos">Todos los agentes</option>
           ${(allAgents || []).filter(a => a.rol === 'agente').map(a =>
-            `<option value="${a.nombre}">👤 ${a.nombre}</option>`
+            `<option value="${a.nombre}">${a.nombre}</option>`
           ).join('')}
-          <option value="_raiz">📁 Raíz (sin agente)</option>
+          <option value="_raiz">Raíz (sin agente)</option>
         </select>
       </div>
 
@@ -692,7 +692,7 @@ function _renderMemoriasUI() {
 
     <!-- SECCIÓN 3: LIMPIAR -->
     <div class="config-card" id="memoria-seccion-limpiar" style="border-color:rgba(239,68,68,0.3);">
-      <div class="config-card-title" style="color:var(--red);">🗑️ Limpiar registros del mes (Opcional)</div>
+      <div class="config-card-title" style="color:var(--red);">${_ic('trash-2', 16)} Limpiar registros del mes (Opcional)</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.7;">
         Elimina permanentemente los registros de <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">ventas</code>,
         <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;">venta_items</code> del mes seleccionado.<br>
@@ -704,7 +704,7 @@ function _renderMemoriasUI() {
       <button class="btn-save" id="mem-btn-limpiar" disabled
         style="background:var(--red);opacity:0.5;cursor:not-allowed;"
         onclick="_confirmarLimpieza()">
-        🗑️ Limpiar mes
+        ${_ic('trash-2', 14)} Limpiar mes
       </button>
     </div>
 
@@ -712,14 +712,14 @@ function _renderMemoriasUI() {
     <div class="modal-overlay" id="mem-confirm-modal">
       <div class="modal" style="max-width:460px;">
         <div class="modal-header">
-          <div class="modal-title" style="color:var(--red);">⚠️ Confirmar limpieza</div>
+          <div class="modal-title" style="color:var(--red);">${_ic('triangle-alert', 16)} Confirmar limpieza</div>
           <button class="modal-close" onclick="document.getElementById('mem-confirm-modal').classList.remove('open')">×</button>
         </div>
         <div class="modal-body">
           <div id="mem-confirm-detalle" style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.7;"></div>
           <p style="font-size:13px;color:var(--text2);margin-bottom:8px;">Para confirmar, escribe el mes en formato <b>YYYY-MM</b>:</p>
           <input class="smart-input" id="mem-confirm-input" placeholder="ej: 2026-03" autocomplete="off">
-          <div id="mem-confirm-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;">⚠️ No coincide</div>
+          <div id="mem-confirm-error" style="display:none;color:var(--red);font-size:12px;margin-top:6px;">No coincide</div>
           <div class="modal-actions" style="margin-top:20px;">
             <button class="btn-secondary" onclick="document.getElementById('mem-confirm-modal').classList.remove('open')">Cancelar</button>
             <button id="mem-confirm-btn" style="background:var(--red);border:none;border-radius:var(--radius-sm);padding:11px 24px;color:white;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">
@@ -881,7 +881,7 @@ async function _generarPreviewMemoria() {
     const filtrados = _getDataFiltrada();
 
     // Mostrar info de agente seleccionado
-    const agenteLabel = agente ? `👤 ${agente.nombre}` : '👥 Todos los agentes';
+    const agenteLabel = agente ? `${_ic('user', 13)} ${agente.nombre}` : `${_ic('users', 13)} Todos los agentes`;
     const agenteInfo = document.createElement('div');
 
     if (filtrados.length === 0) {
@@ -912,10 +912,10 @@ async function _generarPreviewMemoria() {
     btnL.disabled = false; btnL.style.opacity = ''; btnL.style.cursor = '';
 
   } catch(e) {
-    toast('❌ Error generando preview: ' + e.message, 'error');
+    toast(_ic('circle-x', 15) + ' Error generando preview: ' + e.message, 'error');
     console.error(e);
   } finally {
-    btn.textContent = '🔍 Previsualizar';
+    btn.innerHTML = _ic('search', 15) + ' Previsualizar';
     btn.disabled = false;
   }
 }
@@ -945,7 +945,7 @@ function _renderPreviewStats(filtrados, agenteLabel) {
   const tieneVendidos = filtrados.some(r => r.estado === 'vendido');
 
   document.getElementById('mem-preview-stats').innerHTML = `
-    ${agenteLabel ? `<div style="width:100%;font-size:12px;color:var(--accent2);font-weight:600;margin-bottom:4px;">📁 ${agenteLabel}</div>` : ''}
+    ${agenteLabel ? `<div style="width:100%;font-size:12px;color:var(--accent2);font-weight:600;margin-bottom:4px;">${_ic('folder', 13)} ${agenteLabel}</div>` : ''}
     <div class="stat-card" style="flex:1;min-width:110px;padding:12px 16px;">
       <div class="stat-value" style="font-size:22px;color:var(--accent2);">${ventasUnicas}</div>
       <div class="stat-label">REGISTROS</div>
@@ -999,33 +999,33 @@ function _buildCSV(rows) {
 
 function _exportarCSVLocal() {
   const filtrados = _getDataFiltrada();
-  if (filtrados.length === 0) { toast('⚠️ Primero genera el preview', 'error'); return; }
+  if (filtrados.length === 0) { toast(_ic('triangle-alert', 15) + ' Primero genera el preview', 'error'); return; }
   const csv  = _buildCSV(filtrados);
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
   a.download = `memoria_${_memoriaMes}${_sufijoDeFiltro()}.csv`;
   a.click();
-  toast('💾 CSV descargado', 'success');
+  toast(_ic('download', 15) + ' CSV descargado', 'success');
 }
 
 async function _exportarCSVStorage() {
   const filtrados = _getDataFiltrada();
-  if (filtrados.length === 0) { toast('⚠️ Primero genera el preview', 'error'); return; }
+  if (filtrados.length === 0) { toast(_ic('triangle-alert', 15) + ' Primero genera el preview', 'error'); return; }
   const btn = document.getElementById('mem-btn-csv-storage');
-  btn.textContent = '⏳ Subiendo...'; btn.disabled = true;
+  btn.innerHTML = _ic('loader-circle', 14) + ' Subiendo...'; btn.disabled = true;
   try {
     const csv  = _buildCSV(filtrados);
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const path = _buildStoragePath('csv');
     const { error } = await db.storage.from(MEMORIAS_BUCKET).upload(path, blob, { upsert: true, contentType: 'text/csv' });
     if (error) throw error;
-    toast(`☁️ CSV guardado en Supabase → ${path}`, 'success');
+    toast(_ic('cloud-upload', 15) + ' CSV guardado en Supabase → ' + esc(path), 'success');
     await _cargarRespaldosStorage();
   } catch(e) {
-    toast('❌ Error subiendo: ' + e.message, 'error');
+    toast(_ic('circle-x', 15) + ' Error subiendo: ' + e.message, 'error');
   } finally {
-    btn.textContent = '☁️ CSV — Supabase'; btn.disabled = false;
+    btn.innerHTML = _ic('cloud-upload', 15) + ' CSV — Supabase'; btn.disabled = false;
   }
 }
 
@@ -1059,7 +1059,7 @@ async function _cargarJsPDF() {
 
 async function _construirPDF() {
   const filtrados = _getDataFiltrada();
-  if (filtrados.length === 0) { toast('⚠️ Sin datos para exportar', 'error'); return null; }
+  if (filtrados.length === 0) { toast(_ic('triangle-alert', 15) + ' Sin datos para exportar', 'error'); return null; }
 
   const JsPDF = await _cargarJsPDF();
   const doc   = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -1336,22 +1336,22 @@ function _buildCSVTableHTML(csvText) {
 
 async function _exportarPDFLocal() {
   const btn = document.getElementById('mem-btn-pdf-local');
-  btn.textContent = '⏳ Generando...'; btn.disabled = true;
+  btn.innerHTML = _ic('loader-circle', 14) + ' Generando...'; btn.disabled = true;
   try {
     const doc = await _construirPDF();
     if (!doc) return;
     doc.save(`memoria_${_memoriaMes}${_sufijoDeFiltro()}.pdf`);
-    toast('🖨️ PDF descargado', 'success');
+    toast(_ic('printer', 15) + ' PDF descargado', 'success');
   } catch(e) {
-    toast('❌ Error PDF: ' + e.message, 'error'); console.error(e);
+    toast(_ic('circle-x', 15) + ' Error PDF: ' + e.message, 'error'); console.error(e);
   } finally {
-    btn.textContent = '🖨️ PDF — PC'; btn.disabled = false;
+    btn.innerHTML = _ic('printer', 15) + ' PDF — PC'; btn.disabled = false;
   }
 }
 
 async function _exportarPDFStorage() {
   const btn = document.getElementById('mem-btn-pdf-storage');
-  btn.textContent = '⏳ Subiendo...'; btn.disabled = true;
+  btn.innerHTML = _ic('loader-circle', 14) + ' Subiendo...'; btn.disabled = true;
   try {
     const doc = await _construirPDF();
     if (!doc) return;
@@ -1360,12 +1360,12 @@ async function _exportarPDFStorage() {
     const path     = _buildStoragePath('pdf');
     const { error } = await db.storage.from(MEMORIAS_BUCKET).upload(path, blob, { upsert: true, contentType: 'application/pdf' });
     if (error) throw error;
-    toast(`☁️ PDF guardado → ${path}`, 'success');
+    toast(_ic('cloud-upload', 15) + ' PDF guardado → ' + esc(path), 'success');
     await _cargarRespaldosStorage();
   } catch(e) {
-    toast('❌ Error subiendo PDF: ' + e.message, 'error'); console.error(e);
+    toast(_ic('circle-x', 15) + ' Error subiendo PDF: ' + e.message, 'error'); console.error(e);
   } finally {
-    btn.textContent = '☁️ PDF — Supabase'; btn.disabled = false;
+    btn.innerHTML = _ic('cloud-upload', 15) + ' PDF — Supabase'; btn.disabled = false;
   }
 }
 
@@ -1389,7 +1389,7 @@ async function _cargarRespaldosStorage() {
       // Archivos en raíz
       const raizArchivos = (raizData || [])
         .filter(f => f.name.endsWith('.csv') || f.name.endsWith('.pdf'))
-        .map(f => ({ ...f, _path: f.name, _agenteLabel: '📁 Raíz' }));
+        .map(f => ({ ...f, _path: f.name, _agenteLabel: _ic('folder', 12) + ' Raíz' }));
 
       // Archivos dentro de agentes/
       const carpetas = (carpetasData || []).filter(f => !f.name.includes('.'));
@@ -1397,7 +1397,7 @@ async function _cargarRespaldosStorage() {
         db.storage.from(MEMORIAS_BUCKET).list(`agentes/${c.name}`, { sortBy: { column: 'name', order: 'desc' } })
           .then(({ data }) => (data || [])
             .filter(f => f.name.endsWith('.csv') || f.name.endsWith('.pdf'))
-            .map(f => ({ ...f, _path: `agentes/${c.name}/${f.name}`, _agenteLabel: `👤 ${c.name}` }))
+            .map(f => ({ ...f, _path: `agentes/${c.name}/${f.name}`, _agenteLabel: _ic('user', 12) + ' ' + c.name }))
           )
       );
       const carpetaResults = await Promise.all(carpetaPromises);
@@ -1409,14 +1409,14 @@ async function _cargarRespaldosStorage() {
       const { data } = await db.storage.from(MEMORIAS_BUCKET).list('', { sortBy: { column: 'name', order: 'desc' } });
       archivos = (data || [])
         .filter(f => f.name.endsWith('.csv') || f.name.endsWith('.pdf'))
-        .map(f => ({ ...f, _path: f.name, _agenteLabel: '📁 Raíz' }));
+        .map(f => ({ ...f, _path: f.name, _agenteLabel: _ic('folder', 12) + ' Raíz' }));
     } else {
       // Agente específico
       const { data } = await db.storage.from(MEMORIAS_BUCKET)
         .list(`agentes/${filtroAgente}`, { sortBy: { column: 'name', order: 'desc' } });
       archivos = (data || [])
         .filter(f => f.name.endsWith('.csv') || f.name.endsWith('.pdf'))
-        .map(f => ({ ...f, _path: `agentes/${filtroAgente}/${f.name}`, _agenteLabel: `👤 ${filtroAgente}` }));
+        .map(f => ({ ...f, _path: `agentes/${filtroAgente}/${f.name}`, _agenteLabel: _ic('user', 12) + ' ' + filtroAgente }));
     }
 
     if (archivos.length === 0) {
@@ -1434,7 +1434,7 @@ async function _cargarRespaldosStorage() {
             .toLocaleDateString('es-BO',{month:'long',year:'numeric'})
             .replace(/^\w/,c=>c.toUpperCase()) : base;
           const size = f.metadata?.size ? `${(f.metadata.size/1024).toFixed(1)} KB` : '';
-          const icon = isPdf ? '📄' : '📊';
+        const icon = isPdf ? _ic('file-text', 20) : _ic('file-spreadsheet', 20);
           const badge = isPdf
             ? `<span style="background:rgba(99,102,241,0.15);border:1px solid #6366f1;color:#a5b4fc;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">PDF</span>`
             : `<span style="background:rgba(34,211,164,0.15);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">CSV</span>`;
@@ -1456,9 +1456,9 @@ async function _cargarRespaldosStorage() {
             </div>
             <div style="display:flex;gap:6px;">
               ${isPdf
-                ? `<button class="icon-btn" onclick="_verPDFStorage('${f._path}')" title="Ver">👁️</button>`
-                : `<button class="icon-btn" onclick="_verRespaldoStorage('${f._path}')" title="Ver">👁️</button>`}
-              <button class="icon-btn" onclick="_descargarRespaldoStorage('${f._path}','${f.name}')" title="Descargar">💾</button>
+                ? `<button class="icon-btn" onclick="_verPDFStorage('${f._path}')" title="Ver">${_ic('eye', 14)}</button>`
+                : `<button class="icon-btn" onclick="_verRespaldoStorage('${f._path}')" title="Ver">${_ic('eye', 14)}</button>`}
+              <button class="icon-btn" onclick="_descargarRespaldoStorage('${f._path}','${f.name}')" title="Descargar">${_ic('download', 14)}</button>
             </div>
           </div>
           ${!isPdf ? `<div id="preview-${btoa(f._path).replace(/[^a-z0-9]/gi,'')}" style="display:none;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius-sm) var(--radius-sm);background:var(--surface);"></div>` : ''}`;
@@ -1480,7 +1480,7 @@ async function _verRespaldoStorage(path) {
     const { data, error } = await db.storage.from(MEMORIAS_BUCKET).download(path);
     if (error) throw error;
     panel.innerHTML = _buildCSVTableHTML(await data.text());
-  } catch(e) { panel.innerHTML = `<p style="color:var(--red);padding:12px;font-size:13px;">❌ ${e.message}</p>`; }
+  } catch(e) { panel.innerHTML = `<p style="color:var(--red);padding:12px;font-size:13px;">${_ic('circle-x', 13)} ${esc(e.message)}</p>`; }
 }
 
 async function _verPDFStorage(path) {
@@ -1490,7 +1490,7 @@ async function _verPDFStorage(path) {
     const url = URL.createObjectURL(data);
     window.open(url, '_blank');
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
+  } catch(e) { toast(_ic('circle-x', 15) + ' Error: ' + e.message, 'error'); }
 }
 
 async function _descargarRespaldoStorage(path, nombre) {
@@ -1501,8 +1501,8 @@ async function _descargarRespaldoStorage(path, nombre) {
     a.href = URL.createObjectURL(data);
     a.download = nombre || path.split('/').pop();
     a.click();
-    toast('💾 Descargado', 'success');
-  } catch(e) { toast('❌ Error: ' + e.message, 'error'); }
+    toast(_ic('download', 15) + ' Descargado', 'success');
+  } catch(e) { toast(_ic('circle-x', 15) + ' Error: ' + e.message, 'error'); }
 }
 
 function _importarCSVLocal(input) {
@@ -1557,18 +1557,18 @@ async function _ejecutarLimpieza() {
       if (e3) throw e3;
     }
 
-    toast(`✅ Limpieza completada — ${ids.length} registros eliminados`, 'success');
+    toast(_ic('circle-check', 15) + ' Limpieza completada — ' + ids.length + ' registros eliminados', 'success');
 
     _memoriaData = []; _memoriaMes = '';
     document.getElementById('mem-preview-wrap').style.display = 'none';
     document.getElementById('mem-limpiar-info').innerHTML = 'Primero previsualiza un mes para habilitar la limpieza.';
     btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed';
-    btn.textContent = '🗑️ Limpiar mes';
+    btn.innerHTML = _ic('trash-2', 14) + ' Limpiar mes';
 
     if (typeof loadVentas === 'function') { await loadVentas(); renderDashboard(); renderVentas(); }
 
   } catch(e) {
-    toast('❌ Error en limpieza: ' + e.message, 'error');
-    btn.textContent = '🗑️ Limpiar mes'; btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = '';
+    toast(_ic('circle-x', 15) + ' Error en limpieza: ' + e.message, 'error');
+    btn.innerHTML = _ic('trash-2', 14) + ' Limpiar mes'; btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = '';
   }
 }
