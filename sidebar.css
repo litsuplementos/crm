@@ -605,6 +605,11 @@ body.sidebar-collapsed .content-area {
    se vuelve overlay deslizante
    ══════════════════════════════ */
 @media (max-width: 768px) {
+  /* Igual ancho mínimo que el resto de vistas (scroll horizontal en mobile) */
+  #view-nuevo-registro > div {
+    min-width: 760px;
+  }
+
   #sidebar {
     width: var(--sidebar-w) !important; /* siempre ancho completo en mobile */
     transform: translateX(-100%);
