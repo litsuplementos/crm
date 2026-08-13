@@ -1385,7 +1385,7 @@ function showView(name, evt) {
   if (name === 'guia') renderGuia();
   if (name === 'inventario') Inventario.render();
   if (name === 'almacen') Almacen.render();
-  if (name === 'config' && currentUser.rol === 'admin') loadConfigVendidosEditables();
+  if (name === 'config' && currentUser.rol === 'admin') { loadConfigVendidosEditables(); loadConfigEmpresa(); }
 }
 
 function showViewDirect(name) {
@@ -2264,6 +2264,47 @@ async function loadConfigVendidosEditables() {
     if (hTF) hTF.value = _minToTimeStr(h.tarde.fin);
   } catch(e) {
     console.error('Error cargando config:', e);
+  }
+}
+
+const CONFIG_EMPRESA_KEYS = ['empresa_nombre', 'empresa_nit', 'empresa_telefono', 'empresa_direccion'];
+
+async function loadConfigEmpresa() {
+  try {
+    const { data, error } = await db.from('config').select('clave, valor').in('clave', CONFIG_EMPRESA_KEYS);
+    if (error) throw error;
+    const map = {};
+    (data || []).forEach(r => { map[r.clave] = r.valor; });
+    const ids = { empresa_nombre:'config-empresa-nombre', empresa_nit:'config-empresa-nit',
+                  empresa_telefono:'config-empresa-telefono', empresa_direccion:'config-empresa-direccion' };
+    for (const [key, id] of Object.entries(ids)) {
+      const el = document.getElementById(id);
+      if (el && map[key] != null) el.value = map[key];
+    }
+  } catch(e) {
+    console.error('Error cargando información de empresa:', e);
+  }
+}
+
+async function saveConfigEmpresa() {
+  const values = {
+    empresa_nombre:     document.getElementById('config-empresa-nombre').value.trim(),
+    empresa_nit:        document.getElementById('config-empresa-nit').value.trim(),
+    empresa_telefono:   document.getElementById('config-empresa-telefono').value.trim(),
+    empresa_direccion:  document.getElementById('config-empresa-direccion').value.trim(),
+  };
+  if (!values.empresa_nombre) {
+    toast(_ic('triangle-alert', 15) + ' Ingresa el nombre de la empresa', 'error'); return;
+  }
+  try {
+    const rows = CONFIG_EMPRESA_KEYS.map(clave => ({ clave, valor: values[clave] }));
+    const { error } = await db.from('config').upsert(rows, { onConflict: 'clave' });
+    if (error) throw error;
+    _nrEmpresaCache = null;
+    toast(_ic('circle-check', 15) + ' Información de empresa guardada', 'success');
+  } catch(e) {
+    console.error('Error guardando información de empresa:', e);
+    toast(_ic('circle-x', 15) + ' Error guardando información de empresa', 'error');
   }
 }
 

@@ -658,6 +658,32 @@
         </div>
       </div>
 
+        <div class="config-card">
+          <div class="config-card-title"><i data-lucide="building-2" width="15" height="15" style="vertical-align:-2px;"></i> Información de Empresa</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
+            Estos datos se muestran en el encabezado del recibo de pago (PDF).
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label>Nombre de la empresa</label>
+            <input class="smart-input" type="text" id="config-empresa-nombre" placeholder="Nutrition" style="width:100%;">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+            <div class="field">
+              <label>NIT</label>
+              <input class="smart-input" type="text" id="config-empresa-nit" placeholder="NIT" style="width:100%;">
+            </div>
+            <div class="field">
+              <label>Teléfono</label>
+              <input class="smart-input" type="text" id="config-empresa-telefono" placeholder="+59170000000" style="width:100%;">
+            </div>
+          </div>
+          <div class="field" style="margin-bottom:14px;">
+            <label>Dirección</label>
+            <input class="smart-input" type="text" id="config-empresa-direccion" placeholder="Dirección" style="width:100%;">
+          </div>
+          <button class="btn-save" onclick="saveConfigEmpresa()"><i data-lucide="save" width="15" height="15" style="vertical-align:-2px;"></i> Guardar información de empresa</button>
+        </div>
+
       <div class="config-card">
         <div class="config-card-title"><i data-lucide="clipboard-list" width="15" height="15" style="vertical-align:-2px;"></i> Reglas automáticas</div>
         <div style="font-size:13px;color:var(--text2);line-height:2.2;">

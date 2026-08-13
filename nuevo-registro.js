@@ -1004,12 +1004,12 @@ async function generarReciboVenta() {
     setFill(C.white); doc.rect(0, 0, W, H, 'F');
 
     // Encabezado
-    setFill(C.accent); doc.rect(0, 0, W, 26, 'F');
+    setFill(C.accent); doc.rect(0, 0, W, 34, 'F');
     if (logoData) { try { doc.addImage(logoData, 'PNG', 8, 4, 16, 16); } catch (e) {} }
     doc.setFont('helvetica', 'bold'); doc.setFontSize(13); setTextC(C.white);
     doc.text(empresa.empresa_nombre || 'Nutrition', 27, 14.3);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); setTextC(C.soft);
-    let yEmp = 15;
+    let yEmp = 19;
     if (empresa.empresa_nit)        { doc.text('NIT: ' + empresa.empresa_nit, 27, yEmp); yEmp += 4.6; }
     if (empresa.empresa_telefono)   { doc.text('Tel: ' + empresa.empresa_telefono, 27, yEmp); yEmp += 4.6; }
     if (empresa.empresa_direccion)  { doc.text(empresa.empresa_direccion, 27, yEmp); }
@@ -1020,7 +1020,7 @@ async function generarReciboVenta() {
     doc.text('Fecha: ' + fechaTxt, W - 8, 21, { align: 'right' });
 
     // Cliente
-    let y = 34;
+    let y = 42;
     setTextC(C.text3); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
     doc.text('CLIENTE', 8, y); y += 5;
     setTextC(C.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
