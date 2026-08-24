@@ -34,6 +34,7 @@
     { id: 'productos', icon: 'package', label: 'Productos', view: 'productos', tabId: 'tab-productos', color: 'var(--green)' },
     { id: 'inventario', icon: 'package-search', label: 'Inventario', view: 'inventario', always: true, color: 'var(--accent2)' },
     { id: 'almacen', icon: 'truck', label: 'Almacén', view: 'almacen', tabId: 'tab-almacen', color: 'var(--blue)' },
+    { id: 'muestras', icon: 'flask-conical', label: 'Muestras', view: 'muestras', tabId: 'tab-muestras', color: 'var(--green)' },
     { id: 'guia', icon: 'book-open', label: 'Guía AC', view: 'guia', always: true, color: 'var(--orange)' },
     { id: 'config', icon: 'settings', label: 'Ajustes', view: 'config', tabId: 'tab-config', color: 'var(--text2)' },
     { id: 'usuarios', icon: 'lock-keyhole', label: 'Usuarios', view: 'usuarios', tabId: 'tab-usuarios', color: 'var(--green)' },

@@ -68,6 +68,7 @@
     <div class="nav-tab" id="tab-productos" data-view="productos" onclick="showView('productos')" style="display:none;"><i data-lucide="package" width="15" height="15"></i> Productos</div>
     <div class="nav-tab" data-view="guia" onclick="showView('guia')"><i data-lucide="book-open" width="15" height="15"></i> Guía AC</div>
     <div class="nav-tab" id="tab-almacen" data-view="almacen" onclick="showView('almacen')" style="display:none;"><i data-lucide="truck" width="15" height="15"></i> Almacén</div>
+    <div class="nav-tab" id="tab-muestras" data-view="muestras" onclick="showView('muestras')" style="display:none;"><i data-lucide="flask-conical" width="15" height="15"></i> Muestras</div>
     <div class="nav-tab" id="tab-config" data-view="config" onclick="showView('config')" style="display:none;"><i data-lucide="settings" width="15" height="15"></i> Ajustes</div>
     <div class="nav-tab" id="tab-usuarios" data-view="usuarios" onclick="showView('usuarios')" style="display:none;"><i data-lucide="lock-keyhole" width="15" height="15"></i> Usuarios</div>
     <div class="nav-tab" id="tab-memorias" data-view="memorias" onclick="showView('memorias')" style="display:none;"><i data-lucide="database" width="15" height="15"></i> Memorias</div>
@@ -737,6 +738,17 @@
       <div id="almacen-wrap"></div>
     </div></div>
 
+    <!-- MUESTRAS (admin) -->
+    <div class="view" id="view-muestras"><div class="view-scroll-wrap">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Muestras</div>
+          <div class="section-sub">Entrega de muestras y descuento de stock</div>
+        </div>
+      </div>
+      <div id="muestras-wrap"></div>
+    </div></div>
+
   </div>
 </div>
 
@@ -1020,6 +1032,7 @@
 <script src="objetivos.js"></script>
 <script src="inventario.js"></script>
 <script src="almacen.js"></script>
+<script src="muestras.js"></script>
 <script>
   initTheme();
   initializeSession();

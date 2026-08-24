@@ -160,14 +160,15 @@ async function _syncStockInicial(productoId) {
 // de consultar Supabase en cada apertura. refresh() re-consulta solo lo afectado
 // después de mutaciones.
 const DataStore = {
-  _ready: { almacen: false, inventario: false, guia: false },
-  _errors: { almacen: null, inventario: null, guia: null },
+  _ready: { almacen: false, inventario: false, guia: false, muestras: false },
+  _errors: { almacen: null, inventario: null, guia: null, muestras: null },
   ubicaciones: [],
   almacenStock: [],
   almacenMovimientos: [],
   inventarioStock: [],
   inventarioMovimientos: [],
   guiaMap: {},
+  muestras: [],
 
   async _fetchUbicaciones() {
     const { data, error } = await db.from('almacen_ubicaciones').select('*').order('departamento');
@@ -216,11 +217,24 @@ const DataStore = {
     if (error) throw error;
     this.guiaMap = Object.fromEntries((data || []).map(g => [g.producto_id, g]));
   },
+  async _fetchMuestras() {
+    const { data, error } = await db.from('muestras')
+      .select(`
+        id, producto_id, ubicacion_id, cantidad,
+        stock_anterior, stock_posterior, notas, usuario_id, created_at,
+        ubicacion:ubicacion_id (id, departamento, lugar, ubicacion),
+        usuarios:usuario_id (id, nombre)
+      `)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    this.muestras = data || [];
+  },
 
   _branches: {
     almacen: ['_fetchUbicaciones', '_fetchAlmacenStock', '_fetchAlmacenMovimientos'],
     inventario: ['_fetchInventarioStock', '_fetchInventarioMovimientos'],
     guia: ['_fetchGuia'],
+    muestras: ['_fetchMuestras'],
   },
 
   async _runBranch(branch) {
@@ -478,6 +492,7 @@ function initializeSession() {
     document.getElementById('tab-usuarios').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-memorias').style.display = '';
     document.getElementById('tab-almacen').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-muestras').style.display = isAdmin ? '' : 'none';
     if (window._sidebarRenderNav) window._sidebarRenderNav();
     if (window._sidebarSyncUser) window._sidebarSyncUser();
     initApp().catch(e => console.error('Error inicializando app:', e));
@@ -610,6 +625,7 @@ async function doLogin() {
     document.getElementById('tab-usuarios').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-memorias').style.display = '';
     document.getElementById('tab-almacen').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-muestras').style.display = isAdmin ? '' : 'none';
     if (window._sidebarRenderNav) window._sidebarRenderNav();
     if (window._sidebarSyncUser) window._sidebarSyncUser();
     await initApp();
@@ -650,6 +666,7 @@ function doLogout() {
   selectedAgentId = 'all';       
   ClientesView.invalidate();
   Inventario.reset();
+  if (window.Muestras?.reset) Muestras.reset();
 
   Objetivos.stop();
   currentUser = null;
@@ -657,6 +674,7 @@ function doLogout() {
   document.getElementById('tab-config').style.display = 'none';
   document.getElementById('tab-usuarios').style.display = 'none';
   document.getElementById('tab-almacen').style.display = 'none';
+  document.getElementById('tab-muestras').style.display = 'none';
   if (window._sidebarRenderNav) window._sidebarRenderNav();
   ventas = [];
   ventasIndex = {};
@@ -1385,6 +1403,7 @@ function showView(name, evt) {
   if (name === 'guia') renderGuia();
   if (name === 'inventario') Inventario.render();
   if (name === 'almacen') Almacen.render();
+  if (name === 'muestras') Muestras.render();
   if (name === 'config' && currentUser.rol === 'admin') { loadConfigVendidosEditables(); loadConfigEmpresa(); }
 }
 
@@ -1395,6 +1414,7 @@ function showViewDirect(name) {
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
   if (name === 'inventario') Inventario.render();
   if (name === 'almacen') Almacen.render();
+  if (name === 'muestras') Muestras.render();
 }
 
 // STATUS / BADGE HELPERS
