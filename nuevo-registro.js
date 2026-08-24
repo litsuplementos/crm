@@ -1006,7 +1006,7 @@ async function generarReciboVenta() {
     if (empresa.empresa_telefono)   { doc.text('Tel: ' + empresa.empresa_telefono, 27, yEmp); yEmp += 4.6; }
     if (empresa.empresa_direccion)  { doc.text(empresa.empresa_direccion, 27, yEmp); }
     doc.setFont('helvetica', 'bold'); doc.setFontSize(12); setTextC(C.white);
-    doc.text('RECIBO DE PAGO', W - 8, 10, { align: 'right' });
+    doc.text('NOTA DE ENTREGA', W - 8, 10, { align: 'right' });
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); setTextC(C.soft);
     doc.text('Folio: ' + folio, W - 8, 16, { align: 'right' });
     doc.text('Fecha: ' + fechaTxt, W - 8, 21, { align: 'right' });
