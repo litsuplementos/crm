@@ -1,6 +1,8 @@
 // inventario.js — Módulo de Inventario
 // 3 pestañas: Ajustes (stock_inicial + umbrales), Movimiento de Stock, Historial
 // Movimientos: Reposición (suma) y Corrección (ajusta a un valor absoluto).
+// Ambos actúan sobre un ALMACÉN real (almacen_ubicaciones) elegido en el
+// formulario; el stock general sigue vía trigger almacen_stock_sync_total.
 // Las ventas se descuentan automáticamente desde nuevo-registro.js.
 
 const Inventario = (() => {
@@ -8,6 +10,7 @@ const Inventario = (() => {
   let _productos = [];
   let _stockMap = {};        // { producto_id: { stock_inicial, umbral_bajo, umbral_moderado, notas, usuario_id, updated_at } }
   let _movimientos = [];
+  let _ubicaciones = [];
   let _currentPage = 1;
   const PAGE_SIZE = 20;
 
@@ -29,11 +32,12 @@ const Inventario = (() => {
   }
 
   async function _loadData() {
-    await DataStore.ensure('inventario');
+    await DataStore.ensure('inventario', 'almacen');
     _productos = (allProductos || []).filter(p => p.activo);
     _stockMap = {};
     (DataStore.inventarioStock || []).forEach(r => { _stockMap[r.producto_id] = r; });
     _movimientos = DataStore.inventarioMovimientos || [];
+    _ubicaciones = DataStore.ubicaciones || [];
   }
 
   function _calcStockActual(productId) {
@@ -62,32 +66,27 @@ const Inventario = (() => {
     }
   }
 
-  // Ubicación por defecto de un departamento desde DataStore (solo lectura):
-  // 'Principal' (sin dirección) o, si no existe, la primera del departamento.
-  function _nrUbicacionDept(dep) {
-    const ubs = DataStore.ubicaciones || [];
-    return ubs.find(u => u.departamento === dep && u.lugar === 'Principal' && !u.ubicacion) ||
-           ubs.find(u => u.departamento === dep) || null;
+  function _locLabel(u) {
+    if (!u) return '—';
+    return [u.departamento, u.lugar, u.ubicacion].filter(Boolean).join(' · ');
   }
 
-  // Stock actual de un producto en el departamento indicado (solo lectura).
-  function _nrStockDeptActual(productoId, dep) {
-    const ub = _nrUbicacionDept(dep);
-    if (!ub) return 0;
-    const r = (DataStore.almacenStock || []).find(x => x.producto_id === productoId && x.ubicacion_id === ub.id);
+  // Stock actual de un producto en una ubicación del almacén (lectura DataStore).
+  function _stockAtUbi(productoId, ubicacionId) {
+    const r = (DataStore.almacenStock || []).find(x => x.producto_id === productoId && x.ubicacion_id === ubicacionId);
     return r ? r.stock : 0;
   }
 
   // En modo Corrección, precarga el campo "Nuevo stock" con el stock actual
-  // del departamento seleccionado (no el general).
+  // del almacén seleccionado (no el general).
   function _updateCorreccionPrefill() {
     const tipo = document.querySelector('input[name="inv-tipo"]:checked')?.value;
     if (tipo !== 'correccion') return;
     const productoId = parseInt(document.getElementById('inv-producto')?.value);
-    const dep = document.querySelector('.inv-geo-dep')?.value?.trim();
+    const ubiId = parseInt(document.getElementById('inv-ubicacion')?.value);
     const input = document.getElementById('inv-cantidad');
     if (!input) return;
-    input.value = productoId && dep ? _nrStockDeptActual(productoId, dep) : 0;
+    input.value = productoId && ubiId ? _stockAtUbi(productoId, ubiId) : 0;
     input.min = '0';
   }
 
@@ -258,6 +257,14 @@ const Inventario = (() => {
   //  PESTAÑA: MOVIMIENTO DE STOCK
   // ═══════════════════════════════════════════════
   function _renderMovimiento(content) {
+    if (_productos.length === 0) {
+      content.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:40px;text-align:center;">No hay productos activos</div>';
+      return;
+    }
+    if (_ubicaciones.length === 0) {
+      content.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:40px;text-align:center;">Aún no hay ubicaciones de almacén.<br>Crea una en <b>' + _ic('truck', 13) + ' Almacén → ' + _ic('map-pin', 13) + ' Ubicaciones</b> para registrar movimientos.</div>';
+      return;
+    }
     const usuario = currentUser;
     content.innerHTML = `
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;width:100%;">
@@ -272,9 +279,9 @@ const Inventario = (() => {
         </div>
 
         <div id="inv-stock-info" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--surface2);border-radius:8px;font-size:13px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <span style="color:var(--text3);">Stock actual: </span>
-            <span id="inv-stock-actual" style="font-weight:700;font-size:16px;"></span>
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+            <span><span style="color:var(--text3);">Stock general: </span><span id="inv-stock-actual" style="font-weight:700;font-size:16px;"></span></span>
+            <span id="inv-stock-ubi-wrap" style="display:none;"><span style="color:var(--text3);">En este almacén: </span><b id="inv-stock-ubi" style="color:var(--accent2);"></b></span>
             <span id="inv-stock-status"></span>
           </div>
         </div>
@@ -297,16 +304,14 @@ const Inventario = (() => {
         </div>
 
         <div class="inv-field">
-          <label>Ubicación <span style="color:var(--text3);font-weight:400;font-size:10px;">(selecciona el departamento o escribe)</span></label>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
-            <select class="inv-geo-dep" style="font-size:12px;"><option value="">— Departamento —</option></select>
-            <select class="inv-geo-prov" disabled style="font-size:12px;"><option value="">— Provincia —</option></select>
-            <select class="inv-geo-mun" disabled style="font-size:12px;"><option value="">— Municipio —</option></select>
-          </div>
-          <input id="inv-ubicacion" placeholder="O escribe la ubicación directamente...">
+          <label>Almacén (ubicación)</label>
+          <select id="inv-ubicacion" onchange="Inventario.onUbicacionChange()">
+            <option value="">— Seleccionar almacén —</option>
+            ${_ubicaciones.map(u => `<option value="${u.id}">${_locLabel(u)}</option>`).join('')}
+          </select>
         </div>
 
-        <div style="font-size:11px;color:var(--text3);margin-bottom:12px;">${_ic('lightbulb', 13)} Al guardar una <b>Reposición</b> o <b>Corrección</b> se crea o actualiza la ubicación del <b>Almacén</b> por <b>Departamento</b>. Lugar y Ubicación se editan luego en <b>Almacén → ${_ic('map-pin', 13)} Ubicaciones</b>.</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:12px;">${_ic('lightbulb', 13)} La <b>Reposición</b> suma unidades al almacén elegido y la <b>Corrección</b> fija su valor absoluto. El stock general se recalcula solo. Las ubicaciones se gestionan en <b>Almacén → ${_ic('map-pin', 13)} Ubicaciones</b>.</div>
 
         <div class="inv-field">
           <label>Notas <span style="color:var(--text3);font-weight:400;">(opcional)</span></label>
@@ -319,7 +324,6 @@ const Inventario = (() => {
         </div>
       </div>
     `;
-    _initGeoSelectors();
   }
 
   function onProductoChange() {
@@ -338,8 +342,26 @@ const Inventario = (() => {
     if (statusEl) statusEl.innerHTML = `<span class="stock-badge ${st.level}" style="font-size:12px;">${st.label}</span>`;
     info.style.display = 'block';
 
+    _updateUbiStockInfo();
     const tipo = document.querySelector('input[name="inv-tipo"]:checked')?.value;
     if (tipo === 'correccion') _updateCorreccionPrefill();
+  }
+
+  // Muestra el stock del producto en la ubicación elegida (en vivo).
+  function _updateUbiStockInfo() {
+    const wrapEl = document.getElementById('inv-stock-ubi-wrap');
+    if (!wrapEl) return;
+    const productoId = parseInt(document.getElementById('inv-producto')?.value);
+    const ubiId = parseInt(document.getElementById('inv-ubicacion')?.value);
+    if (!productoId || !ubiId) { wrapEl.style.display = 'none'; return; }
+    const stockEl = document.getElementById('inv-stock-ubi');
+    if (stockEl) stockEl.textContent = _stockAtUbi(productoId, ubiId);
+    wrapEl.style.display = '';
+  }
+
+  function onUbicacionChange() {
+    _updateUbiStockInfo();
+    _updateCorreccionPrefill();
   }
 
   function onTipoChange() {
@@ -348,7 +370,7 @@ const Inventario = (() => {
     const input = document.getElementById('inv-cantidad');
     if (!label || !input) return;
     if (tipo === 'correccion') {
-      label.textContent = 'Nuevo stock (valor absoluto del departamento)';
+      label.textContent = 'Nuevo stock (valor absoluto del almacén)';
       input.min = '0';
       _updateCorreccionPrefill();
     } else {
@@ -362,52 +384,43 @@ const Inventario = (() => {
     const productoId = parseInt(document.getElementById('inv-producto')?.value);
     const tipo = document.querySelector('input[name="inv-tipo"]:checked')?.value;
     const cantidad = parseInt(document.getElementById('inv-cantidad')?.value);
-    const ubicacion = document.getElementById('inv-ubicacion')?.value?.trim();
+    const ubiId = parseInt(document.getElementById('inv-ubicacion')?.value);
     const notas = document.getElementById('inv-notas')?.value?.trim();
-    const dep = document.querySelector('.inv-geo-dep')?.value?.trim();
 
     if (!productoId) { toast(_ic('triangle-alert', 15) + ' Selecciona un producto', 'error'); return; }
+    if (!ubiId) { toast(_ic('triangle-alert', 15) + ' Selecciona el almacén (ubicación)', 'error'); return; }
     if (isNaN(cantidad) || cantidad < 0) { toast(_ic('triangle-alert', 15) + ' Ingresa una cantidad válida', 'error'); return; }
     if (tipo === 'reposicion' && cantidad <= 0) { toast(_ic('triangle-alert', 15) + ' La cantidad a agregar debe ser mayor a 0', 'error'); return; }
-    if ((tipo === 'reposicion' || tipo === 'correccion') && !dep) {
-      toast(_ic('triangle-alert', 15) + ' Selecciona el Departamento (necesario para actualizar el Almacén)', 'error'); return;
-    }
 
-    const stockActual = _calcStockActual(productoId);
+    const ubi = _ubicaciones.find(u => u.id === ubiId);
+    const ubicacionLabel = ubi ? _locLabel(ubi) : null;
 
-    // Ubicación del departamento y su stock actual (la corrección actúa sobre esta).
-    let ubicacionId = null;
+    // Lectura fresca: stock del producto en la ubicación y suma total (evita
+    // condiciones de carrera con ventas/envíos concurrentes).
     let stockUbiActual = 0;
+    let sumActual = 0;
     try {
-      ubicacionId = await _nrGetOrCreateUbicacion(dep);
-      if (ubicacionId) {
-        const { data: filas } = await db.from('almacen_stock')
-          .select('stock').eq('producto_id', productoId).eq('ubicacion_id', ubicacionId);
-        stockUbiActual = filas?.[0]?.stock ?? 0;
-      }
+      const [{ data: filas }, { data: todas }] = await Promise.all([
+        db.from('almacen_stock').select('stock').eq('producto_id', productoId).eq('ubicacion_id', ubiId),
+        db.from('almacen_stock').select('stock').eq('producto_id', productoId)
+      ]);
+      stockUbiActual = filas?.[0]?.stock ?? 0;
+      sumActual = (todas || []).reduce((a, r) => a + (r.stock || 0), 0);
     } catch (e) {
-      console.error('almacen: ubicación movimiento', e);
+      console.error('inventario: lectura almacén movimiento', e);
+      toast(_ic('circle-x', 15) + ' Error leyendo el almacén. Intenta de nuevo.', 'error');
+      return;
     }
+    const stockActual = sumActual;
 
-    // Corrección: la ubicación del departamento queda con `cantidad` (absoluto), las demás
-    // NO cambian y el stock general se recalcula a la nueva suma real.
-    // Reposición: suma `cantidad` a la ubicación del departamento y al stock general.
-    let stockPosterior;
-    if (tipo === 'correccion') {
-      try {
-        const { data: sumRows } = await db.from('almacen_stock')
-          .select('stock').eq('producto_id', productoId);
-        const sumActual = (sumRows || []).reduce((a, r) => a + (r.stock || 0), 0);
-        stockPosterior = sumActual - stockUbiActual + cantidad;
-      } catch (e) {
-        console.error('almacen: suma corrección', e);
-        stockPosterior = stockActual - stockUbiActual + cantidad;
-      }
-    } else {
-      stockPosterior = stockActual + cantidad;
-    }
+    // Reposición: suma a la ubicación. Corrección: valor absoluto en la ubicación.
+    // En ambos casos el total general sigue a SUM(almacen_stock) vía trigger SQL.
+    const stockUbiPosterior = tipo === 'correccion' ? cantidad : stockUbiActual + cantidad;
+    const stockPosterior = tipo === 'correccion'
+      ? sumActual - stockUbiActual + cantidad
+      : sumActual + cantidad;
 
-    // El historial muestra el stock del departamento en corrección; stock general en el resto.
+    // El historial muestra el stock del almacén en corrección; el general en reposición.
     const logAnterior = tipo === 'correccion' ? stockUbiActual : stockActual;
     const logPosterior = tipo === 'correccion' ? cantidad : stockPosterior;
 
@@ -417,14 +430,15 @@ const Inventario = (() => {
       cantidad: cantidad,
       stock_anterior: logAnterior,
       stock_posterior: logPosterior,
-      ubicacion: ubicacion || null,
+      ubicacion: ubicacionLabel,
       notas: notas || null,
       usuario_id: currentUser.id
     });
 
     if (error) { toast(_ic('circle-x', 15) + ' Error: ' + esc(error.message), 'error'); return; }
 
-    // Asegurar la fila de inventario_stock (upsert conserva umbrales y crea si falta)
+    // Asegurar la fila de inventario_stock (upsert conserva umbrales y crea si falta).
+    // Respaldo defensivo del trigger sync_stock_inicial_from_almacen.
     const s = _stockMap[productoId];
     const { error: errUpd } = await db.from('inventario_stock').upsert({
       producto_id: productoId,
@@ -435,60 +449,20 @@ const Inventario = (() => {
     }, { onConflict: 'producto_id' });
     if (errUpd) { toast(_ic('circle-x', 15) + ' Error: ' + esc(errUpd.message), 'error'); return; }
 
-    // ── Sincronizar el stock del Almacén (SUM(almacen_stock) === stock_inicial) ──
-    let almMsg = null;
-    try {
-      if (ubicacionId) {
-        if (tipo === 'correccion') {
-          // La ubicación del departamento queda con el valor escrito (absoluto).
-          // El trigger SQL sync_stock_inicial_from_almacen recalcula el total general.
-          const { error: errAlm } = await db.from('almacen_stock').upsert({
-            producto_id: productoId,
-            ubicacion_id: ubicacionId,
-            stock: cantidad,
-            usuario_id: currentUser.id
-          }, { onConflict: 'producto_id,ubicacion_id' });
-          if (errAlm) { console.error('almacen: sync corrección', errAlm); }
-          else almMsg = dep + ': ' + stockUbiActual + ' → ' + cantidad;
-        } else {
-          // Reposición: suma la cantidad a la ubicación del departamento (resto igual).
-          const stockUbiNuevo = stockUbiActual + cantidad;
-          const { error: errAlm } = await db.from('almacen_stock').upsert({
-            producto_id: productoId,
-            ubicacion_id: ubicacionId,
-            stock: stockUbiNuevo,
-            usuario_id: currentUser.id
-          }, { onConflict: 'producto_id,ubicacion_id' });
-          if (errAlm) { console.error('almacen: sync movimiento', errAlm); }
-          else almMsg = 'Almacén sumado en ' + dep + ': ' + stockUbiActual + ' → ' + stockUbiNuevo;
-        }
-      }
-    } catch (e) {
-      console.error('almacen: sync movimiento', e);
-    }
+    // ── Sincronizar el Almacén: la ubicación elegida recibe el nuevo valor ──
+    const { error: errAlm } = await db.from('almacen_stock').upsert({
+      producto_id: productoId,
+      ubicacion_id: ubiId,
+      stock: stockUbiPosterior,
+      usuario_id: currentUser.id
+    }, { onConflict: 'producto_id,ubicacion_id' });
+    if (errAlm) { toast(_ic('circle-x', 15) + ' Almacén: ' + esc(errAlm.message), 'error'); return; }
 
     const label = tipo === 'correccion' ? 'Corrección aplicada' : 'Reposición registrada';
-    toast(_ic('circle-check', 15) + ' ' + label + ': Stock general ' + stockActual + ' → ' + stockPosterior + ' · ' + (almMsg || 'Almacén sin cambio'), 'success');
+    toast(_ic('circle-check', 15) + ' ' + label + ': Stock general ' + stockActual + ' → ' + stockPosterior + ' · ' + (ubicacionLabel || 'Almacén') + ': ' + stockUbiActual + ' → ' + stockUbiPosterior, 'success');
     await DataStore.refresh('inventario', 'almacen');
     await render();
     if (window._checkStockAlerts) window._checkStockAlerts();
-  }
-
-  // Encuentra la ubicación por defecto del departamento (lugar='Principal'); si no existe
-  // usa la primera del departamento; si no hay ninguna, la crea automáticamente.
-  async function _nrGetOrCreateUbicacion(dep) {
-    const { data: def } = await db.from('almacen_ubicaciones')
-      .select('id').eq('departamento', dep).eq('lugar', 'Principal').is('ubicacion', null).maybeSingle();
-    if (def) return def.id;
-
-    const { data: primera } = await db.from('almacen_ubicaciones')
-      .select('id').eq('departamento', dep).order('id').limit(1).maybeSingle();
-    if (primera) return primera.id;
-
-    const { data: nueva, error } = await db.from('almacen_ubicaciones')
-      .insert({ departamento: dep, lugar: 'Principal', ubicacion: null }).select('id').single();
-    if (error) { console.error('almacen: crear ubicación', error); return null; }
-    return nueva.id;
   }
 
   // ═══════════════════════════════════════════════
@@ -565,55 +539,6 @@ const Inventario = (() => {
     html += `<button class="page-btn" onclick="Inventario.goPage(${_currentPage + 1})" ${_currentPage === totalPages ? 'disabled' : ''}>›</button>`;
     html += `</div>`;
     return html;
-  }
-
-  // ═══════════════════════════════════════════════
-  //  GEO SELECTORS (BOLIVIA_GEO cascada)
-  // ═══════════════════════════════════════════════
-  function _initGeoSelectors() {
-    const selDep = document.querySelector('.inv-geo-dep');
-    const selProv = document.querySelector('.inv-geo-prov');
-    const selMun = document.querySelector('.inv-geo-mun');
-    if (!selDep) return;
-
-    Object.keys(BOLIVIA_GEO).sort().forEach(dep => {
-      const o = document.createElement('option'); o.value = dep; o.textContent = dep;
-      selDep.appendChild(o);
-    });
-
-    function upd() {
-      const inp = document.getElementById('inv-ubicacion'); if (!inp) return;
-      const dep = selDep.value, prov = selProv.value, mun = selMun.value;
-      if (mun) inp.value = `${dep} - ${prov} - ${mun}`;
-      else if (prov) inp.value = `${dep} - ${prov}`;
-      else if (dep) inp.value = dep;
-      else inp.value = '';
-      _updateCorreccionPrefill();
-    }
-
-    selDep.onchange = () => {
-      const dep = selDep.value;
-      selProv.innerHTML = '<option value="">— Provincia —</option>';
-      selMun.innerHTML = '<option value="">— Municipio —</option>';
-      selProv.disabled = !dep; selMun.disabled = true; upd();
-      if (!dep) return;
-      Object.keys(BOLIVIA_GEO[dep].provincias).sort().forEach(p => {
-        const o = document.createElement('option'); o.value = p; o.textContent = p; selProv.appendChild(o);
-      });
-    };
-    selProv.onchange = () => {
-      const dep = selDep.value, prov = selProv.value;
-      selMun.innerHTML = '<option value="">— Municipio —</option>';
-      selMun.disabled = !prov; upd();
-      if (!dep || !prov) return;
-      const pd = BOLIVIA_GEO[dep].provincias[prov], cap = BOLIVIA_GEO[dep].capital;
-      pd.municipios.forEach(m => {
-        const o = document.createElement('option'); o.value = m;
-        o.textContent = m === cap ? m + ' ★ (cap. departamental)' : m === pd.capital ? m + ' · (cap. provincial)' : m;
-        selMun.appendChild(o);
-      });
-    };
-    selMun.onchange = upd;
   }
 
   // ═══════════════════════════════════════════════
@@ -706,5 +631,5 @@ const Inventario = (() => {
     return items;
   }
 
-  return { render, switchTab, goPage, saveAjuste, saveAllAjustes, onProductoChange, onTipoChange, saveMovimiento, reset, getStockAlerts, getAllStock, loadStockData };
+  return { render, switchTab, goPage, saveAjuste, saveAllAjustes, onProductoChange, onTipoChange, onUbicacionChange, saveMovimiento, reset, getStockAlerts, getAllStock, loadStockData };
 })();

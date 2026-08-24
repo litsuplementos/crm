@@ -61,67 +61,31 @@ const Almacen = (() => {
       .reduce((sum, r) => sum + (r.stock || 0), 0);
   }
 
-  // Reparte `cantidad` unidades a descontar de forma proporcional al stock de cada
-  // ubicación (método del mayor residuo). Nunca deja stock negativo.
-  function _repartirDescuento(stocks, cantidad) {
-    const total = stocks.reduce((a, b) => a + b, 0);
-    if (total <= 0) return stocks.map(() => 0);
-    const n = stocks.length;
-    const cuts = stocks.map(s => Math.floor(cantidad * s / total));
-    let resto = cantidad - cuts.reduce((a, b) => a + b, 0);
-    const cola = stocks
-      .map((s, i) => ({ i, frac: (cantidad * s / total) - cuts[i] }))
-      .sort((a, b) => b.frac - a.frac);
-    let k = 0;
-    while (resto > 0 && k < n * 3) {
-      const i = cola[k % n].i;
-      if (cuts[i] < stocks[i]) { cuts[i]++; resto--; }
-      k++;
-    }
-    if (resto > 0) {
-      for (let j = 0; j < n && resto > 0; j++) {
-        const libre = stocks[j] - cuts[j];
-        if (libre > 0) { const d = Math.min(resto, libre); cuts[j] += d; resto -= d; }
-      }
-    }
-    return cuts;
-  }
-
-  // Descuenta stock físico (almacen_stock) del departamento indicado al vender.
-  // Proporcional entre las ubicaciones del departamento. Si no hay tablas de
-  // almacén o no hay stock, es no-op (no bloquea la venta).
-  async function descontarVenta(productoId, cantidad, departamento) {
+  // Descuenta stock físico (almacen_stock) de UNA ubicación exacta al vender.
+  // Bloquea si la ubicación no tiene stock suficiente (el formulario de venta ya
+  // lo advierte en vivo). El trigger SQL sync_stock_inicial_from_almacen
+  // recalcula el total general tras el update.
+  async function descontarDeUbicacion(productoId, cantidad, ubicacionId) {
     try {
-      const { data: ubRows, error: errUb } = await db.from('almacen_ubicaciones')
-        .select('id').eq('departamento', departamento);
-      if (errUb) { console.error('almacen: descontarVenta ubicaciones', errUb); return { error: null }; }
-      const ubIds = (ubRows || []).map(u => u.id);
-      if (!ubIds.length) return { error: null };
-
       const { data: rows, error: errSt } = await db.from('almacen_stock')
         .select('id, stock')
         .eq('producto_id', productoId)
-        .in('ubicacion_id', ubIds);
-      if (errSt) { console.error('almacen: descontarVenta stock', errSt); return { error: null }; }
-      const filas = rows || [];
-      if (!filas.length) return { error: null };
-
-      const stocks = filas.map(r => r.stock || 0);
-      const total = stocks.reduce((a, b) => a + b, 0);
-      if (total <= 0) return { error: null };
-
-      const cortes = _repartirDescuento(stocks, Math.min(cantidad, total));
-      const res = await Promise.all(filas.map((r, i) =>
-        db.from('almacen_stock')
-          .update({ stock: (r.stock || 0) - cortes[i], usuario_id: currentUser.id })
-          .eq('id', r.id)
-      ));
-      const err = res.find(r => r.error);
-      if (err) return { error: err.error };
+        .eq('ubicacion_id', ubicacionId)
+        .limit(1);
+      if (errSt) { console.error('almacen: descontarDeUbicacion lectura', errSt); return { error: errSt }; }
+      const row = (rows || [])[0];
+      const anterior = row ? (row.stock || 0) : 0;
+      if (!row || anterior < cantidad) {
+        return { error: { message: 'Stock insuficiente en la ubicación seleccionada (disponible ' + anterior + ')' } };
+      }
+      const { error } = await db.from('almacen_stock')
+        .update({ stock: anterior - cantidad, usuario_id: currentUser.id })
+        .eq('id', row.id);
+      if (error) { console.error('almacen: descontarDeUbicacion update', error); return { error }; }
       return { error: null };
     } catch (e) {
-      console.error('almacen: descontarVenta', e);
-      return { error: null };
+      console.error('almacen: descontarDeUbicacion', e);
+      return { error: e };
     }
   }
 
@@ -626,5 +590,5 @@ const Almacen = (() => {
     _currentPage = 1;
   }
 
-  return { render, switchTab, goPage, saveUbicacion, editUbicacion, saveUbicacionEdit, cancelUbicacionEdit, deleteUbicacion, saveDistribucion, onDestinoChange, onEnviarInfo, saveEnvio, descontarVenta, reset };
+  return { render, switchTab, goPage, saveUbicacion, editUbicacion, saveUbicacionEdit, cancelUbicacionEdit, deleteUbicacion, saveDistribucion, onDestinoChange, onEnviarInfo, saveEnvio, descontarDeUbicacion, reset };
 })();

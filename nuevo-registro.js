@@ -753,18 +753,31 @@ function _initNrGeoSelectors() {
   selMun.onchange = upd;
 }
 
-// ── Ubicación del Almacén (descuenta stock físico al vender) ──
-let _nrAlmUbicaciones = [];
-let _nrAlmStockDept = {};       // producto_id → stock total del departamento actual (almacen_stock)
+// ── Ubicación del Almacén (descuenta stock físico al vender de UNA ubicación exacta) ──
+let _nrAlmUbicaciones = [];     // catálogo completo de almacen_ubicaciones
+let _nrAlmStockUbi = {};        // producto_id → stock en la ubicación seleccionada (almacen_stock)
 let _nrAlmStockGeneral = {};    // producto_id → stock_inicial (respaldo)
 
+function _nrAlmUbiId() {
+  return parseInt(document.getElementById('nr-alm-ubicacion')?.value) || '';
+}
+
+function _nrAlmUbiLabel(ubiId) {
+  const u = _nrAlmUbicaciones.find(x => x.id === ubiId);
+  return u ? [u.departamento, u.lugar, u.ubicacion].filter(Boolean).join(' · ') : '';
+}
+
+async function onNrAlmUbiChange() {
+  await _cargarNrStockUbicacion(_nrAlmUbiId());
+  _verificarNrItemsStock();
+}
+
 async function _initNrAlmacenSelectors() {
-  const selDep = document.getElementById('nr-alm-departamento');
-  const selLug = document.getElementById('nr-alm-lugar');
-  if (!selDep || !selLug) return;
+  const selUbi = document.getElementById('nr-alm-ubicacion');
+  if (!selUbi) return;
   try {
     await DataStore.ensure('almacen', 'inventario');
-    _nrAlmUbicaciones = (DataStore.ubicaciones || []).map(u => ({ id: u.id, departamento: u.departamento, lugar: u.lugar }));
+    _nrAlmUbicaciones = DataStore.ubicaciones || [];
   } catch (e) {
     console.error('almacen: no se pudo cargar ubicaciones para la venta', e);
     _nrAlmUbicaciones = [];
@@ -775,61 +788,40 @@ async function _initNrAlmacenSelectors() {
   } catch (e) {
     _nrAlmStockGeneral = {};
   }
-  const deps = [...new Set(_nrAlmUbicaciones.map(u => u.departamento))].sort();
-  selDep.innerHTML = '<option value="">— Departamento —</option>';
-  deps.forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = d; selDep.appendChild(o); });
-  if (deps.length) {
-    selDep.value = deps.includes('Santa Cruz') ? 'Santa Cruz' : deps[0];
-    _rellenarNrAlmLugares(selDep.value);
-  } else {
-    selLug.innerHTML = '<option value="">— Lugar —</option>';
-    selLug.disabled = true;
-    _nrAlmStockDept = {};
+  selUbi.innerHTML = '<option value="">— Seleccionar almacén —</option>';
+  _nrAlmUbicaciones.forEach(u => {
+    const o = document.createElement('option');
+    o.value = u.id;
+    o.textContent = [u.departamento, u.lugar, u.ubicacion].filter(Boolean).join(' · ');
+    selUbi.appendChild(o);
+  });
+  if (_nrAlmUbicaciones.length) {
+    const scDep = _nrAlmUbicaciones.find(u => u.departamento === 'Santa Cruz');
+    selUbi.value = String((scDep || _nrAlmUbicaciones[0]).id);
   }
-  await _cargarNrStockDepartamento(_nrAlmDepartamento());
+  await _cargarNrStockUbicacion(_nrAlmUbiId());
   _verificarNrItemsStock();
 }
 
-async function _cargarNrStockDepartamento(dep) {
-  _nrAlmStockDept = {};
-  if (!dep) return;
+// Stock por producto en la ubicación exacta elegida (lectura DataStore;
+// UNIQUE(producto_id, ubicacion_id) garantiza una sola fila por producto).
+async function _cargarNrStockUbicacion(ubiId) {
+  _nrAlmStockUbi = {};
+  if (!ubiId) return;
   try {
     await DataStore.ensure('almacen');
-    const ubIds = new Set((DataStore.ubicaciones || []).filter(u => u.departamento === dep).map(u => u.id));
-    if (!ubIds.size) return;
     (DataStore.almacenStock || []).forEach(r => {
-      if (ubIds.has(r.ubicacion_id)) _nrAlmStockDept[r.producto_id] = (_nrAlmStockDept[r.producto_id] || 0) + r.stock;
+      if (r.ubicacion_id === ubiId) _nrAlmStockUbi[r.producto_id] = r.stock;
     });
   } catch (e) {
-    console.error('almacen: stock del departamento para la venta', e);
+    console.error('almacen: stock de la ubicación para la venta', e);
   }
 }
 
-function onNrAlmDepChange() {
-  const selDep = document.getElementById('nr-alm-departamento');
-  if (!selDep) return;
-  _rellenarNrAlmLugares(selDep.value);
-  _cargarNrStockDepartamento(_nrAlmDepartamento()).then(_verificarNrItemsStock);
-}
-
-function _rellenarNrAlmLugares(dep) {
-  const selLug = document.getElementById('nr-alm-lugar');
-  if (!selLug) return;
-  const lugares = [...new Set(_nrAlmUbicaciones.filter(u => u.departamento === dep).map(u => u.lugar))].sort();
-  selLug.innerHTML = '<option value="">— Lugar —</option>';
-  lugares.forEach(l => { const o = document.createElement('option'); o.value = l; o.textContent = l; selLug.appendChild(o); });
-  selLug.disabled = lugares.length === 0;
-  if (lugares.length) selLug.value = lugares[0];
-}
-
-function _nrAlmDepartamento() {
-  return document.getElementById('nr-alm-departamento')?.value || '';
-}
-
-// Verifica en vivo que la cantidad SUMADA por producto no rebase el stock del
-// departamento seleccionado (con respaldo a inventario_stock).
+// Verifica en vivo que la cantidad SUMADA por producto no rebase el stock de la
+// ubicación del almacén seleccionada (con respaldo a inventario_stock).
 function _verificarNrItemsStock() {
-  const dept = _nrAlmDepartamento();
+  const ubiLabel = _nrAlmUbiLabel(_nrAlmUbiId());
   const rows = [...document.querySelectorAll('#nr-items-wrap [data-idx]')];
   const sumPorProducto = {};
   rows.forEach(row => {
@@ -848,14 +840,14 @@ function _verificarNrItemsStock() {
       if (cantInput) cantInput.style.borderColor = '';
       return;
     }
-    const disponible = (_nrAlmStockDept[pid] !== undefined ? _nrAlmStockDept[pid] : _nrAlmStockGeneral[pid]);
+    const disponible = (_nrAlmStockUbi[pid] !== undefined ? _nrAlmStockUbi[pid] : _nrAlmStockGeneral[pid]);
     const suma = sumPorProducto[pid] || 0;
     if (disponible === undefined || suma <= disponible) {
       warn.style.display = 'none';
       if (cantInput) cantInput.style.borderColor = '';
       return;
     }
-    warn.innerHTML = _ic('triangle-alert', 13) + ' ' + suma + ' und. de este producto, disponible ' + disponible + ' en ' + (dept || 'el almacén');
+    warn.innerHTML = _ic('triangle-alert', 13) + ' ' + suma + ' und. de este producto, disponible ' + disponible + ' en ' + (ubiLabel || 'el almacén');
     warn.style.display = 'block';
     if (cantInput) cantInput.style.borderColor = '#f87171';
   });
@@ -1195,8 +1187,10 @@ async function saveNuevoRegistro() {
 
     // ── Validar stock disponible antes de escribir, si la venta quedará como vendido ──
     let stockVentaMap = null;
-    let stockDeptMap = null;
-    let deptOk = false;
+    let stockUbiValMap = null;
+    let ubiOk = false;
+    const ubiIdVal = _nrAlmUbiId();
+    const ubiLabelVal = ubiIdVal ? _nrAlmUbiLabel(ubiIdVal) : '';
     if (estadoFinal === 'vendido') {
       stockVentaMap = {};
       const prodIds = [...new Set(items.map(it => it.producto_id))];
@@ -1206,24 +1200,19 @@ async function saveNuevoRegistro() {
       if (errStock) throw errStock;
       (stockRows || []).forEach(r => { stockVentaMap[r.producto_id] = r.stock_inicial; });
 
-      // Stock físico del departamento del almacén seleccionado (almacen_stock)
-      const dept = _nrAlmDepartamento();
+      // Stock físico de la ubicación exacta del almacén seleccionada (almacen_stock)
       try {
-        stockDeptMap = {};
-        const { data: ubRows, error: errUb } = await db.from('almacen_ubicaciones')
-          .select('id').eq('departamento', dept);
-        if (errUb) throw errUb;
-        const ubIds = (ubRows || []).map(u => u.id);
-        if (ubIds.length) {
+        stockUbiValMap = {};
+        if (ubiIdVal) {
           const { data: stRows, error: errSt } = await db.from('almacen_stock')
             .select('producto_id, stock')
-            .in('ubicacion_id', ubIds);
+            .eq('ubicacion_id', ubiIdVal);
           if (errSt) throw errSt;
-          (stRows || []).forEach(r => { stockDeptMap[r.producto_id] = (stockDeptMap[r.producto_id] || 0) + r.stock; });
+          (stRows || []).forEach(r => { stockUbiValMap[r.producto_id] = r.stock; });
+          ubiOk = true;
         }
-        deptOk = true;
       } catch (e) {
-        console.error('almacen: validación de stock por departamento', e);
+        console.error('almacen: validación de stock por ubicación', e);
       }
 
       // Suma por producto (varias filas del mismo producto suman su cantidad)
@@ -1235,10 +1224,10 @@ async function saveNuevoRegistro() {
           const prodNombre = allProductos.find(p => p.id === parseInt(pid))?.nombre || 'Producto';
           throw new Error(`Stock insuficiente para "${prodNombre}": disponible ${stockActual} — configura stock en Inventario → Ajustes`);
         }
-        if (deptOk && (stockDeptMap[pid] ?? 0) < cantidad) {
+        if (ubiOk && (stockUbiValMap[pid] ?? 0) < cantidad) {
           const prodNombre = allProductos.find(p => p.id === parseInt(pid))?.nombre || 'Producto';
-          const stockDept = stockDeptMap[pid] ?? 0;
-          throw new Error(`Stock insuficiente en "${dept}" para "${prodNombre}": disponible ${stockDept} — distribuye stock en el módulo de Almacén`);
+          const stockUbi = stockUbiValMap[pid] ?? 0;
+          throw new Error(`Stock insuficiente en "${ubiLabelVal}" para "${prodNombre}": disponible ${stockUbi} — distribuye stock en el módulo de Almacén`);
         }
       }
     }
@@ -1322,13 +1311,10 @@ async function saveNuevoRegistro() {
             if (errUpd) throw errUpd;
           }
 
-          // Descontar también el stock físico del departamento seleccionado (almacen_stock)
-          if (deptOk && typeof Almacen !== 'undefined' && Almacen.descontarVenta) {
-            const dept = _nrAlmDepartamento();
-            if (dept) {
-              const r = await Almacen.descontarVenta(item.producto_id, cantidad, dept);
-              if (r && r.error) throw new Error(r.error.message || 'Error descontando stock de almacén');
-            }
+          // Descontar el stock físico de la ubicación exacta seleccionada (almacen_stock)
+          if (ubiOk && typeof Almacen !== 'undefined' && Almacen.descontarDeUbicacion) {
+            const r = await Almacen.descontarDeUbicacion(item.producto_id, cantidad, ubiIdVal);
+            if (r && r.error) throw new Error(r.error.message || 'Error descontando stock de almacén');
           }
         }
       }
