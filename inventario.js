@@ -554,12 +554,16 @@ const Inventario = (() => {
           <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:8px;">${p.nombre}</div>
           <div style="font-size:32px;font-weight:800;color:${st.color};line-height:1;">${stock}</div>
           <div style="font-size:11px;color:var(--text3);margin-top:6px;">Stock actual</div>
-          <div style="margin-top:8px;"><span class="stock-badge ${st.level}">${st.label}</span></div>
+          <div style="margin-top:8px;">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Nivel de stock</div>
+            <span class="stock-badge ${st.level}">${st.label}</span>
+          </div>
         </div>`;
     }).join('');
 
     wrap.innerHTML = `
-      <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:18px;">${_ic('package', 16)} Stock de Productos</div>
+      <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px;">${_ic('package', 16)} Stock de Productos</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:18px;">El nivel (Alto / Moderado / Bajo) indica la cantidad de unidades en stock.</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:16px;">
         ${stockHtml}
       </div>

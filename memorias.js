@@ -47,6 +47,7 @@ const _ESTADOS_LABELS = {
   sin_respuesta: { label: 'Sin respuesta', icon: 'phone-off', color: '#f87171' },
   no_interesado: { label: 'No interesado', icon: 'thumbs-down', color: '#94a3b8' },
   enviado: { label: 'Enviado', icon: 'package', color: '#60a5fa' },
+  consigna: { label: 'Consigna', icon: 'package-open', color: '#8b5cf6' },
   cancelado: { label: 'Cancelado', icon: 'circle-x', color: '#f87171' },
   spam: { label: 'SPAM', icon: 'ban', color: '#94a3b8' },
 };

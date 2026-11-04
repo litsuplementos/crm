@@ -306,6 +306,8 @@ button {
   min-width: 0;
 }
 .dash-grid > .dash-card { height: 300px; display: flex; flex-direction: column; }
+/* Rendimiento por agente: crece con la cantidad de agentes (una fila por agente). */
+.dash-grid > #agents-card { height: auto; }
 .dash-grid #city-chart { flex: 1; min-height: 0; overflow-y: auto; }
 .dash-grid .today-list { flex: 1; max-height: none; min-height: 0; }
 .dash-grid #status-chart { flex: 1; min-height: 0; overflow-y: auto; }
@@ -460,6 +462,7 @@ td.td-actions { white-space: nowrap; }
 .badge-noint      { background: var(--surface3); color: var(--text3); border: 1px solid var(--border); }
 .badge-cancelado  { background: var(--red-bg);   color: var(--red);   border: 1px solid rgba(239,68,68,0.35); }
 .badge-spam       { background: var(--surface3); color: var(--text3); border: 1px solid var(--border); }
+.badge-consigna   { background: rgba(139,92,246,0.12); color: #8b5cf6; border: 1px solid rgba(139,92,246,0.4); }
 
 /* ── PRODUCT CHIPS ── */
 .prod-chip { display: inline-block; padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 700; background: var(--surface3); color: var(--text2); border: 1px solid var(--border); }
@@ -538,6 +541,7 @@ td.td-actions { white-space: nowrap; }
 .quick-chip.blue   { background: var(--blue-bg);   border-color: var(--blue);   color: var(--blue); }
 .quick-chip.orange { background: var(--orange-bg); border-color: var(--orange); color: var(--orange); }
 .quick-chip.gray   { background: var(--surface3);  border-color: var(--border); color: var(--text3); }
+.quick-chip.purple { background: rgba(139,92,246,0.12); border-color: #8b5cf6; color: #8b5cf6; }
 .quick-chip.green  { background: var(--green-bg);  border-color: var(--green);  color: var(--green); }
 .quick-chip.yellow { background: var(--yellow-bg); border-color: var(--yellow); color: var(--yellow); }
 .quick-chip.red    { background: var(--red-bg);    border-color: var(--red);    color: var(--red); }
@@ -546,6 +550,7 @@ td.td-actions { white-space: nowrap; }
 .quick-chip.blue:hover,   .quick-chip.blue.active   { background: var(--blue);   border-color: var(--blue);   color: white; }
 .quick-chip.orange:hover, .quick-chip.orange.active { background: var(--orange); border-color: var(--orange); color: white; }
 .quick-chip.gray:hover,   .quick-chip.gray.active   { background: var(--text3);  border-color: var(--text3);  color: white; }
+.quick-chip.purple:hover, .quick-chip.purple.active { background: #8b5cf6; border-color: #8b5cf6; color: white; }
 
 .textarea {
   width: 100%; background: var(--surface2); border: 1px solid var(--border);

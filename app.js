@@ -300,6 +300,7 @@ const ESTADOS = {
   sin_respuesta:{ label: 'Sin respuesta', icon: 'phone-off', badge: 'badge-sinresp', color: 'var(--red)' },
   no_interesado:{ label: 'No interesado', icon: 'thumbs-down', badge: 'badge-noint', color: 'var(--text3)' },
   enviado: { label: 'Enviado', icon: 'package', badge: 'badge-enviado', color: 'var(--blue)' },
+  consigna: { label: 'Consigna', icon: 'package-open', badge: 'badge-consigna', color: '#8b5cf6' },
   vendido: { label: 'Vendido', icon: 'circle-check', badge: 'badge-vendido', color: 'var(--green)' },
   cancelado: { label: 'Cancelado', icon: 'circle-x', badge: 'badge-cancelado', color: '#f87171' },
   spam: { label: 'SPAM', icon: 'ban', badge: 'badge-spam', color: 'var(--text3)' },
@@ -1811,7 +1812,7 @@ function setArchivoFiltro(archivado) {
   document.getElementById('tab-activos').classList.toggle('archivo-tab-active', !archivado);
   document.getElementById('tab-archivados').classList.toggle('archivo-tab-active', archivado);
 
-  const activos = ['rellamada', 'seguimiento', 'interesado', 'agendar', 'sin_respuesta', 'enviado'];
+  const activos = ['rellamada', 'seguimiento', 'interesado', 'agendar', 'sin_respuesta', 'enviado', 'consigna'];
   const archivados = ['vendido', 'no_interesado', 'cancelado', 'spam'];
   const opciones = archivado ? archivados : activos;
   _buildCSelect('filter-status',
