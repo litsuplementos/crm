@@ -1823,6 +1823,21 @@ function setArchivoFiltro(archivado) {
   renderVentas();
 }
 
+// Registros que apuntan a este usuario. Mientras existan se archiva en vez de borrar,
+// así su nombre sigue visible en ventas, movimientos de inventario/almacén y muestras.
+async function _countUserRefs(id) {
+  const refs = [
+    ['ventas', 'agente_id'],
+    ['inventario_movimientos', 'usuario_id'],
+    ['almacen_movimientos', 'usuario_id'],
+    ['muestras', 'usuario_id'],
+  ];
+  const results = await Promise.all(refs.map(([t, col]) =>
+    db.from(t).select('*', { count: 'exact', head: true }).eq(col, id)
+  ));
+  return results.reduce((sum, r) => sum + (r.count || 0), 0);
+}
+
 // ELIMINAR USUARIO
 function deleteUser(id) {
   db.from('usuarios').select('*').eq('id', id).single().then(({ data: u }) => {
@@ -1839,7 +1854,7 @@ function deleteUser(id) {
     document.getElementById('delete-user-confirm-input').focus();
 
     // ¿Tiene registros? Con historial se archiva (conserva el nombre); sin historial se borra del todo.
-    db.from('ventas').select('*', { count: 'exact', head: true }).eq('agente_id', u.id).then(({ count }) => {
+    _countUserRefs(u.id).then(count => {
       const warn = document.getElementById('delete-user-warning');
       const texto = document.getElementById('delete-user-warning-text');
       if (!warn || !texto) return;
@@ -1857,9 +1872,7 @@ function deleteUser(id) {
         return;
       }
 
-      const { count } = await db.from('ventas')
-        .select('*', { count: 'exact', head: true })
-        .eq('agente_id', u.id);
+      const count = await _countUserRefs(u.id);
 
       document.getElementById('delete-user-modal').classList.remove('open');
       try {
@@ -2016,11 +2029,12 @@ async function renderUsers() {
     if (error) { toast(_ic('circle-x', 15) + ' Error cargando usuarios', 'error'); return; }
     _usersCache = data || [];
   }
-  const todos = _usersCache;
+  const superAdmin = isSuperAdmin();
+  // Los admins normales no ven las cuentas superadmin.
+  const todos = _usersCache.filter(u => superAdmin || !isSuperAdmin(u));
   const activos = todos.filter(u => !u.eliminado);
   const eliminados = todos.filter(u => u.eliminado);
   const data = _showDeletedUsers ? [...activos, ...eliminados] : activos;
-  const superAdmin = isSuperAdmin();
   const yo = currentUser || {};
 
   document.getElementById('users-grid').innerHTML = data.map(u => {
@@ -2164,6 +2178,9 @@ function onDireccionKeydown(e) {
 let toastTimer;
 function toast(msg, type = '') {
   const el = document.getElementById('toast');
+  // Si el mensaje ya trae su propio icono, ocultamos el fijo para no duplicarlo.
+  const iconWrap = el.querySelector('.toast-icon');
+  if (iconWrap) iconWrap.style.display = /<svg/i.test(msg) ? 'none' : '';
   document.getElementById('toast-msg').innerHTML = msg;
   el.className = 'toast show ' + type;
   clearTimeout(toastTimer);
