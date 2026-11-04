@@ -1510,7 +1510,8 @@ function renderDashboard() {
       </div>`).join('');
 
   document.getElementById('stats-grid').innerHTML = `
-    <div class="stat-card"><div class="stat-icon" style="background:var(--accent-glow);">${_ic('clipboard-list', 22)}</div>
+    <div class="stat-card" onclick="openStatModal('movimientos')" style="cursor:pointer;">
+      <div class="stat-icon" style="background:var(--accent-glow);">${_ic('clipboard-list', 22)}</div>
       <div class="stat-value" style="color:var(--accent2);">${total}</div><div class="stat-label">MOVIMIENTOS</div></div>
 
     <div class="stat-card" onclick="openStatModal('vendido')" style="cursor:pointer;">
@@ -2230,14 +2231,19 @@ function closeStatModal() {
 
 function renderStatModal() {
   const estado = statModalEstado;
-  const labels = { vendido: 'Vendidos', interesado: 'Interesados', sin_respuesta: 'Sin respuesta', seguimiento: 'En seguimiento', rellamada: 'Rellamadas', agendar: 'Agendar' };
+  const labels = { vendido: 'Vendidos', interesado: 'Interesados', sin_respuesta: 'Sin respuesta', seguimiento: 'En seguimiento', rellamada: 'Rellamadas', agendar: 'Agendar', movimientos: 'Movimientos' };
   document.getElementById('stat-modal-title').textContent = labels[estado] || estado;
 
-  const filtered = ventas.filter(v => v.estado === estado && ventasEnFiltroTiempo(v, 'dash'));
+  const esMovimientos = estado === 'movimientos';
+  const filtered = ventas.filter(v => (esMovimientos || v.estado === estado) && ventasEnFiltroTiempo(v, 'dash'));
   const total = filtered.length;
 
   let resumenTexto = '';
-  if (estado === 'vendido') {
+  if (esMovimientos) {
+    const nVendidos = filtered.filter(v => v.estado === 'vendido').length;
+    const totalMonto = filtered.filter(v => v.estado === 'vendido').reduce((sum, v) => sum + (parseFloat(v.monto_total) || 0), 0);
+    resumenTexto = `${total} movimiento${total !== 1 ? 's' : ''} · ${nVendidos} vendido${nVendidos !== 1 ? 's' : ''} · Bs. ${totalMonto.toFixed(0)}`;
+  } else if (estado === 'vendido') {
     const totalUnidades = filtered.reduce((sum, v) => sum + (v.venta_items || []).reduce((s, it) => s + (it.cantidad || 1), 0), 0);
     const totalMonto = filtered.reduce((sum, v) => sum + (parseFloat(v.monto_total) || 0), 0);
     resumenTexto = `${total} venta${total !== 1 ? 's' : ''} · ${totalUnidades} unidad${totalUnidades !== 1 ? 'es' : ''} · Bs. ${totalMonto.toFixed(0)}`;
@@ -2263,6 +2269,7 @@ function renderStatModal() {
         <thead>
           <tr>
             <th style="background:var(--surface2);padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Fecha</th>
+            ${esMovimientos ? `<th style="background:var(--surface2);padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Estado</th>` : ''}
             <th style="background:var(--surface2);padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Cliente</th>
             <th style="background:var(--surface2);padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Celular</th>
             <th style="background:var(--surface2);padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Productos</th>
@@ -2277,6 +2284,7 @@ function renderStatModal() {
             return `
             <tr onclick="closeStatModal();setTimeout(()=>openVentaModal(${v.id}),50)" style="cursor:pointer;border-bottom:1px solid var(--border);" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
               <td style="padding:9px 12px;font-size:13px;color:var(--text2);">${v.fecha || ''}</td>
+              ${esMovimientos ? `<td style="padding:9px 12px;">${statusBadge(v.estado)}</td>` : ''}
               <td style="padding:9px 12px;font-size:13px;font-weight:500;">${v.cliente?.nombre || 's/n'}</td>
               <td style="padding:9px 12px;font-size:13px;font-family:monospace;color:var(--accent2);">
                 <a href="tel:${v.cliente?.celular}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;">${v.cliente?.celular || ''}</a>
