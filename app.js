@@ -1233,7 +1233,7 @@ async function loadVentas() {
 
 async function loadAgents() {
   const { data, error } = await db.from('usuarios')
-    .select('id, nombre, rol').eq('activo', true).order('nombre');
+    .select('id, nombre, rol').eq('activo', true).eq('eliminado', false).order('nombre');
   if (!error) allAgents = data || [];
 }
 
@@ -1828,22 +1828,25 @@ function deleteUser(id) {
   db.from('usuarios').select('*').eq('id', id).single().then(({ data: u }) => {
     if (!u) return;
     if (u.usuario === 'admin') { toast(_ic('triangle-alert', 15) + ' No se puede eliminar el administrador principal', 'error'); return; }
+    if (currentUser && u.id === currentUser.id) { toast(_ic('triangle-alert', 15) + ' No puedes eliminar tu propio usuario', 'error'); return; }
+    if (u.rol === 'admin' && !isSuperAdmin()) { toast(_ic('triangle-alert', 15) + ' Solo el superadmin puede eliminar administradores', 'error'); return; }
     document.getElementById('delete-user-nombre').textContent = u.nombre;
     document.getElementById('delete-user-confirm-input').value = '';
     document.getElementById('delete-user-confirm-input').style.borderColor = '';
     document.getElementById('delete-user-error').style.display = 'none';
     document.getElementById('delete-user-warning').style.display = 'none';
-    document.getElementById('delete-user-inv-warning').style.display = 'none';
     document.getElementById('delete-user-modal').classList.add('open');
     document.getElementById('delete-user-confirm-input').focus();
 
-    Promise.all([
-      db.from('inventario_movimientos').select('*', { count: 'exact', head: true }).eq('usuario_id', u.id),
-      db.from('inventario_stock').select('*', { count: 'exact', head: true }).eq('usuario_id', u.id)
-    ]).then(([movRes, stockRes]) => {
-      if ((movRes.count || 0) + (stockRes.count || 0) > 0) {
-        document.getElementById('delete-user-inv-warning').style.display = '';
-      }
+    // ¿Tiene registros? Con historial se archiva (conserva el nombre); sin historial se borra del todo.
+    db.from('ventas').select('*', { count: 'exact', head: true }).eq('agente_id', u.id).then(({ count }) => {
+      const warn = document.getElementById('delete-user-warning');
+      const texto = document.getElementById('delete-user-warning-text');
+      if (!warn || !texto) return;
+      warn.style.display = '';
+      texto.innerHTML = (count || 0) > 0
+        ? `Tiene <b>${count}</b> registro(s) asociados. El usuario se archiva: deja de aparecer y no podrá iniciar sesión, pero sus registros conservan su nombre.`
+        : 'El usuario no tiene registros asociados, así que se eliminará definitivamente.';
     });
 
     document.getElementById('delete-user-confirm-btn').onclick = async () => {
@@ -1854,27 +1857,29 @@ function deleteUser(id) {
         return;
       }
 
-      const { count, error: countError } = await db.from('ventas')
+      const { count } = await db.from('ventas')
         .select('*', { count: 'exact', head: true })
         .eq('agente_id', u.id);
 
-      if (count > 0) {
-        document.getElementById('delete-user-confirm-input').style.borderColor = 'var(--yellow)';
-        document.getElementById('delete-user-error').style.display = 'none';
-        document.getElementById('delete-user-warning').style.display = '';
-        return;
-      }
-
       document.getElementById('delete-user-modal').classList.remove('open');
       try {
-        const { error } = await db.from('usuarios').delete().eq('id', id);
-        if (error) throw error;
-        toast(_ic('trash-2', 15) + ' Usuario eliminado');
+        if ((count || 0) > 0) {
+          // Borrado lógico: el nombre queda intacto en todos sus registros.
+          const { error } = await db.from('usuarios').update({ eliminado: true, activo: false }).eq('id', id);
+          if (error) throw error;
+          toast(_ic('trash-2', 15) + ' Usuario eliminado · sus registros conservan el nombre', 'success');
+        } else {
+          const { error } = await db.from('usuarios').delete().eq('id', id);
+          if (error) throw error;
+          toast(_ic('trash-2', 15) + ' Usuario eliminado', 'success');
+        }
         _usersCache = null;
         renderUsers();
         await loadAgents();
         buildAgentSelector();
-    } catch(e) { toast(_ic('circle-x', 15) + ' ' + esc(e.message), 'error'); }
+        dashboardCache.invalidate();
+        renderDashboard();
+      } catch(e) { toast(_ic('circle-x', 15) + ' ' + esc(e.message), 'error'); }
     };
   });
 }
@@ -1988,6 +1993,21 @@ document.addEventListener('click', e => {
 
 // USUARIOS — FIX #9: caché para evitar SELECT en cada visita a la pestaña
 let _usersCache = null;
+let _showDeletedUsers = false;
+
+// Superadmin: el admin principal (usuario "admin") o quien tenga la marca superadmin.
+// Puede eliminar administradores y agentes; un admin normal sólo elimina agentes.
+function isSuperAdmin(u = currentUser) {
+  return !!u && (u.superadmin === true || u.usuario === 'admin');
+}
+
+function _setUserSuperadminField(checked) {
+  const field = document.getElementById('u-superadmin-field');
+  const chk = document.getElementById('u-superadmin');
+  if (!field || !chk) return;
+  field.style.display = isSuperAdmin() ? '' : 'none';
+  chk.checked = isSuperAdmin() && !!checked;
+}
 
 async function renderUsers() {
   // FIX #9 — usar caché; solo hacer SELECT si no hay datos o fueron invalidados
@@ -1996,24 +2016,57 @@ async function renderUsers() {
     if (error) { toast(_ic('circle-x', 15) + ' Error cargando usuarios', 'error'); return; }
     _usersCache = data || [];
   }
-  const data = _usersCache;
-  document.getElementById('users-grid').innerHTML = data.map(u => `
-    <div class="user-card" style="${!u.activo ? 'opacity:0.5;' : ''}">
+  const todos = _usersCache;
+  const activos = todos.filter(u => !u.eliminado);
+  const eliminados = todos.filter(u => u.eliminado);
+  const data = _showDeletedUsers ? [...activos, ...eliminados] : activos;
+  const superAdmin = isSuperAdmin();
+  const yo = currentUser || {};
+
+  document.getElementById('users-grid').innerHTML = data.map(u => {
+    const esAdmin    = u.rol === 'admin';
+    const esPrincipal = u.usuario === 'admin';
+    const esYo       = u.id === yo.id;
+    const puedeEditar  = !u.eliminado && (esYo || (!esPrincipal && (!esAdmin || superAdmin)));
+    const puedeEliminar = !u.eliminado && !esPrincipal && !esYo && (!esAdmin || superAdmin);
+    return `
+    <div class="user-card" style="${u.eliminado || !u.activo ? 'opacity:0.5;' : ''}">
       <div class="user-card-header">
         <div class="user-card-avatar">${u.nombre[0].toUpperCase()}</div>
         <div>
-          <div class="user-card-name">${u.nombre}${!u.activo ? ' <span style="color:var(--red);font-size:11px;">(inactivo)</span>' : ''}</div>
-          <div class="user-card-role">@${u.usuario} · <span style="color:${u.rol === 'admin' ? 'var(--accent2)' : 'var(--green)'}">${u.rol}</span></div>
+          <div class="user-card-name">${u.nombre}${u.eliminado ? ' <span style="color:var(--red);font-size:11px;">(eliminado)</span>' : (!u.activo ? ' <span style="color:var(--red);font-size:11px;">(inactivo)</span>' : '')}${isSuperAdmin(u) ? ' <span style="color:var(--yellow);font-size:11px;">★ superadmin</span>' : ''}</div>
+          <div class="user-card-role">@${u.usuario} · <span style="color:${esAdmin ? 'var(--accent2)' : 'var(--green)'}">${u.rol}</span></div>
         </div>
       </div>
       <div class="user-card-actions">
-        <button class="icon-btn" onclick="openUserModal('${u.id}')">${_ic('pencil', 13)} Editar</button>
-        ${u.usuario !== 'admin' ? `
-          <button class="icon-btn danger" onclick="toggleUserActive('${u.id}',${u.activo})">${u.activo ? _ic('ban', 13) : _ic('circle-check', 13)} ${u.activo ? 'Desactivar' : 'Activar'}</button>
-          <button class="icon-btn danger" onclick="deleteUser('${u.id}')">${_ic('trash-2', 14)}</button>
-        ` : ''}
+        ${u.eliminado
+          ? `<button class="icon-btn" onclick="restoreUser('${u.id}')">${_ic('rotate-ccw', 13)} Restaurar</button>`
+          : `${puedeEditar ? `<button class="icon-btn" onclick="openUserModal('${u.id}')">${_ic('pencil', 13)} Editar</button>` : ''}
+             ${puedeEliminar ? `<button class="icon-btn danger" onclick="toggleUserActive('${u.id}',${u.activo})">${u.activo ? _ic('ban', 13) : _ic('circle-check', 13)} ${u.activo ? 'Desactivar' : 'Activar'}</button>` : ''}
+             ${puedeEliminar ? `<button class="icon-btn danger" onclick="deleteUser('${u.id}')">${_ic('trash-2', 14)}</button>` : ''}`}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('') + (eliminados.length ? `
+    <div style="grid-column:1/-1;text-align:center;margin-top:2px;">
+      <button class="icon-btn" style="font-size:11px;" onclick="toggleDeletedUsers()">
+        ${_showDeletedUsers ? 'Ocultar eliminados' : 'Mostrar eliminados (' + eliminados.length + ')'}
+      </button>
+    </div>` : '');
+}
+
+function toggleDeletedUsers() {
+  _showDeletedUsers = !_showDeletedUsers;
+  renderUsers();
+}
+
+async function restoreUser(id) {
+  const { error } = await db.from('usuarios').update({ eliminado: false, activo: true }).eq('id', id);
+  if (error) { toast(_ic('circle-x', 15) + ' ' + esc(error.message), 'error'); return; }
+  toast(_ic('circle-check', 15) + ' Usuario restaurado', 'success');
+  _usersCache = null;
+  renderUsers();
+  await loadAgents();
+  buildAgentSelector();
 }
 
 async function toggleUserActive(id, active) {
@@ -2031,31 +2084,25 @@ async function toggleUserActive(id, active) {
 
 function openUserModal(id) {
   document.getElementById('user-modal').classList.add('open');
+  const apply = (u) => {
+    document.getElementById('user-modal-title').textContent = 'Editar Usuario';
+    document.getElementById('edit-user-id').value = u.id;
+    document.getElementById('u-nombre').value = u.nombre;
+    document.getElementById('u-user').value = u.usuario;
+    document.getElementById('u-pass').value = u.password;
+    document.getElementById('u-rol').value = u.rol;
+    _setUserSuperadminField(u.superadmin);
+  };
   if (id) {
     // FIX #9 — leer del caché si está disponible
     const fromCache = _usersCache?.find(u => u.id === id);
-    if (fromCache) {
-      document.getElementById('user-modal-title').textContent = 'Editar Usuario';
-      document.getElementById('edit-user-id').value = fromCache.id;
-      document.getElementById('u-nombre').value = fromCache.nombre;
-      document.getElementById('u-user').value = fromCache.usuario;
-      document.getElementById('u-pass').value = fromCache.password;
-      document.getElementById('u-rol').value = fromCache.rol;
-    } else {
-      db.from('usuarios').select('*').eq('id', id).single().then(({ data }) => {
-        if (!data) return;
-        document.getElementById('user-modal-title').textContent = 'Editar Usuario';
-        document.getElementById('edit-user-id').value = data.id;
-        document.getElementById('u-nombre').value = data.nombre;
-        document.getElementById('u-user').value = data.usuario;
-        document.getElementById('u-pass').value = data.password;
-        document.getElementById('u-rol').value = data.rol;
-      });
-    }
+    if (fromCache) apply(fromCache);
+    else db.from('usuarios').select('*').eq('id', id).single().then(({ data }) => { if (data) apply(data); });
   } else {
     document.getElementById('user-modal-title').textContent = 'Nuevo Agente';
     ['edit-user-id', 'u-nombre', 'u-user', 'u-pass'].forEach(fid => document.getElementById(fid).value = '');
     document.getElementById('u-rol').value = 'agente';
+    _setUserSuperadminField(false);
   }
 }
 
@@ -2070,6 +2117,7 @@ async function saveUser() {
     rol: document.getElementById('u-rol').value,
     activo: true,
   };
+  if (isSuperAdmin()) data.superadmin = !!document.getElementById('u-superadmin')?.checked;
   if (!data.nombre || !data.usuario || !data.password) { toast(_ic('triangle-alert', 15) + ' Completa todos los campos', 'error'); return; }
   try {
     if (id) { const { error } = await db.from('usuarios').update(data).eq('id', id); if (error) throw error; }

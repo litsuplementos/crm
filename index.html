@@ -825,6 +825,12 @@
           </select>
         </div>
       </div>
+      <div class="field" id="u-superadmin-field" style="display:none;">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2);cursor:pointer;">
+          <input type="checkbox" id="u-superadmin" style="width:16px;height:16px;accent-color:var(--accent);">
+          Superadmin — puede eliminar administradores y agentes
+        </label>
+      </div>
       <div class="modal-actions">
         <button class="btn-secondary" onclick="closeUserModal()">Cancelar</button>
         <button class="btn-save" onclick="saveUser()"><i data-lucide="save" width="15" height="15" style="vertical-align:-2px;"></i> Guardar</button>
@@ -868,8 +874,8 @@
     </div>
     <div class="modal-body">
       <p style="font-size:14px;color:var(--text2);margin-bottom:12px;line-height:1.6;">
-        Esta acción <b style="color:var(--text);">no se puede deshacer</b>.<br>
-        Para confirmar, escribe el nombre del usuario:
+        Para confirmar, escribe el nombre del usuario. Los registros que ya hizo
+        <b style="color:var(--text);">conservan su nombre</b>.
       </p>
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:15px;font-weight:700;color:var(--accent2);" id="delete-user-nombre"></div>
       <input class="smart-input" id="delete-user-confirm-input" placeholder="Escribe el nombre aquí..." autocomplete="off">
@@ -878,15 +884,8 @@
         style="display:none;color:var(--yellow);font-size:12px;margin-top:6px;
               background:var(--yellow-bg);border:1px solid var(--yellow);
               border-radius:6px;padding:8px 12px;">
-        <i data-lucide="triangle-alert" width="13" height="13" style="vertical-align:-2px;"></i> Este agente tiene ventas registradas y no puede eliminarse.
-        Puedes desactivarlo en su lugar.
-      </div>
-      <div id="delete-user-inv-warning"
-        style="display:none;color:var(--orange);font-size:12px;margin-top:6px;
-              background:#fff3e0;border:1px solid var(--orange);
-              border-radius:6px;padding:8px 12px;">
-        <i data-lucide="triangle-alert" width="13" height="13" style="vertical-align:-2px;"></i> Este usuario tiene movimientos de inventario. Si lo eliminas,
-        los registros se conservarán pero se perderá la referencia al usuario.
+        <i data-lucide="triangle-alert" width="13" height="13" style="vertical-align:-2px;"></i>
+        <span id="delete-user-warning-text"></span>
       </div>
       <div class="modal-actions" style="margin-top:20px;">
         <button class="btn-secondary" onclick="closeDeleteUserModal()">Cancelar</button>

@@ -123,10 +123,6 @@ const Inventario = (() => {
         .inv-badge-venta{background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;}
         .inv-badge-reposicion{background:rgba(16,185,129,0.1);color:var(--green);border:1px solid rgba(16,185,129,0.3);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;}
         .inv-badge-correccion{background:rgba(59,130,246,0.1);color:var(--blue);border:1px solid rgba(59,130,246,0.3);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;}
-        .stock-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:0.3px;}
-        .stock-badge.alto{background:rgba(16,185,129,0.12);color:var(--green);border:1px solid rgba(16,185,129,0.3);}
-        .stock-badge.medio{background:rgba(249,115,22,0.12);color:var(--orange);border:1px solid rgba(249,115,22,0.3);}
-        .stock-badge.bajo{background:rgba(239,68,68,0.12);color:var(--red);border:1px solid rgba(239,68,68,0.3);}
       </style>
     `;
     const content = document.getElementById('inv-tab-content');
@@ -545,28 +541,41 @@ const Inventario = (() => {
   //  VISTA AGENTE: Stock por producto con estado
   // ═══════════════════════════════════════════════
   function _renderAgentView(wrap) {
-    const stockHtml = _productos.map(p => {
+    if (_productos.length === 0) {
+      wrap.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:40px;text-align:center;">No hay productos activos</div>';
+      return;
+    }
+
+    const niveles = [
+      { level: 'alto',  label: 'Alto' },
+      { level: 'medio', label: 'Moderado' },
+      { level: 'bajo',  label: 'Bajo' },
+    ];
+    const resumen = { alto: 0, medio: 0, bajo: 0 };
+
+    const cards = _productos.map(p => {
       const stock = _calcStockActual(p.id);
       const s = _stockMap[p.id];
       const st = _getStockStatus(stock, s?.umbral_bajo ?? 0, s?.umbral_moderado ?? 0);
+      resumen[st.level] = (resumen[st.level] || 0) + 1;
       return `
-        <div style="background:var(--surface);border:1px solid ${st.color}40;border-radius:10px;padding:20px;text-align:center;min-width:160px;max-width:220px;">
-          <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:8px;">${p.nombre}</div>
-          <div style="font-size:32px;font-weight:800;color:${st.color};line-height:1;">${stock}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:6px;">Stock actual</div>
-          <div style="margin-top:8px;">
-            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Nivel de stock</div>
-            <span class="stock-badge ${st.level}">${st.label}</span>
-          </div>
+        <div class="inv-agent-card ${st.level}">
+          <div class="inv-agent-name" title="${esc(p.nombre)}">${p.nombre}</div>
+          <div class="inv-agent-qty" style="color:${st.color};">${stock}</div>
+          <div class="inv-agent-sub">Stock actual · todos los almacenes</div>
+          <span class="stock-badge ${st.level}"><span class="dot"></span>${st.label}</span>
         </div>`;
     }).join('');
 
     wrap.innerHTML = `
-      <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px;">${_ic('package', 16)} Stock de Productos</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:18px;">El nivel (Alto / Moderado / Bajo) indica la cantidad de unidades en stock.</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:16px;">
-        ${stockHtml}
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+        <div style="font-size:16px;font-weight:700;color:var(--text);">${_ic('package', 16)} Stock de Productos</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${niveles.map(n => `<span class="stock-badge ${n.level}"><span class="dot"></span>${n.label} · ${resumen[n.level]}</span>`).join('')}
+        </div>
       </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:16px;">El nivel (Alto / Moderado / Bajo) indica la cantidad de unidades en stock.</div>
+      <div class="inv-agent-grid">${cards}</div>
     `;
   }
 
