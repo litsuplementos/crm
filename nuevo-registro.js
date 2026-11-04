@@ -1234,12 +1234,17 @@ async function saveNuevoRegistro() {
 
     if (ventaId) {
       if (!cId) throw new Error('Cliente ID faltante en edición');
-      const [,,{ error: errV }] = await Promise.all([
+      // Primero la venta: si la base rechaza el guardado (por ejemplo una constraint de estado),
+      // se aborta ANTES de borrar los ítems, así no se pierden los productos del registro.
+      const { error: errV } = await db.from('ventas')
+        .update({ ...ventaData, cliente_id: cId }).eq('id', parseInt(ventaId));
+      if (errV) throw errV;
+      const [clienteRes, itemsDelRes] = await Promise.all([
         db.from('clientes').update({ nombre:nombre||'s/n', ubicacion, producto_interes:prodNombre||undefined, direccion_residencial:direccion }).eq('id',cId),
         db.from('venta_items').delete().eq('venta_id',parseInt(ventaId)),
-        db.from('ventas').update({ ...ventaData, cliente_id:cId }).eq('id',parseInt(ventaId)),
       ]);
-      if (errV) throw errV;
+      if (itemsDelRes.error) throw itemsDelRes.error;
+      if (clienteRes.error) console.warn('No se pudo actualizar el cliente:', clienteRes.error.message);
       savedId = parseInt(ventaId);
       toast(_ic('circle-check', 15) + ' Registro actualizado','success');
     } else {
