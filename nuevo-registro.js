@@ -1232,6 +1232,7 @@ async function saveNuevoRegistro() {
       }
     }
 
+    let itemsPrevios = null;
     if (ventaId) {
       if (!cId) throw new Error('Cliente ID faltante en edición');
       // Primero la venta: si la base rechaza el guardado (por ejemplo una constraint de estado),
@@ -1239,6 +1240,15 @@ async function saveNuevoRegistro() {
       const { error: errV } = await db.from('ventas')
         .update({ ...ventaData, cliente_id: cId }).eq('id', parseInt(ventaId));
       if (errV) throw errV;
+      // Copia de los ítems actuales, para devolverlos si la inserción posterior falla.
+      itemsPrevios = (ventasIndex[parseInt(ventaId)]?.venta_items || [])
+        .filter(it => it.producto_id)
+        .map(it => ({
+          venta_id: parseInt(ventaId),
+          producto_id: it.producto_id,
+          cantidad: it.cantidad || 1,
+          subtotal: parseFloat(it.subtotal) || 0,
+        }));
       const [clienteRes, itemsDelRes] = await Promise.all([
         db.from('clientes').update({ nombre:nombre||'s/n', ubicacion, producto_interes:prodNombre||undefined, direccion_residencial:direccion }).eq('id',cId),
         db.from('venta_items').delete().eq('venta_id',parseInt(ventaId)),
@@ -1270,7 +1280,13 @@ async function saveNuevoRegistro() {
       _uploadNrComprobante(savedId),
       _nrReciboBlob ? _uploadNrRecibo(savedId) : Promise.resolve(null),
     ]);
-    if (errI) throw errI;
+    if (errI) {
+      // Si no se pudieron guardar los ítems nuevos, se restauran los anteriores.
+      if (itemsPrevios && itemsPrevios.length) {
+        await db.from('venta_items').insert(itemsPrevios);
+      }
+      throw errI;
+    }
     if (url) await db.from('ventas').update({ comprobante_url: url }).eq('id', savedId);
     if (reciboUrl) await db.from('ventas').update({ recibo_url: reciboUrl }).eq('id', savedId);
     _nrReciboBlob = null;
