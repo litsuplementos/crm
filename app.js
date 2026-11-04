@@ -1438,6 +1438,69 @@ function prodChip(nombre) {
   if (nl.includes('alivia') || nl.includes('aliviah')) return `<span class="prod-chip prod-alivia">${nombre}</span>`;
   return `<span class="prod-chip">${nombre}</span>`;
 }
+// Celda compacta de productos: 2 chips visibles y un botón "+N" con el detalle completo.
+const PROD_CHIPS_VISIBLES = 2;
+
+function prodsCellHtml(prods, ventaId) {
+  if (!prods || prods.length === 0) return '<span style="color:var(--text3);font-size:12px;">—</span>';
+  const visibles = prods.slice(0, PROD_CHIPS_VISIBLES);
+  const resto = prods.length - visibles.length;
+  return `<span class="prod-cell">${visibles.map(n => prodChip(n)).join('')}${resto > 0
+    ? `<button type="button" class="prod-more" onclick="toggleProdPopover(event, ${ventaId})" title="Ver los ${prods.length} productos">+${resto}</button>`
+    : ''}</span>`;
+}
+
+function _cerrarProdPopoverKey(e) {
+  if (e.key === 'Escape') _cerrarProdPopover();
+}
+
+function _cerrarProdPopover() {
+  document.getElementById('prod-popover')?.remove();
+  document.removeEventListener('click', _cerrarProdPopover);
+  document.removeEventListener('keydown', _cerrarProdPopoverKey);
+  window.removeEventListener('scroll', _cerrarProdPopover, true);
+}
+
+function toggleProdPopover(ev, ventaId) {
+  ev.stopPropagation();
+  ev.preventDefault();
+  const prev = document.getElementById('prod-popover');
+  const eraMismo = prev?.dataset.venta === String(ventaId);
+  _cerrarProdPopover();
+  if (eraMismo) return;
+
+  const venta = (ventas || []).find(x => x.id === ventaId);
+  if (!venta) return;
+  const items = (venta.venta_items || [])
+    .map(it => ({ nombre: it.productos?.nombre, cant: it.cantidad || 1 }))
+    .filter(it => it.nombre);
+  if (!items.length) return;
+
+  const pop = document.createElement('div');
+  pop.id = 'prod-popover';
+  pop.className = 'prod-popover';
+  pop.dataset.venta = String(ventaId);
+  pop.innerHTML = `
+    <div class="prod-popover-title">${items.length} producto${items.length !== 1 ? 's' : ''}</div>
+    ${items.map(it => `<div class="prod-popover-row">${prodChip(it.nombre)}${it.cant > 1 ? `<span class="prod-popover-qty">×${it.cant}</span>` : ''}</div>`).join('')}`;
+  document.body.appendChild(pop);
+
+  const r = ev.currentTarget.getBoundingClientRect();
+  const ancho = 250;
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - ancho - 12)) + 'px';
+  pop.style.top = (r.bottom + 6) + 'px';
+  const alto = pop.offsetHeight;
+  if (r.bottom + 6 + alto > window.innerHeight - 8) {
+    pop.style.top = Math.max(8, r.top - alto - 6) + 'px';
+  }
+
+  setTimeout(() => {
+    document.addEventListener('click', _cerrarProdPopover);
+    document.addEventListener('keydown', _cerrarProdPopoverKey);
+    window.addEventListener('scroll', _cerrarProdPopover, true);
+  }, 0);
+}
+
 function montoChip(monto) {
   if (!monto && monto !== 0) return '';
   return `<span style="background:var(--green-bg);border:1px solid var(--green);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;">Bs.${parseFloat(monto).toFixed(2)}</span>`;
@@ -1752,9 +1815,7 @@ function renderVentas() {
   } else {
     for (const v of page) {
       const prodNombres = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
-      const prodCell = prodNombres.length > 0
-        ? prodNombres.map(n => prodChip(n)).join(' ')
-        : '<span style="color:var(--text3);font-size:12px;">—</span>';
+      const prodCell = prodsCellHtml(prodNombres, v.id);
       const ubicacion = v.cliente?.ubicacion || '';
 
       const tr = document.createElement('tr');

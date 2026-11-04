@@ -499,6 +499,26 @@ td.td-actions { white-space: nowrap; }
 .prod-calibrum { background: var(--accent-glow); color: var(--accent); border-color: var(--accent); }
 .prod-colageno { background: var(--green-bg); color: var(--green); border-color: var(--green); }
 .prod-osteofor { background: var(--yellow-bg); color: var(--yellow); border-color: var(--yellow); }
+
+/* ── Productos en tabla: resumen compacto + popover con el detalle ── */
+.prod-cell { display: inline-flex; align-items: center; gap: 4px; }
+.prod-more {
+  border: 1px dashed var(--border); background: var(--surface2); color: var(--text2);
+  border-radius: 20px; font-size: 11px; font-weight: 700; padding: 1px 8px;
+  line-height: 16px; cursor: pointer; font-family: inherit;
+}
+.prod-more:hover { border-color: var(--accent); color: var(--accent2); background: var(--accent-glow); }
+.prod-popover {
+  position: fixed; z-index: 4000; width: 250px; max-height: 280px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.35); padding: 10px 12px;
+}
+.prod-popover-title {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  font-weight: 700; color: var(--text3); margin-bottom: 8px;
+}
+.prod-popover-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.prod-popover-qty { font-size: 11px; font-weight: 700; color: var(--text3); }
 .prod-alivia   { background: var(--orange-bg); color: var(--orange); border-color: var(--orange); }
 
 /* ── MODAL ── */
