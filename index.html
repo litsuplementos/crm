@@ -564,6 +564,22 @@
       </div>
 
       <div class="config-card">
+        <div class="config-card-title"><i data-lucide="package-open" width="15" height="15" style="vertical-align:-2px;"></i> Stock en Consigna</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0 2px;">
+          <div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:3px;">Descontar stock al guardar en Consigna</div>
+            <div style="font-size:12px;color:var(--text2);">Si está permitido, el registro en estado Consigna descuenta del almacén elegido, igual que Vendido. Si no, no toca el stock.</div>
+          </div>
+          <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;margin-left:16px;">
+            <input type="checkbox" id="toggle-consigna-stock" onchange="saveConfigConsignaStock(this.checked)"
+              style="opacity:0;width:0;height:0;">
+            <span id="toggle-consigna-span"
+              style="position:absolute;cursor:pointer;inset:0;background:var(--green);border-radius:24px;transition:0.3s;"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="config-card">
         <div class="config-card-title"><i data-lucide="target" width="15" height="15" style="vertical-align:-2px;"></i> Objetivo de unidades por día</div>
         <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
           Define cuántas unidades mínimas debe vender cada agente por día (jornada de 8h).
@@ -1021,14 +1037,14 @@
     </div>
   </div>
 </div>
-<script src="app.js?v=20261105c"></script>
+<script src="app.js?v=20261105b"></script>
 <script src="guia.js?v=20261105a"></script>
 <script src="clientes.js?v=20261105d"></script>
-<script src="nuevo-registro.js?v=20261105e"></script>
+<script src="nuevo-registro.js?v=20261105h"></script>
 <script src="memorias.js?v=20261105a"></script>
 <script src="objetivos.js?v=20261105a"></script>
 <script src="inventario.js?v=20261105a"></script>
-<script src="almacen.js?v=20261105b"></script>
+<script src="almacen.js?v=20261105c"></script>
 <script src="muestras.js?v=20261105a"></script>
 <script>
   initTheme();

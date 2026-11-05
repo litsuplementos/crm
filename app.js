@@ -306,7 +306,7 @@ const ESTADOS = {
   spam: { label: 'SPAM', icon: 'ban', badge: 'badge-spam', color: 'var(--text3)' },
 };
 
-const ESTADOS_CIERRE = ['vendido', 'no_interesado', 'spam', 'cancelado'];
+const ESTADOS_CIERRE = ['vendido', 'consigna', 'no_interesado', 'spam', 'cancelado'];
 const MAX_RELLAMADAS = 3;
 const MAX_SIN_RESPUESTA = 4;
 const PAGE_SIZE = 15;
@@ -338,6 +338,7 @@ let _exportSource = 'ventas';
 let _exportColumnasSeleccionadasClientes = null;
 let _clientesFielesUmbral = 5;
 let _clientesFielesDescuento = 10;
+let _consignaDescuentaStock = true; // Ajustes → Stock en Consigna (por defecto: descuenta)
 let _clientesFielesCache = null;
 
 let _searchTimer;
@@ -713,12 +714,14 @@ async function initApp() {
     buildAgentSelector();
   } else {
     await Promise.all([loadProductos(false), loadVentas(), getVendidosEditables()]);    
-    const [{ data: dataU }, { data: dataD }] = await Promise.all([
+    const [{ data: dataU }, { data: dataD }, { data: dataC }] = await Promise.all([
       db.from('config').select('valor').eq('clave', 'clientes_fieles_umbral').single(),
       db.from('config').select('valor').eq('clave', 'clientes_fieles_descuento').single(),
+      db.from('config').select('valor').eq('clave', 'consigna_descuenta_stock').single(),
     ]);
     if (dataU?.valor) _clientesFielesUmbral = parseInt(dataU.valor) || 5;
     if (dataD?.valor) _clientesFielesDescuento = parseInt(dataD.valor) || 10;
+    if (dataC?.valor != null) _consignaDescuentaStock = dataC.valor !== 'false';
   }
   await _loadUserConfig();
   _setupEventDelegationOnce();
@@ -2381,13 +2384,19 @@ async function loadConfigVendidosEditables() {
     if (cb) cb.checked = val;
     if (span) span.style.background = val ? 'var(--green)' : 'var(--border)';
 
-    const [{ data: dataUmbral }, { data: dataDesc }, { data: dataUmbralCom }] = await Promise.all([
+    const [{ data: dataUmbral }, { data: dataDesc }, { data: dataUmbralCom }, { data: dataConsigna }] = await Promise.all([
       db.from('config').select('valor').eq('clave', 'clientes_fieles_umbral').single(),
       db.from('config').select('valor').eq('clave', 'clientes_fieles_descuento').single(),
       db.from('config').select('valor').eq('clave', 'umbral_comision').single(),
+      db.from('config').select('valor').eq('clave', 'consigna_descuenta_stock').single(),
     ]);
     if (dataUmbral?.valor) _clientesFielesUmbral = parseInt(dataUmbral.valor) || 5;
     if (dataDesc?.valor) _clientesFielesDescuento = parseInt(dataDesc.valor) || 10;
+    if (dataConsigna?.valor != null) _consignaDescuentaStock = dataConsigna.valor !== 'false';
+    const cbConsigna   = document.getElementById('toggle-consigna-stock');
+    const spanConsigna = document.getElementById('toggle-consigna-span');
+    if (cbConsigna) cbConsigna.checked = _consignaDescuentaStock;
+    if (spanConsigna) spanConsigna.style.background = _consignaDescuentaStock ? 'var(--green)' : 'var(--border)';
     const inpUmbralCom = document.getElementById('config-umbral-comision');
     if (inpUmbralCom && dataUmbralCom?.valor) inpUmbralCom.value = dataUmbralCom.valor;
     const inpUmbral = document.getElementById('config-clientes-umbral');
@@ -2475,6 +2484,23 @@ async function saveConfigVendidosEditables(enabled) {
     _vendidosEditablesCache = enabled;
   } catch(e) {
     console.error('Error guardando config:', e);
+    toast(_ic('circle-x', 15) + ' Error guardando configuración', 'error');
+  }
+}
+
+async function saveConfigConsignaStock(enabled) {
+  try {
+    const { error } = await db.from('config')
+      .upsert([{ clave: 'consigna_descuenta_stock', valor: enabled ? 'true' : 'false' }], { onConflict: 'clave' });
+    if (error) throw error;
+    _consignaDescuentaStock = enabled;
+    const span = document.getElementById('toggle-consigna-span');
+    if (span) span.style.background = enabled ? 'var(--green)' : 'var(--border)';
+    toast(enabled
+      ? _ic('circle-check', 15) + ' Consigna descuenta stock de la ubicación elegida'
+      : _ic('lock', 15) + ' Consigna no descuenta stock', 'success');
+  } catch(e) {
+    console.error('Error guardando config consigna:', e);
     toast(_ic('circle-x', 15) + ' Error guardando configuración', 'error');
   }
 }

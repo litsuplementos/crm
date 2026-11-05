@@ -7,6 +7,14 @@ let _nrCelTimer = null;
 let _nrGeoInit = false;       
 let _nrGuiaProdId = null;     
 let _nrReciboBlob = null; // Blob del recibo generado; se sube a storage al guardar la venta
+let _nrReciboGuardadoUrl = null; // URL del recibo ya subido (botón "Ver recibo")
+
+// ¿El estado descuenta stock? Vendido siempre; Consigna solo si Ajustes lo permite.
+function _nrDescuentaStock(estado) {
+  if (estado === 'vendido') return true;
+  if (estado === 'consigna') return typeof _consignaDescuentaStock === 'undefined' ? true : !!_consignaDescuentaStock;
+  return false;
+}
 
 function _fechaHoy() {
   const hoy = new Date();
@@ -77,6 +85,7 @@ function _resetNuevoRegistro() {
   const reciboPrev = document.getElementById('nr-recibo-preview');
   if (reciboPrev) reciboPrev.innerHTML = '';
   _nrReciboBlob = null;
+  _nrReciboGuardadoUrl = null;
   document.getElementById('nr-celular-suggestion').style.display = 'none';
   document.getElementById('nr-cliente-info-box').style.display = 'none';
   document.getElementById('nr-maps-preview').innerHTML = '';
@@ -284,14 +293,22 @@ function _toggleNrReciboButton() {
   const btn = document.getElementById('nr-recibo-btn');
   if (!btn) return;
   const estado = document.getElementById('nr-estado')?.value;
-  btn.style.display = estado === 'vendido' ? '' : 'none';
+  const aplica = estado === 'vendido' || estado === 'consigna';
+  const listo  = !!(_nrReciboGuardadoUrl || _nrReciboBlob);
+  btn.style.display = aplica ? '' : 'none';
+  btn.innerHTML = _ic('file-text', 15) + ' ' + (listo ? 'Ver recibo' : 'Generar recibo');
+  btn.title = listo ? 'Abrir el recibo PDF' : 'Generar el recibo PDF';
 }
 
 function _renderNrReciboPreview(url) {
+  _nrReciboGuardadoUrl = url || null;
   const wrap = document.getElementById('nr-recibo-preview');
-  if (!wrap) return;
-  if (!url) { wrap.innerHTML = ''; return; }
-  wrap.innerHTML = `<a href="${url}" target="_blank" style="color:var(--accent2);font-size:12px;white-space:nowrap;">${_ic('file-text', 13)} Recibo PDF</a>`;
+  if (wrap) {
+    wrap.innerHTML = url
+      ? `<a href="${url}" target="_blank" style="color:var(--accent2);font-size:12px;white-space:nowrap;">${_ic('file-text', 13)} Recibo PDF</a>`
+      : '';
+  }
+  _toggleNrReciboButton();
 }
 
 function _toggleNrIntentosField(estado) {
@@ -982,20 +999,13 @@ async function _cargarEmpresaConfig() {
   return out;
 }
 
-// Genera el recibo de pago en PDF con los datos del formulario (estado = vendido).
-// Solo descarga el PDF; se sube al bucket 'comprobantes' cuando se guarda el registro.
-async function generarReciboVenta() {
-  const nombre   = document.getElementById('nr-nombre').value.trim();
+// Construye el recibo (PDF) con los datos del formulario. No avisa ni descarga por
+// sí solo: lo usan el botón y el guardado automático de Vendido / Consigna.
+async function _construirReciboPdf({ descargar = false, nombreOverride = null } = {}) {
+  const nombre   = (nombreOverride ?? document.getElementById('nr-nombre').value).trim();
   const celular  = document.getElementById('nr-celular').value.trim();
   const items    = getNrItemsData();
-  if (!nombre)  { toast(_ic('triangle-alert', 15) + ' Ingresa el nombre del cliente','error'); return; }
-  if (!celular) { toast(_ic('triangle-alert', 15) + ' Ingresa el celular del cliente','error'); return; }
-  if (!items.length) { toast(_ic('triangle-alert', 15) + ' Añade al menos un producto','error'); return; }
 
-  const btn = document.getElementById('nr-recibo-btn');
-  if (btn) { btn.disabled = true; btn.style.opacity = '0.55'; }
-
-  try {
     await _cargarLibreria('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'jspdf');
     const { jsPDF } = window.jspdf;
 
@@ -1162,10 +1172,26 @@ async function generarReciboVenta() {
     doc.text('Nota: no es válido para crédito fiscal', W / 2, H - 9, { align: 'center' });
 
     const pdfBlob = doc.output('blob');
-    _descargarBlob(pdfBlob, 'recibo_' + folio + '.pdf');
-
     _nrReciboBlob = pdfBlob;
     _renderNrReciboPreview(URL.createObjectURL(pdfBlob));
+    if (descargar) _descargarBlob(pdfBlob, 'recibo_' + folio + '.pdf');
+    return pdfBlob;
+}
+
+// Botón del formulario: si ya hay un recibo, lo abre; si no, lo genera y descarga.
+async function generarReciboVenta() {
+  if (_nrReciboGuardadoUrl) { window.open(_nrReciboGuardadoUrl, '_blank'); return; }
+  const nombre   = document.getElementById('nr-nombre').value.trim();
+  const celular  = document.getElementById('nr-celular').value.trim();
+  const items    = getNrItemsData();
+  if (!nombre)  { toast(_ic('triangle-alert', 15) + ' Ingresa el nombre del cliente','error'); return; }
+  if (!celular) { toast(_ic('triangle-alert', 15) + ' Ingresa el celular del cliente','error'); return; }
+  if (!items.length) { toast(_ic('triangle-alert', 15) + ' Añade al menos un producto','error'); return; }
+
+  const btn = document.getElementById('nr-recibo-btn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.55'; }
+  try {
+    await _construirReciboPdf({ descargar: true });
     toast(_ic('circle-check', 15) + ' Recibo generado. Se subirá al guardar el registro','success');
   } catch (e) {
     console.error('recibo', e);
@@ -1200,8 +1226,8 @@ async function saveNuevoRegistro() {
   const intentos = _leerNrIntentos(estado);
   if (!celular) { toast(_ic('triangle-alert', 15) + ' El celular es obligatorio','error'); return; }
 
+  // Los productos son opcionales: el registro se puede guardar sin ítems.
   const items = getNrItemsData();
-  if (!items.length) { toast(_ic('triangle-alert', 15) + ' Añade al menos un producto con precio','error'); return; }
 
   let estadoFinal = estado;
 
@@ -1244,7 +1270,7 @@ async function saveNuevoRegistro() {
     let ubiOk = false;
     const ubiIdVal = _nrAlmUbiId();
     const ubiLabelVal = ubiIdVal ? _nrAlmUbiLabel(ubiIdVal) : '';
-    if (estadoFinal === 'vendido') {
+    if (_nrDescuentaStock(estadoFinal) && items.length) {
       stockVentaMap = {};
       const prodIds = [...new Set(items.map(it => it.producto_id))];
       const { data: stockRows, error: errStock } = await db.from('inventario_stock')
@@ -1327,9 +1353,16 @@ async function saveNuevoRegistro() {
       toast(_ic('circle-check', 15) + ' Registro guardado','success');
     }
 
+    // Recibo automático: en Vendido y Consigna se genera al guardar, sin esperar
+    // a que el agente toque el botón. Si falla, no bloquea el guardado.
+    if ((estadoFinal === 'vendido' || estadoFinal === 'consigna') && items.length) {
+      try { await _construirReciboPdf({ nombreOverride: nombre || 's/n' }); }
+      catch (e) { console.warn('recibo automático', e); }
+    }
+
     const toInsert = items.map(it => ({ ...it, venta_id: savedId }));
     const [{ error: errI }, url, reciboUrl] = await Promise.all([
-      db.from('venta_items').insert(toInsert),
+      toInsert.length ? db.from('venta_items').insert(toInsert) : Promise.resolve({ error: null }),
       _uploadNrComprobante(savedId),
       _nrReciboBlob ? _uploadNrRecibo(savedId) : Promise.resolve(null),
     ]);
@@ -1343,9 +1376,10 @@ async function saveNuevoRegistro() {
     if (url) await db.from('ventas').update({ comprobante_url: url }).eq('id', savedId);
     if (reciboUrl) await db.from('ventas').update({ recibo_url: reciboUrl }).eq('id', savedId);
     _nrReciboBlob = null;
+    if (reciboUrl) _nrReciboGuardadoUrl = reciboUrl;
 
-    // ── Historial acumulado + descuento de stock: solo si la venta quedó como vendido ──
-    if (estadoFinal === 'vendido') {
+    // ── Historial acumulado del cliente: solo ventas reales (vendido) ──
+    if (estadoFinal === 'vendido' && items.length) {
       const mesVenta = fecha.slice(0, 7); // 'YYYY-MM'
       const totalUnidades = items.reduce((s, it) => s + (it.cantidad || 1), 0);
       const montoFinal = monto || 0;
@@ -1356,12 +1390,16 @@ async function saveNuevoRegistro() {
         p_monto:      montoFinal,
       });
       _clientesFielesCache = null; // invalidar para que recargue
+    }
 
-      // ── Decrementar stock (inventario_movimientos) solo la primera vez que llega a vendido ──
+    // ── Descuento de stock: Vendido siempre; Consigna solo si Ajustes lo permite ──
+    if (_nrDescuentaStock(estadoFinal) && items.length) {
+      // Solo la primera vez que el estado pasa a descontar (registro nuevo, o venía
+      // de un estado que no descontaba), para no descontar dos veces al editar.
       const esNuevo = !ventaId;
       const estadoAnterior = esNuevo ? null : (ventasIndex[parseInt(ventaId)]?.estado || null);
-      const primerVendido = esNuevo || estadoAnterior !== 'vendido';
-      if (primerVendido) {
+      const primerDescuento = esNuevo || !_nrDescuentaStock(estadoAnterior);
+      if (primerDescuento) {
         for (const item of items) {
           const cantidad = item.cantidad || 1;
           const stockActual = stockVentaMap?.[item.producto_id] ?? 0;
@@ -1376,7 +1414,7 @@ async function saveNuevoRegistro() {
             stock_anterior: stockActual,
             stock_posterior: stockPosterior,
             ubicacion: null,
-            notas: `Venta automática #${savedId}`,
+            notas: (estadoFinal === 'consigna' ? 'Consigna automática #' : 'Venta automática #') + savedId,
             usuario_id: agenteId,
           });
           if (errMov) throw errMov;
