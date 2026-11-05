@@ -262,28 +262,45 @@ const ClientesView = (() => {
 
     if (error) { toast(_ic('circle-x', 15) + ' Error cargando historial: ' + esc(error.message), 'error'); return; }
 
-    const vendidas = (ventasCliente || []).filter(v => v.estado === 'vendido');
+    const todas = ventasCliente || [];
+    const estadoFiltro = getCSelectValue('clientes-filter-estado') || '';
+
+    // "Compradas" = solo vendido (mismo criterio que la columna Unidades/Monto de la lista).
+    const vendidas = todas.filter(v => v.estado === 'vendido');
     const totalUnid  = vendidas.reduce(
       (s, v) => s + (v.venta_items || []).reduce((si, it) => si + (it.cantidad || 1), 0), 0
     );
     const totalMonto = vendidas.reduce((s, v) => s + parseFloat(v.monto_total || 0), 0);
 
-    const histRows = vendidas.length
-      ? vendidas.map(v => {
+    // Proceso en curso: registros de este cliente en el estado que está filtrando la lista.
+    // Se muestran siempre, para que el modal nunca aparezca vacío cuando el filtro trae al cliente.
+    const enFiltro = estadoFiltro ? todas.filter(v => v.estado === estadoFiltro) : [];
+    const unidFiltro  = enFiltro.reduce((s, v) => s + (v.venta_items || []).reduce((si, it) => si + (it.cantidad || 1), 0), 0);
+    const montoFiltro = enFiltro.reduce((s, v) => s + parseFloat(v.monto_total || 0), 0);
+
+    // Con filtro activo, primero los registros de ese estado; el resto sigue visible pero atenuado.
+    const ordenadas = estadoFiltro
+      ? [...enFiltro, ...todas.filter(v => v.estado !== estadoFiltro)]
+      : todas;
+
+    const histRows = ordenadas.length
+      ? ordenadas.map(v => {
           const prods = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
           const updFecha = v.updated_at
             ? new Date(v.updated_at).toLocaleDateString('es-BO',
                 { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })
             : v.fecha;
+          const esFiltro = !!estadoFiltro && v.estado === estadoFiltro;
           return `
             <tr onclick="closeClienteHistorialModal();setTimeout(()=>showNuevoRegistro(${v.id}),50)"
-              style="cursor:pointer;border-bottom:1px solid var(--border);"
+              style="cursor:pointer;border-bottom:1px solid var(--border);${esFiltro ? 'background:var(--accent-glow);box-shadow:inset 3px 0 0 var(--accent);' : (estadoFiltro ? 'opacity:0.55;' : '')}"
               onmouseover="this.style.background='var(--surface2)'"
-              onmouseout="this.style.background=''">
+              onmouseout="this.style.background='${esFiltro ? 'var(--accent-glow)' : ''}'">
               <td style="padding:8px 12px;font-size:12px;color:var(--text3);">${v.fecha}</td>
               <td style="padding:8px 12px;font-size:12px;">
                 ${prods.map(n => prodChip(n)).join(' ') || '—'}
               </td>
+              <td style="padding:8px 12px;">${statusBadge(v.estado)}</td>
               <td style="padding:8px 12px;font-size:12px;color:var(--green);font-weight:700;">
                 ${v.monto_total ? 'Bs.' + parseFloat(v.monto_total).toFixed(0) : '—'}
               </td>
@@ -291,7 +308,7 @@ const ClientesView = (() => {
               <td style="padding:8px 12px;font-size:11px;color:var(--accent2);">${v.agente?.nombre || '—'}</td>
             </tr>`;
         }).join('')
-      : `<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3);">Sin compras registradas</td></tr>`;
+      : `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text3);">Sin registros para este cliente</td></tr>`;
 
     document.getElementById('stat-modal-title').innerHTML =
       `${_ic('user', 15)} ${esc(c.nombre || 'Cliente')} — ${esc(c.celular)}`;
@@ -312,12 +329,21 @@ const ClientesView = (() => {
         </div>
       </div>
 
-      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">${_ic('clipboard-list', 13)} Historial de compras</div>
+      ${estadoFiltro ? `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding:9px 12px;border-radius:8px;border:1px solid var(--accent);background:var(--accent-glow);font-size:12px;color:var(--text);">
+        ${_ic('filter', 13)}
+        ${enFiltro.length
+          ? `<span>Proceso <b>${ESTADOS[estadoFiltro]?.label || estadoFiltro}</b>: ${enFiltro.length} registro${enFiltro.length !== 1 ? 's' : ''} · ${unidFiltro} und · Bs.${montoFiltro.toFixed(0)}</span>`
+          : `<span>Este cliente no tiene registros en <b>${ESTADOS[estadoFiltro]?.label || estadoFiltro}</b>.</span>`}
+      </div>` : ''}
+
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">${_ic('clipboard-list', 13)} Historial de compras${estadoFiltro ? ' y registros' : ''}</div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;">
           <thead><tr>
             <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Fecha</th>
             <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Productos</th>
+            <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Estado</th>
             <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Monto</th>
             <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Actualización</th>
             <th style="background:var(--surface2);padding:7px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);">Agente</th>
