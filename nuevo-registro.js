@@ -122,6 +122,7 @@ function _resetNuevoRegistro() {
     saveBtn.style.cursor  = '';
     saveBtn.title = '';
     saveBtn.style.display = '';
+    saveBtn.innerHTML = _ic('save', 15) + ' Guardar';
   }
   const delBtn = document.getElementById('nr-delete-btn');
   if (delBtn) delBtn.style.display = 'none';
@@ -196,6 +197,7 @@ async function _cargarVentaEnPagina(id) {
   document.getElementById('nr-celular').value = v.cliente?.celular || '';
   document.getElementById('nr-nombre').value = v.cliente?.nombre || '';
   document.getElementById('nr-ubicacion').value = v.cliente?.ubicacion || '';
+  _nrSyncGeoFromUbicacion(v.cliente?.ubicacion || '');
   document.getElementById('nr-notas').value = v.notas || '';
   document.getElementById('nr-recordatorio').value = v.recordatorio ? v.recordatorio.slice(0,16) : '';
   document.getElementById('nr-direccion').value = v.cliente?.direccion_residencial || '';
@@ -603,7 +605,12 @@ function onNrCelularInput() {
     if (cd) {
       document.getElementById('nr-cliente-id').value = cd.id;
       document.getElementById('nr-nombre').value = cd.nombre || '';
-      document.getElementById('nr-ubicacion').value = cd.ubicacion || '';
+      // No pisar lo que el agente ya eligió: solo autocompletar si no tocó el
+      // departamento ni escribió una ubicación a mano.
+      const inpUbi     = document.getElementById('nr-ubicacion');
+      const depElegido = document.getElementById('nr-sel-departamento')?.value;
+      if (inpUbi && !depElegido && !inpUbi.value.trim()) inpUbi.value = cd.ubicacion || '';
+      if (!depElegido) _nrSyncGeoFromUbicacion(inpUbi?.value || '');
 
       if (cd.producto_interes) {
         const mp = allProductos.find(p =>
@@ -706,6 +713,64 @@ function onNrDireccionKeydown(e) {
 }
 
 // GEO SELECTORES
+// Depto/Provincia/Municipio reutilizables: se usan al elegir a mano y al
+// sincronizar la ubicación de un cliente existente.
+function _nrGeoFillProvincias(dep) {
+  const selProv = document.getElementById('nr-sel-provincia');
+  const selMun  = document.getElementById('nr-sel-municipio');
+  if (!selProv || !selMun) return;
+  selProv.innerHTML = '<option value="">— Provincia —</option>';
+  selMun.innerHTML  = '<option value="">— Municipio —</option>';
+  selProv.disabled  = !dep;
+  selMun.disabled   = true;
+  if (!dep || !BOLIVIA_GEO[dep]) return;
+  Object.keys(BOLIVIA_GEO[dep].provincias).sort().forEach(p => {
+    const o = document.createElement('option'); o.value = p; o.textContent = p; selProv.appendChild(o);
+  });
+}
+
+function _nrGeoFillMunicipios(dep, prov) {
+  const selMun = document.getElementById('nr-sel-municipio');
+  if (!selMun) return;
+  selMun.innerHTML = '<option value="">— Municipio —</option>';
+  selMun.disabled  = !prov;
+  if (!dep || !prov || !BOLIVIA_GEO[dep]?.provincias?.[prov]) return;
+  const pd  = BOLIVIA_GEO[dep].provincias[prov];
+  const cap = BOLIVIA_GEO[dep].capital;
+  pd.municipios.forEach(m => {
+    const o = document.createElement('option'); o.value = m;
+    o.textContent = m === cap ? m + ' ★ (cap. departamental)' : m === pd.capital ? m + ' · (cap. provincial)' : m;
+    selMun.appendChild(o);
+  });
+}
+
+// Marca los selects según la ubicación guardada del cliente. No escribe el input:
+// la elección del agente manda y sincronizar no debe cambiarla.
+function _nrSyncGeoFromUbicacion(ubic) {
+  const selDep = document.getElementById('nr-sel-departamento');
+  if (!selDep || selDep.options.length <= 1) return;
+  const raw = (ubic || '').trim();
+  if (!raw) return;
+  const partes = raw.split(/\s+-\s+/).map(s => s.trim()).filter(Boolean);
+  const norm   = (s) => (s || '').toLowerCase();
+  const deps   = Object.keys(BOLIVIA_GEO).sort();
+  const depKey = deps.find(d => norm(d) === norm(partes[0]))
+              || deps.find(d => norm(raw).startsWith(norm(d)));
+  if (!depKey) return;
+  selDep.value = depKey;
+  _nrGeoFillProvincias(depKey);
+  const provKey = partes[1]
+    ? Object.keys(BOLIVIA_GEO[depKey].provincias).find(p => norm(p) === norm(partes[1]))
+    : null;
+  if (!provKey) return;
+  document.getElementById('nr-sel-provincia').value = provKey;
+  _nrGeoFillMunicipios(depKey, provKey);
+  const munKey = partes[2]
+    ? BOLIVIA_GEO[depKey].provincias[provKey].municipios.find(m => norm(m) === norm(partes[2]))
+    : null;
+  if (munKey) document.getElementById('nr-sel-municipio').value = munKey;
+}
+
 function _initNrGeoSelectors() {
   if (_nrGeoInit) return;
   _nrGeoInit = true;
@@ -728,28 +793,8 @@ function _initNrGeoSelectors() {
     else inp.value='';
   }
 
-  selDep.onchange = () => {
-    const dep=selDep.value;
-    selProv.innerHTML='<option value="">— Provincia —</option>';
-    selMun.innerHTML='<option value="">— Municipio —</option>';
-    selProv.disabled=!dep; selMun.disabled=true; upd();
-    if (!dep) return;
-    Object.keys(BOLIVIA_GEO[dep].provincias).sort().forEach(p => {
-      const o=document.createElement('option'); o.value=p; o.textContent=p; selProv.appendChild(o);
-    });
-  };
-  selProv.onchange = () => {
-    const dep=selDep.value, prov=selProv.value;
-    selMun.innerHTML='<option value="">— Municipio —</option>';
-    selMun.disabled=!prov; upd();
-    if (!dep||!prov) return;
-    const pd=BOLIVIA_GEO[dep].provincias[prov], cap=BOLIVIA_GEO[dep].capital;
-    pd.municipios.forEach(m => {
-      const o=document.createElement('option'); o.value=m;
-      o.textContent=m===cap?m+' ★ (cap. departamental)':m===pd.capital?m+' · (cap. provincial)':m;
-      selMun.appendChild(o);
-    });
-  };
+  selDep.onchange = () => { _nrGeoFillProvincias(selDep.value); upd(); };
+  selProv.onchange = () => { _nrGeoFillMunicipios(selDep.value, selProv.value); upd(); };
   selMun.onchange = upd;
 }
 
@@ -840,7 +885,10 @@ function _verificarNrItemsStock() {
       if (cantInput) cantInput.style.borderColor = '';
       return;
     }
-    const disponible = (_nrAlmStockUbi[pid] !== undefined ? _nrAlmStockUbi[pid] : _nrAlmStockGeneral[pid]);
+    // Con un almacén elegido manda SU stock: no cae al total general, así el aviso
+    // coincide con lo que después valida el guardado.
+    const ubiSel = _nrAlmUbiId();
+    const disponible = ubiSel ? (_nrAlmStockUbi[pid] ?? 0) : _nrAlmStockGeneral[pid];
     const suma = sumPorProducto[pid] || 0;
     if (disponible === undefined || suma <= disponible) {
       warn.style.display = 'none';
@@ -1131,8 +1179,9 @@ async function generarReciboVenta() {
 async function saveNuevoRegistro() {
   const saveBtn = document.getElementById('nr-save-btn');
   if (saveBtn?.disabled) return;
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Guardando...'; }
-  const ventaId = document.getElementById('nr-edit-venta-id').value;('nr-edit-venta-id').value;
+  // El botón NO se bloquea acá: primero se valida. Si algo falta o el agente
+  // cancela un confirm, el formulario queda usable (antes quedaba en "Guardando...").
+  const ventaId = document.getElementById('nr-edit-venta-id').value;
   const celular = document.getElementById('nr-celular').value.trim();
   const nombre = document.getElementById('nr-nombre').value.trim();
   const clienteId  = document.getElementById('nr-cliente-id').value;
@@ -1180,6 +1229,10 @@ async function saveNuevoRegistro() {
     intentos: ['rellamada','sin_respuesta'].includes(estado) ? intentos : 1,
     archivado: debeArchivar,
   };
+
+  // Recién ahora, con todo validado, se bloquea el botón.
+  if (saveBtn) saveBtn.disabled = true;
+  if (saveBtn) saveBtn.innerHTML = '⏳ Guardando...';
 
   try {
     let cId = clienteId ? parseInt(clienteId) : null;
@@ -1313,6 +1366,9 @@ async function saveNuevoRegistro() {
           const cantidad = item.cantidad || 1;
           const stockActual = stockVentaMap?.[item.producto_id] ?? 0;
           const stockPosterior = stockActual - cantidad;
+          // Si el mismo producto viene en dos filas, la segunda parte del stock ya
+          // descontado por la primera (antes se escribía dos veces el mismo valor).
+          if (stockVentaMap) stockVentaMap[item.producto_id] = stockPosterior;
           const { error: errMov } = await db.from('inventario_movimientos').insert({
             producto_id: item.producto_id,
             tipo: 'venta',
@@ -1374,7 +1430,12 @@ async function saveNuevoRegistro() {
   } catch(e) {
     toast(_ic('circle-x', 15) + ' Error: ' + e.message,'error');
   } finally {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = _ic('save', 15) + ' Guardar'; }
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.style.opacity = '';
+      saveBtn.style.cursor  = '';
+      saveBtn.innerHTML = _ic('save', 15) + ' Guardar';
+    }
   }
 }
 

@@ -79,10 +79,18 @@ const Almacen = (() => {
       if (!row || anterior < cantidad) {
         return { error: { message: 'Stock insuficiente en la ubicación seleccionada (disponible ' + anterior + ')' } };
       }
-      const { error } = await db.from('almacen_stock')
+      // Update condicional: solo descuenta si la fila sigue con el stock que leímos.
+      // Si otro agente vendió el mismo producto entre la lectura y el update, no hay
+      // fila afectada y se avisa en vez de dejar el stock en negativo.
+      const { data: upd, error } = await db.from('almacen_stock')
         .update({ stock: anterior - cantidad, usuario_id: currentUser.id })
-        .eq('id', row.id);
+        .eq('id', row.id)
+        .eq('stock', anterior)
+        .select('id, stock');
       if (error) { console.error('almacen: descontarDeUbicacion update', error); return { error }; }
+      if (!upd || !upd.length) {
+        return { error: { message: 'El stock de esta ubicación cambió mientras se guardaba (posible venta simultánea). Revisá el stock en Almacén y volvé a intentar.' } };
+      }
       return { error: null };
     } catch (e) {
       console.error('almacen: descontarDeUbicacion', e);
