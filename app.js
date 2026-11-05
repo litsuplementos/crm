@@ -1877,8 +1877,8 @@ function setArchivoFiltro(archivado) {
   document.getElementById('tab-activos').classList.toggle('archivo-tab-active', !archivado);
   document.getElementById('tab-archivados').classList.toggle('archivo-tab-active', archivado);
 
-  const activos = ['rellamada', 'seguimiento', 'interesado', 'agendar', 'sin_respuesta', 'enviado', 'consigna'];
-  const archivados = ['vendido', 'no_interesado', 'cancelado', 'spam'];
+  const activos = ['rellamada', 'seguimiento', 'interesado', 'agendar', 'sin_respuesta', 'enviado'];
+  const archivados = ['vendido', 'consigna', 'no_interesado', 'cancelado', 'spam'];
   const opciones = archivado ? archivados : activos;
   _buildCSelect('filter-status',
     [{ value: '', label: 'Todos los estados' }].concat(opciones.map(v => ({ value: v, label: ESTADOS[v].label, icon: ESTADOS[v].icon }))),
