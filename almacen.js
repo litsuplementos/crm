@@ -14,6 +14,7 @@ const Almacen = (() => {
   let _movimientos = [];
   let _loadError = null;
   let _currentPage = 1;
+  let _openProds = new Set();   // productos abiertos en "Stock por Ubicación" (sobrevive al re-render)
   const PAGE_SIZE = 20;
 
   async function render() {
@@ -116,6 +117,23 @@ const Almacen = (() => {
         .alm-btn-sm{background:var(--surface2);color:var(--accent2);border:1px solid var(--border);}
         .alm-btn-sm:hover{border-color:var(--accent2);}
         .alm-badge-envio{background:rgba(59,130,246,0.1);color:var(--blue);border:1px solid rgba(59,130,246,0.3);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;}
+        /* Stock por Ubicación — detalle por producto (acordeón) */
+        .alm-det{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden;}
+        .alm-det summary{list-style:none;display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;user-select:none;}
+        .alm-det summary::-webkit-details-marker{display:none;}
+        .alm-det summary:hover{background:var(--surface2);}
+        .alm-det[open] summary{background:var(--surface2);border-bottom:1px solid var(--border);}
+        .alm-chev{display:inline-flex;align-items:center;color:var(--text3);transition:transform 0.18s;transform:rotate(-90deg);}
+        .alm-det[open] .alm-chev{transform:rotate(0deg);}
+        .alm-det-name{font-size:13px;font-weight:700;color:var(--text);}
+        .alm-det-meta{font-size:11px;color:var(--text3);}
+        .alm-det-total{margin-left:auto;font-size:13px;font-weight:800;color:var(--accent2);}
+        .alm-det-body{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 22px;padding:12px 14px;}
+        .alm-loc{display:flex;align-items:center;gap:10px;padding:3px 0;}
+        .alm-loc-name{flex:1;font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .alm-num{width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--surface);color:var(--text);text-align:center;font-family:inherit;}
+        .alm-num:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow);}
+        .alm-zero{color:var(--text3);}
       </style>
     `;
     const content = document.getElementById('almacen-tab-content');
@@ -267,34 +285,53 @@ const Almacen = (() => {
 
     content.innerHTML = `
       <div style="font-size:12px;color:var(--text3);margin-bottom:12px;">
-        El <b>General</b> es la suma del stock de todas las ubicaciones. Edita un valor de ubicación y pulsa <b>Enter</b> o sal del campo para guardar.
+        El <b>General</b> es la suma del stock de todas las ubicaciones. Abre un producto para ver sus ubicaciones; edita un valor y pulsa <b>Enter</b> o sal del campo para guardar.
       </div>
-      <div style="overflow-x:auto;">
-        <table class="alm-table">
-          <thead>
-            <tr>
-              <th>Producto</th>
-              <th style="text-align:center;">General</th>
-              ${_ubicaciones.map(u => `<th style="text-align:center;" title="${_locLabel(u)}">${_shortLoc(u)}</th>`).join('')}
-            </tr>
-          </thead>
-          <tbody>
-            ${_productos.map(p => `
-              <tr>
-                <td style="font-weight:600;">${p.productos?.nombre || 'Producto'}</td>
-                <td style="text-align:center;font-weight:700;color:var(--accent2);">${_stockGeneral(p.producto_id)}</td>
-                ${_ubicaciones.map(u => `
-                  <td style="text-align:center;">
-                    <input type="number" min="0" value="${_stockAt(p.producto_id, u.id)}"
-                      data-pid="${p.producto_id}" data-uid="${u.id}"
-                      onchange="Almacen.saveDistribucion(${p.producto_id}, ${u.id}, this.value)"
-                      style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--surface);color:var(--text);text-align:center;">
-                  </td>`).join('')}
-              </tr>`).join('')}
-          </tbody>
-        </table>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <div style="font-size:12px;color:var(--text2);">${_productos.length} productos · ${_ubicaciones.length} ubicaciones</div>
+        <div style="flex:1;"></div>
+        <button class="alm-btn alm-btn-sm" onclick="Almacen.toggleTodos(true)">Abrir todo</button>
+        <button class="alm-btn alm-btn-sm" onclick="Almacen.toggleTodos(false)">Cerrar todo</button>
+      </div>
+      <div>
+        ${_productos.map(p => {
+          const pid = p.producto_id;
+          const general = _stockGeneral(pid);
+          const conStock = _ubicaciones.filter(u => _stockAt(pid, u.id) > 0).length;
+          return `
+          <details class="alm-det" ${_openProds.has(pid) ? 'open' : ''} ontoggle="Almacen.toggleDetalle(${pid}, this.open)">
+            <summary>
+              <span class="alm-chev">${_ic('chevron-down', 13)}</span>
+              <span class="alm-det-name">${p.productos?.nombre || 'Producto'}</span>
+              <span class="alm-det-meta">${conStock} de ${_ubicaciones.length} ubicaciones con stock</span>
+              <span class="alm-det-total">${general}</span>
+            </summary>
+            <div class="alm-det-body">
+              ${_ubicaciones.map(u => {
+                const v = _stockAt(pid, u.id);
+                return `<div class="alm-loc">
+                  <span class="alm-loc-name" title="${_locLabel(u)}">${_shortLoc(u)}</span>
+                  <input type="number" min="0" value="${v}" data-pid="${pid}" data-uid="${u.id}"
+                    onchange="Almacen.saveDistribucion(${pid}, ${u.id}, this.value)"
+                    class="alm-num${v === 0 ? ' alm-zero' : ''}">
+                </div>`;
+              }).join('')}
+            </div>
+          </details>`;
+        }).join('')}
       </div>
     `;
+  }
+
+  function toggleDetalle(productoId, abierto) {
+    if (abierto) _openProds.add(productoId);
+    else _openProds.delete(productoId);
+  }
+
+  function toggleTodos(abrir) {
+    _openProds = new Set(abrir ? _productos.map(p => p.producto_id) : []);
+    const wrap = document.getElementById('almacen-wrap');
+    if (wrap) _renderContent(wrap);
   }
 
   async function saveDistribucion(productoId, ubicacionId, valor) {
@@ -588,7 +625,8 @@ const Almacen = (() => {
     _almacenStock = [];
     _movimientos = [];
     _currentPage = 1;
+    _openProds = new Set();
   }
 
-  return { render, switchTab, goPage, saveUbicacion, editUbicacion, saveUbicacionEdit, cancelUbicacionEdit, deleteUbicacion, saveDistribucion, onDestinoChange, onEnviarInfo, saveEnvio, descontarDeUbicacion, reset };
+  return { render, switchTab, goPage, saveUbicacion, editUbicacion, saveUbicacionEdit, cancelUbicacionEdit, deleteUbicacion, saveDistribucion, toggleDetalle, toggleTodos, onDestinoChange, onEnviarInfo, saveEnvio, descontarDeUbicacion, reset };
 })();
