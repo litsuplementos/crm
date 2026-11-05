@@ -2341,7 +2341,7 @@ function renderStatModal() {
         <tbody>
           ${page.map(v => {
             const prods = (v.venta_items || []).map(it => it.productos?.nombre).filter(Boolean);
-            const prodCell = prods.length > 0 ? prods.map(n => prodChip(n)).join(' ') : '—';
+            const prodCell = prodsCellHtml(prods, v.id);
             return `
             <tr onclick="closeStatModal();setTimeout(()=>openVentaModal(${v.id}),50)" style="cursor:pointer;border-bottom:1px solid var(--border);" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
               <td style="padding:9px 12px;font-size:13px;color:var(--text2);">${v.fecha || ''}</td>
